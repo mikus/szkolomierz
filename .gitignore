@@ -12,3 +12,6 @@ data/school_coords.csv.bak-*
 
 # Claude Code local-only settings (project settings.json IS tracked)
 .claude/settings.local.json
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/
