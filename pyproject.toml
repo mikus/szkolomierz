@@ -32,3 +32,48 @@ line-length = 99
 
 [tool.ruff.format]
 quote-style = "single"
+
+[tool.ruff.lint]
+# Without this the project inherits ruff's whole default rule set, which here is
+# mostly noise. Each entry below was checked against the actual code, not assumed.
+ignore = [
+    # Every one of the 39 hits is a false positive: the closure is called inside
+    # the same loop iteration (pandas apply/agg, and validate_export's `store`),
+    # so late binding cannot bite. Binding defaults would add dead arguments.
+    "B023",
+    # Implicit string concatenation in the xlsx legend tables. Ruff's fix only
+    # adds parentheses; the strings are already byte-identical either way.
+    "ISC004",
+    # `fig, ax = plt.subplots()` with fig unused. `fig` reads better than `_fig`.
+    "RUF059",
+    # Shebang without the executable bit. These are run as `uv run python
+    # scripts/...`; chmod +x would invite ./scripts/... which resolves to a
+    # python without pandas.
+    "EXE001",
+    # datetime.now() without a timezone. It fills metadata.generated_at, which
+    # nothing reads - not validate_export.py, not the frontend. Making it
+    # tz-aware would change the published string for no gain.
+    "DTZ005",
+    # int(round(...)) on a numpy scalar. Under numpy 2.5 round() already returns
+    # a Python int, so ruff is right that the cast is redundant today - but it is
+    # what keeps n_students serialising as 5 rather than 5.0 if numpy's __round__
+    # ever goes back to returning a float64. Ruff marks the fix unsafe; this is
+    # the live export path, so the cast stays.
+    "RUF046",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Notebook cells are self-contained, so re-importing a module in a later cell is
+# deliberate. The broad excepts guard re-reading a file the notebook itself just
+# wrote for the idempotence check, and every failure path lands on "rewrite" -
+# the safe default. This is not the "no try/except while loading data" case in
+# CLAUDE.md: the source xlsx are read in their own cell with no handler.
+"notebooks/*.ipynb" = ["BLE001", "F811"]
+# A superseded record of an earlier approach, kept for the reasoning it contains
+# and not re-run. Cell 9 reads WRITE_OUTPUT_FILES 58 cells before it is bound, so
+# a clean top-to-bottom run would raise NameError there; the committed run
+# survived because the `and` short-circuited on a False left operand. The live
+# notebook fixed this by hoisting the flag into its setup cell. Editing a frozen
+# record to satisfy a linter would falsify it, so the warning lives in the
+# notebook's opening markdown instead.
+"notebooks/how_to_measure_school_quality-old-approach-5-school-classes.ipynb" = ["F821"]

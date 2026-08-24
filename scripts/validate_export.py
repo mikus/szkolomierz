@@ -374,7 +374,7 @@ def load_json_exports(
 
 def iter_json_views(
     metric_to_rspo_to_school_data: dict[Metric, dict[Rspo, dict]],
-) -> Iterator[tuple[Metric, Subject, ViewKind, 'int | None', Rspo, ScoreCell]]:
+) -> Iterator[tuple[Metric, Subject, ViewKind, int | None, Rspo, ScoreCell]]:
     """Yield (metric, subject, view_kind, param, rspo, cell) for every score cell
     in the per-metric files (base param is None, others are ints)."""
     for metric, schools in metric_to_rspo_to_school_data.items():

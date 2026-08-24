@@ -140,7 +140,12 @@ def _nominatim_request(params: dict, user_agent: str) -> list:
     try:
         with urlopen(request, timeout=30) as response:
             return json.loads(response.read().decode('utf-8'))
-    except Exception as exc:
+    # Everything the network and the response can throw at us: URLError, HTTPError
+    # and TimeoutError all subclass OSError, and a truncated or non-JSON body
+    # raises the other two. A bug in this function (a bad params dict, say) is not
+    # in that set and should surface as a traceback rather than quietly becoming
+    # one more unmapped school.
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         print(f'    request failed: {exc}', file=sys.stderr)
         return []
     finally:
