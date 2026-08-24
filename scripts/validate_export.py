@@ -95,6 +95,7 @@ TIE_EPS = 1e-9
 
 # Source-xlsx column names (after normalisation), needed to read the SAS sheet.
 N_COL, MEAN_COL, MEDIAN_COL = 'liczba zdajacych', 'wynik sredni (%)', 'mediana (%)'
+SCOPE_VOIVODESHIP = 'Mazowieckie'  # mirrors the notebook; both drop when spec step 3 lands
 
 
 # ── xlsx reading (independent re-implementation of the notebook loader) ───────
@@ -159,12 +160,14 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
         except ValueError as exc:
             sys.exit(f"Cannot read sheet 'SAS' in {path.name}: {exc}")
         sheet.columns = normalize_columns(sheet.columns)
-        missing = [c for c in [('meta', 'rspo')] + needed if c not in sheet.columns]
+        missing = [c for c in [('meta', 'rspo'), ('meta', 'wojewodztwo - nazwa')] + needed
+                   if c not in sheet.columns]
         if missing:
             sys.exit(f'{path.name}: expected columns not found after normalisation: {missing}')
 
         column_data = {
             'rspo': pd.to_numeric(sheet[('meta', 'rspo')], errors='coerce'),
+            'wojewodztwo': sheet[('meta', 'wojewodztwo - nazwa')].astype(str).str.strip(),
             'year': year,
         }
         for subject in CORE_SUBJECTS:
@@ -181,6 +184,7 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
     keep = df['rspo'].notna() & df['n_polski'].notna() & (df['n_polski'] > 0)
     for subject in CORE_SUBJECTS:
         keep &= df[f'mean_{subject}'].notna() & df[f'median_{subject}'].notna()
+    keep &= df['wojewodztwo'] == SCOPE_VOIVODESHIP
     df = df[keep]
 
     rows = []
