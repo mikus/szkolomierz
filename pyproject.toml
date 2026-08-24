@@ -15,6 +15,18 @@ dependencies = [
     "xlsxwriter>=3.2.9",
 ]
 
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.16",
+]
+
+[tool.pytest.ini_options]
+# src/ is on the path rather than installed: no build backend needed, and the
+# notebook reaches the same modules by adding ../src to sys.path.
+pythonpath = ["src"]
+testpaths = ["tests"]
+
 [tool.ruff]
 line-length = 99
 
