@@ -587,6 +587,45 @@ p.write_text(json.dumps(nb, indent=1, ensure_ascii=False) + '\n')
 
 ---
 
+## Before committing
+
+Both gates must be green. Every commit, no exceptions.
+
+```bash
+uv run pytest
+```
+
+```bash
+uv run ruff check .
+```
+
+- **All tests pass.** `tests/` covers the pure functions in `src/school_quality/`,
+  which the notebook imports. A failing test is a blocker, not a note for later —
+  if it is failing because the expected behaviour genuinely changed, update the
+  test deliberately and say so in the commit message.
+- **No linter findings.** Fix the code. Do **not** reach for a `# noqa` or a new
+  entry in `[tool.ruff.lint] ignore` to quieten the check: that list is only for
+  rules established to be noise against this codebase, and every entry carries a
+  comment recording why it was dismissed. Silencing a real finding to get a green
+  check defeats the gate.
+
+If the change touched the pipeline or the data, also run the export validator and
+confirm the published artefacts did not move:
+
+```bash
+uv run python scripts/validate_export.py
+```
+
+```bash
+git status --short docs/data output
+```
+
+It must exit 0, and that `git status` should print nothing — unless changing the
+published numbers was the actual point of the change, in which case the diff is
+the thing to review most carefully.
+
+---
+
 ## Agent workflow conventions (permission-friendly commands)
 
 Use command forms that don't trigger a permission prompt, so routine work runs
