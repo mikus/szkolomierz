@@ -65,11 +65,12 @@ def attach_reference(df: pd.DataFrame, value_column: str, level: str,
                      out_column: str, statistic: str) -> pd.DataFrame:
     """Return a copy of `df` with the per-(year, region) reference in `out_column`.
 
-    Row count and row order are preserved, so the result can be assigned straight
-    back onto the caller's frame.
+    Row count, row order, AND the caller's index are preserved, so the result can
+    be assigned straight back onto the caller's frame.
     """
     keys = _group_keys(level)
     reference = reference_frame(df, value_column, level, statistic)
     merged = df.merge(reference, on=keys, how='left', validate='many_to_one')
+    merged.index = df.index
     merged[out_column] = merged[f'{value_column}_reference']
     return merged.drop(columns=[f'{value_column}_reference'])

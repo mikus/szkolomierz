@@ -72,6 +72,18 @@ def test_row_count_and_order_survive_the_merge():
     assert out['rspo'].tolist() == keyed['rspo'].tolist()
 
 
+def test_the_callers_index_survives_the_merge():
+    # pd.merge returns a fresh RangeIndex; row order survives but the index does
+    # not. That silently breaks `df['ref'] = out['ref']` - exactly the usage the
+    # docstring invites - for any caller whose index isn't already 0..n-1, such as
+    # df[complete_mask].copy() upstream. A contiguous fixture would pass
+    # vacuously (0..n-1 in equals 0..n-1 out), so this index is non-contiguous.
+    keyed = add_level_keys(_df())
+    non_contiguous = keyed.iloc[[0, 2, 4]]
+    out = attach_reference(non_contiguous, 'mean_polski', 'gmina', 'ref', 'mean')
+    assert out.index.equals(non_contiguous.index)
+
+
 def test_median_and_mean_give_different_references_on_a_skewed_group():
     # A dedicated skewed frame: in _df() the 2025 '14' group is {60, 70, 80},
     # whose mean and median are both 70, so it could not tell the two apart -
