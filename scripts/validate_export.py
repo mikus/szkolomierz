@@ -29,6 +29,12 @@ Checks
   F. Colour-scale metadata: recomputed sigma / centre / slider_ranges == metadata.
   G. Class spread:        bucketing base scores into A/B/C by ±0.33sigma (the map's
      colour rule) leaves no class empty (a never-shown colour would be a red flag).
+  H. Identity + frontend contract: (rspo, year) unique in the source; the JSON
+     school set == the source set; n_years == the source per-school year
+     count; and the frontend-contract fields (name, miejscowosc, ulica_nr,
+     is_public, n_years, gmina, powiat) are populated. Every other check here
+     reads only ['scores'], so a school could lose its address or drop out of
+     the export entirely and every check above would still pass.
 
 Usage
   uv run python scripts/validate_export.py
