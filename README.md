@@ -25,9 +25,10 @@ other projects.
 
 ```
 notebooks/   analysis (how_to_measure_school_quality.ipynb)
-scripts/     geocode_schools.py  — geocode school addresses
+scripts/     fetch_sources.py    — download the pinned CIE source files
+             geocode_schools.py  — geocode school addresses
              validate_export.py  — check the JSON exports against the source xlsx
-data/        input data (OKE xlsx files) + coordinate cache
+data/        input data (CIE xlsx files, scoped to Mazowieckie) + coordinate cache
 output/      xlsx files for analysts
 docs/        the map app (GitHub Pages); docs/data/ holds the JSON the app loads
 ```
@@ -36,7 +37,16 @@ docs/        the map app (GitHub Pages); docs/data/ holds the JSON the app loads
 
 After a new year of results is published:
 
-1. **Drop the new xlsx** from OKE into `data/egzamin-osmoklasisty/`.
+1. **Fetch the new xlsx** from the CIE manifest into `data/egzamin-osmoklasisty/`:
+
+   ```bash
+   uv run python scripts/fetch_sources.py
+   ```
+
+   It resolves the pinned edition for each year in `EDITION_PINS`
+   (`src/school_quality/sources.py`) against the CIE manifest and downloads
+   whatever isn't already on disk. Existing files are left alone unless
+   `--force` is given.
 
 2. **Run the notebook** end to end:
 

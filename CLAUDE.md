@@ -30,11 +30,13 @@ compare-primary-schools-mazowieckie/
 ├── notebooks/
 │   └── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
 ├── scripts/
-│   └── geocode_schools.py                      # geocode addresses → data/school_coords.csv
+│   ├── fetch_sources.py                        # download the pinned CIE source files
+│   ├── geocode_schools.py                      # geocode addresses → data/school_coords.csv
+│   └── validate_export.py                      # check the JSON exports against the source xlsx
 ├── data/                                       # INPUT (read-only source data)
-│   ├── egzamin-osmoklasisty/                   # OKE xlsx files, one per year
-│   │   ├── 2021_-_*.xlsx
-│   │   ├── 2022_-_*.xlsx
+│   ├── egzamin-osmoklasisty/                   # CIE xlsx files, scoped to Mazowieckie, one per year
+│   │   ├── 2021 - E8_2021_szkoly_07.xlsx
+│   │   ├── 2022 - E8_2022_szkoly_09.xlsx
 │   │   ├── ...
 │   │   └── SOURCES.csv                          # provenance of each xlsx (see below)
 │   └── school_coords.csv                       # geocoding cache (rspo, address, lat, lon)
@@ -100,8 +102,9 @@ written to `output/rejected_addresses.csv`.
 ### Provenance — `data/egzamin-osmoklasisty/SOURCES.csv`
 
 Every source xlsx must be documented in `SOURCES.csv` (columns: `file_name,
-year, webpage, document_link, retrieved_date, notes`). `file_name` is the exact
-on-disk name (including any `.xlsx.xlsx` double extension) and is the join key.
+year, edition, oke, wojewodztwo, webpage, document_link, retrieved_date,
+notes`). `file_name` is the exact on-disk name (including any `.xlsx.xlsx`
+double extension) and is the join key.
 
 The notebook's load cell **raises** if any source file present in
 `data/egzamin-osmoklasisty/` is missing from `SOURCES.csv` (and warns if
@@ -110,9 +113,7 @@ came from whenever a new one is dropped in. Dotfiles (e.g. LibreOffice
 `.~lock.*`) are ignored — they are not source data.
 
 Note: the loader only ingests files whose name **starts with the year**
-(`YEAR_FILE_RE = ^\d{4}`), so a file like `bip_1143...2020...xlsx` (year not at
-the start) is documented in `SOURCES.csv` but **not** loaded — its `notes`
-column says so.
+(`YEAR_FILE_RE = ^\d{4}`).
 
 ---
 
