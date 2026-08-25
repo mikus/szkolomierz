@@ -565,6 +565,65 @@ def check_base_consistency(rspo_to_school_base_data, metric_to_rspo_to_school_da
         rep.ok(f'all {n} base entries agree between schools-base.json and the per-metric files')
 
 
+def check_identity_invariants(rows, rspo_to_school_base_data, rep: Report):
+    """H. Identity and frontend-contract fields in schools-base.json.
+
+    Nothing else validates these: every other check reads only ['scores'], so a
+    school could lose its address or its whole row and every check would pass.
+    """
+    rep.section('H. Identity + frontend contract (schools-base.json)')
+    problems: list[str] = []
+
+    # (rspo, year) unique in the source
+    seen: set[tuple] = set()
+    duplicates = set()
+    for row in rows:
+        key = (row['rspo'], row['year'])
+        if key in seen:
+            duplicates.add(key)
+        seen.add(key)
+    if duplicates:
+        problems.append(f'{len(duplicates)} duplicate (rspo, year) rows, '
+                        f'e.g. {sorted(duplicates)[:3]}')
+
+    # the JSON school set equals the source school set
+    source_rspos = {row['rspo'] for row in rows}
+    json_rspos = set(rspo_to_school_base_data)
+    if source_rspos != json_rspos:
+        only_source = sorted(source_rspos - json_rspos)[:3]
+        only_json = sorted(json_rspos - source_rspos)[:3]
+        problems.append(f'school sets differ: {len(source_rspos - json_rspos)} only in xlsx '
+                        f'{only_source}, {len(json_rspos - source_rspos)} only in JSON {only_json}')
+
+    # n_years matches the source, and the contract fields are populated
+    required = ('name', 'miejscowosc', 'ulica_nr', 'is_public', 'n_years', 'gmina', 'powiat')
+    years_by_rspo: dict = {}
+    for row in rows:
+        years_by_rspo.setdefault(row['rspo'], set()).add(row['year'])
+    missing_fields, wrong_years = [], []
+    for rspo, school in rspo_to_school_base_data.items():
+        for field in required:
+            value = school.get(field)
+            if value is None or (isinstance(value, str) and not value.strip()):
+                missing_fields.append(f'rspo={rspo} {field}')
+        expected_years = len(years_by_rspo.get(rspo, ()))
+        if expected_years and school.get('n_years') != expected_years:
+            wrong_years.append(f'rspo={rspo} n_years={school.get("n_years")} '
+                               f'source={expected_years}')
+    if missing_fields:
+        problems.append(f'{len(missing_fields)} empty contract fields, '
+                        f'e.g. {missing_fields[:3]}')
+    if wrong_years:
+        problems.append(f'{len(wrong_years)} schools with a wrong n_years, '
+                        f'e.g. {wrong_years[:3]}')
+
+    if problems:
+        rep.fail('identity/contract invariants violated', examples=problems)
+    else:
+        rep.ok(f'{len(json_rspos):,} schools: unique keys, matching sets, '
+               f'contract fields populated')
+
+
 def check_ranks(view_key_to_rspo_scores: ViewScores, metric_to_rspo_to_school_data, rep: Report):
     """E — per view population, the stored rank/pct must match rankdata over the
     recomputed (full-precision) scores, accepting any order among near-ties (see
@@ -796,6 +855,7 @@ def main():
     check_aggregates(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_completeness(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_base_consistency(rspo_to_school_base_data, metric_to_rspo_to_school_data, rep)
+    check_identity_invariants(rows, rspo_to_school_base_data, rep)
     check_ranks(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_metadata(metadata, view_key_to_rspo_scores, rep)
     check_class_spread(metadata, rspo_to_school_base_data, rep)
