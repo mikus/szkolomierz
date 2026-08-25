@@ -14,30 +14,43 @@ rank instead - "2 of 3" is more useful to a parent than a fabricated 50th
 percentile, and it is true.
 """
 
+import math
+
 MIN_REFERENCE_N = 5
 MIN_PERCENTILE_N = 8
 
 
+def _is_missing(value) -> bool:
+    """True for None or NaN, without depending on numpy/pandas for the check.
+
+    `math` is the standard library, so this keeps the module free of the numpy/
+    pandas dependency while still catching the numpy floats the real pipeline
+    (the notebook's export loop) actually passes.
+    """
+    return value is None or math.isnan(value)
+
+
 def reference_is_usable(n: int) -> bool:
     """Whether a region of `n` schools can serve as a comparison baseline."""
-    return n >= MIN_REFERENCE_N
+    return bool(n >= MIN_REFERENCE_N)
 
 
 def percentile_is_meaningful(n: int) -> bool:
     """Whether a percentile within `n` schools carries usable resolution."""
-    return n >= MIN_PERCENTILE_N
+    return bool(n >= MIN_PERCENTILE_N)
 
 
-def suppress_diff_score(score, n: int):
-    """The score, or None where the region is too small to compare within."""
-    if score is None or not reference_is_usable(n):
+def suppress_diff_score(score, n: int) -> float | None:
+    """The score, or None where missing or the region is too small to compare
+    within."""
+    if _is_missing(score) or not reference_is_usable(n):
         return None
     return score
 
 
-def suppress_percentile(pct, n: int):
-    """The percentile, or None where it would be granularity theatre."""
-    if pct is None or not percentile_is_meaningful(n):
+def suppress_percentile(pct, n: int) -> float | None:
+    """The percentile, or None where missing or it would be granularity theatre."""
+    if _is_missing(pct) or not percentile_is_meaningful(n):
         return None
     return pct
 
