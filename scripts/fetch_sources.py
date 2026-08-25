@@ -50,6 +50,7 @@ def main() -> int:
             print(f'  would fetch {item["local_name"]}  <- {item["url"]}')
             continue
         payload = fetch(item['url'])
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(payload)
         print(f'  fetched {item["local_name"]}  ({len(payload):,} bytes)')
     return 0
