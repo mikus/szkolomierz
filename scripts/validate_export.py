@@ -187,10 +187,17 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
         per_file_frames.append(pd.DataFrame(column_data))
 
     df = pd.concat(per_file_frames, ignore_index=True)
+    scope_mask = df['wojewodztwo'] == SCOPE_VOIVODESHIP
+    if not scope_mask.any():
+        sys.exit(
+            f'No rows match SCOPE_VOIVODESHIP={SCOPE_VOIVODESHIP!r}. '
+            f'wojewodztwo values seen: {sorted(df["wojewodztwo"].unique())}. '
+            f'Has the spelling drifted from the source xlsx?'
+        )
     keep = df['rspo'].notna() & df['n_polski'].notna() & (df['n_polski'] > 0)
     for subject in CORE_SUBJECTS:
         keep &= df[f'mean_{subject}'].notna() & df[f'median_{subject}'].notna()
-    keep &= df['wojewodztwo'] == SCOPE_VOIVODESHIP
+    keep &= scope_mask
     df = df[keep]
 
     rows = []
@@ -623,6 +630,7 @@ def check_identity_invariants(rows, rspo_to_school_base_data, rep: Report):
         problems.append(f'{len(wrong_years)} schools with a wrong n_years, '
                         f'e.g. {wrong_years[:3]}')
 
+    rep.checked += len(rspo_to_school_base_data)
     if problems:
         rep.fail('identity/contract invariants violated', examples=problems)
     else:
@@ -861,10 +869,10 @@ def main():
     check_aggregates(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_completeness(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_base_consistency(rspo_to_school_base_data, metric_to_rspo_to_school_data, rep)
-    check_identity_invariants(rows, rspo_to_school_base_data, rep)
     check_ranks(view_key_to_rspo_scores, metric_to_rspo_to_school_data, rep)
     check_metadata(metadata, view_key_to_rspo_scores, rep)
     check_class_spread(metadata, rspo_to_school_base_data, rep)
+    check_identity_invariants(rows, rspo_to_school_base_data, rep)
 
     print(f'\n{"=" * 64}')
     if rep.failures == 0:
