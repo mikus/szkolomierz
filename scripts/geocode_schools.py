@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import http.client
 import json
 import os
 import sys
@@ -142,10 +143,12 @@ def _nominatim_request(params: dict, user_agent: str) -> list:
             return json.loads(response.read().decode('utf-8'))
     # Everything the network and the response can throw at us: URLError, HTTPError
     # and TimeoutError all subclass OSError, and a truncated or non-JSON body
-    # raises the other two. A bug in this function (a bad params dict, say) is not
-    # in that set and should surface as a traceback rather than quietly becoming
-    # one more unmapped school.
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    # raises the other two. http.client.HTTPException (parent of IncompleteRead,
+    # raised on a truncated HTTP body) subclasses Exception rather than OSError,
+    # so it needs listing separately. A bug in this function (a bad params dict,
+    # say) is not in that set and should surface as a traceback rather than
+    # quietly becoming one more unmapped school.
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, http.client.HTTPException) as exc:
         print(f'    request failed: {exc}', file=sys.stderr)
         return []
     finally:
