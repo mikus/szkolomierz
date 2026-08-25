@@ -11,6 +11,7 @@ has 2,477.
 """
 
 TERYT_LENGTH = 7
+TERYT_LENGTH_NO_LEADING_ZERO = 6
 LEVEL_WIDTHS = {'voivodeship': 2, 'powiat': 4, 'gmina': 6}
 
 
@@ -18,12 +19,18 @@ def normalise_teryt(value) -> str:
     """A 7-character zero-padded TERYT code. Raises on anything else.
 
     Spreadsheet round-trips turn 0401011 into 401011 or 401011.0, so padding is
-    load-bearing rather than defensive.
+    load-bearing rather than defensive. Valid inputs are exactly 6 or 7 digits: 7
+    normally, 6 when a spreadsheet ate the leading zero of voivodeships 02/04/06/08.
+    Anything shorter is not a truncated TERYT code, it is a different code
+    entirely (e.g. a 2-digit voivodeship code on its own), and padding it would
+    silently form a reference group for a region that does not exist.
     """
     if value is None:
         raise ValueError('TERYT code is missing')
     text = str(value).strip().removesuffix('.0')
-    if not text or not text.isdigit() or len(text) > TERYT_LENGTH:
+    if not text or not text.isdigit() or len(text) not in (
+        TERYT_LENGTH_NO_LEADING_ZERO, TERYT_LENGTH
+    ):
         raise ValueError(f'not a TERYT gmina code: {value!r}')
     return text.zfill(TERYT_LENGTH)
 

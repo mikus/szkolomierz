@@ -29,6 +29,23 @@ def test_rejects_anything_that_is_not_a_teryt_code(bad):
         normalise_teryt(bad)
 
 
+def test_rejects_a_code_shorter_than_a_voivodeship_missing_its_leading_zero():
+    # '14' is a bare voivodeship code, not a truncated gmina code. Padding it
+    # would silently form its own '00...'-style reference group.
+    with pytest.raises(ValueError):
+        normalise_teryt('14')
+
+
+def test_rejects_a_code_longer_than_seven_digits():
+    with pytest.raises(ValueError):
+        normalise_teryt('142506312')
+
+
+def test_a_genuine_six_digit_code_still_pads_correctly():
+    # A spreadsheet ate the leading zero of a voivodeship-02/04/06/08 code.
+    assert normalise_teryt('401011') == '0401011'
+
+
 def test_voivodeship_is_the_first_two_digits():
     assert voivodeship_key('1425063') == '14'
 
