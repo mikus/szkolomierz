@@ -1,4 +1,4 @@
-"""Pure functions extracted from the analysis notebook so they can be unit-tested.
+"""Pure logic shared by the analysis notebook and the standalone scripts.
 
 Only logic with no I/O belongs here. The end-to-end data checks live in
 `scripts/validate_export.py`, which deliberately re-derives everything

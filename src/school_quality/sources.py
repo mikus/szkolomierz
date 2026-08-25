@@ -30,9 +30,9 @@ def local_filename(year: int, month: str) -> str:
 def resolve_school_files(manifest: dict, pins: dict | None = None) -> list[dict]:
     """The pinned school-level file for each year, oldest first.
 
-    Years absent from `pins` are skipped, as are non-school granularities.
-    Raises ValueError if a pinned edition is not in the manifest - better to stop
-    than to quietly fall back to a different edition.
+    Years absent from `pins` are skipped. Raises ValueError if a pinned edition is
+    not in the manifest, or if a pinned year has no school-level entry at all -
+    better to stop than to quietly fall back to a different edition (or to none).
     """
     pins = EDITION_PINS if pins is None else pins
     downloads = manifest['downloads']['E8']
@@ -41,7 +41,7 @@ def resolve_school_files(manifest: dict, pins: dict | None = None) -> list[dict]
         entries = downloads.get(str(year), [])
         months = {e['date'].split('.')[0] for e in entries if e['code'] == 'szkoly'}
         if not months:
-            continue
+            raise ValueError(f'{year}: no school-level ("szkoly") entry in the manifest.')
         if month not in months:
             raise ValueError(
                 f'{year}: pinned edition {month!r} is not published. '

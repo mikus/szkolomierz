@@ -49,9 +49,13 @@ def test_picks_september_when_that_is_the_pin():
     assert [r['month'] for r in resolved] == ['09']
 
 
-def test_ignores_non_school_granularities():
-    resolved = resolve_school_files(MANIFEST, pins={2020: '2020'})
-    assert resolved == []
+def test_raises_when_a_pinned_year_has_no_school_level_entry():
+    # 2020 in MANIFEST only has a 'gminy' (non-school) entry. A pin naming that
+    # year should stop, not silently produce no file for it - the docstring's
+    # "better to stop than to quietly fall back" applies to a missing edition
+    # entirely, not just the wrong one.
+    with pytest.raises(ValueError, match='2020'):
+        resolve_school_files(MANIFEST, pins={2020: '2020'})
 
 
 def test_raises_when_the_pinned_edition_is_absent():
