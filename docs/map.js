@@ -27,8 +27,8 @@
   let map = null;
   let clusterGroup = null;
   // The schools currently on the map: one powiat's worth, joined from a shard
-  // to schools-index.json. Empty until Task 14 wires the focus resolution that
-  // decides WHICH powiat — until then the map draws no markers by design.
+  // to schools-index.json. Filled by renderSchools once the viewport resolves
+  // to a powiat; empty at every zoom above that, where regions are drawn.
   let loadedSchools = [];
   let markersByRspo = new Map();  // rspo -> Leaflet circleMarker
   let schoolSearchIndex = [];     // [{rspo,name,town,gmina,onMap,hay}] for the "find school" box
@@ -83,7 +83,11 @@
   // Map setup
 
   function initMap() {
-    map = L.map('map', { zoomControl: true, preferCanvas: true });
+    // An explicit opening view on Poland. Nothing else sets one now: the old
+    // fitBounds over every marker is gone, and the choropleth needs a viewport
+    // before it can resolve which region is in focus.
+    map = L.map('map', { zoomControl: true, preferCanvas: true, minZoom: 5 })
+      .setView([52.0, 19.2], 6);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: 'abcd',
@@ -196,18 +200,226 @@
     map.addLayer(clusterGroup);
   }
 
-  function plotAllMarkers() {
+  // Markers for one powiat, joined from its shard to schools-index.json for the
+  // identity fields. `powiat` is a 4-DIGIT TERYT — the shard's key.
+  //
+  // Whole-powiat rather than whole-gmina is deliberate: the shard is a powiat,
+  // it is already fetched, and clipping markers at an invisible gmina boundary
+  // would read as missing data at the edge of the screen.
+  async function renderSchools(powiat) {
+    const [shard, index] = await Promise.all([
+      loadShard(powiat, state.metric),
+      loadIndex(),
+      // Not used directly — it primes NAME_CACHE['gmina'] so nameOf() below can
+      // resolve a gmina's display name. Cached, so this costs one fetch a session.
+      loadRegions('gmina'),
+    ]);
+    const level = baselineLevel;
+    const col = index.schools;
+    const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
+
+    loadedSchools = Object.entries(shard.schools).map(([rspo, byLevel]) => {
+      const i = pos.get(rspo);
+      if (i == null) return null;
+      // Never drop a school for having no score at this level — suppression
+      // withholds a large share of them at the gmina baseline. A null score
+      // colours with COLOURS.missing; dropping it would empty half the map.
+      const byMetric = byLevel[level] || {};
+      // The shape scoreOf() already expects: school.scores[metric][subject].score
+      const scores = { [state.metric]: {} };
+      for (const [subject, views] of Object.entries(byMetric)) {
+        // `views.base` is legitimately absent for 15,080 cells, all at gmina
+        // level: suppression is per view, and `base` spans every year so its
+        // minimum reference group is the smallest — a `single_year` view can
+        // survive where `base` does not. Assigning `undefined` here is correct
+        // and safe: scoreOf reads `scores?.[m]?.[s]?.score ?? null`, so the
+        // school colours with COLOURS.missing instead of vanishing. Verified
+        // against rspo 133647, whose gmina/polski cell holds only
+        // `single_year`. Do NOT rewrite this as `views.base.score` — that is
+        // the one form that throws.
+        scores[state.metric][subject] = views.base;
+      }
+      return {
+        rspo: Number(rspo),
+        name: col.name[i],
+        miejscowosc: col.miejscowosc[i],
+        ulica_nr: col.ulica_nr[i],
+        // A DISPLAY NAME, not a TERYT: `s.gmina` is rendered as "gm. Gózd" in
+        // the search typeahead and as a ranking-table column, and is matched
+        // against the ranking query. schools-index.json carries no gmina name,
+        // so it comes from regions-gmina.json via nameOf — which is why the
+        // loadRegions('gmina') above is not optional.
+        gmina: nameOf('gmina', col.teryt[i].slice(0, 6)),
+        is_public: col.is_public[i],
+        n_years: col.n_years[i],
+        lat: col.lat[i],
+        lon: col.lon[i],
+        scores,
+      };
+    }).filter(Boolean);
+
+    if (regionLayer) { map.removeLayer(regionLayer); regionLayer = null; }
+    // buildClusterGroup is not a factory: it assigns clusterGroup and adds
+    // itself to the map. One layer for the whole session; refreshFilters does
+    // the clearing. Calling it per drill-down would leak a layer each time.
+    if (!clusterGroup) buildClusterGroup();
     markersByRspo.clear();
-    const latlngs = [];
     for (const s of loadedSchools) {
       if (s.lat == null || s.lon == null) continue;
       const marker = createMarker(s);
       applyMarkerColour(marker);
       markersByRspo.set(s.rspo, marker);
-      latlngs.push([s.lat, s.lon]);
     }
-    refreshFilters();  // adds visible markers to cluster
-    if (latlngs.length) map.fitBounds(latlngs, { padding: [20, 20] });
+    refreshFilters();          // clears the cluster and adds the ones that pass
+    // No fitBounds here, unlike the whole-voivodeship plot this replaces: the
+    // viewport is what chose this powiat, so refitting would move the map out
+    // from under the user mid-zoom and fire another moveend.
+  }
+
+  // ---------------------------------------------------------------------------
+  // Choropleth: one administrative level per zoom
+  //
+  // Mirrors src/school_quality/zoom.py — the two are checked against each other
+  // in the task's verification step, so keep them in step.
+
+  const ZOOM_THRESHOLDS = [[12, 'gmina'], [10, 'powiat'], [8, 'voivodeship'], [0, 'country']];
+  const CHILD_OF = { country: 'voivodeship', voivodeship: 'powiat', powiat: 'gmina', gmina: null };
+
+  function levelForZoom(zoom) {
+    for (const [min, level] of ZOOM_THRESHOLDS) if (zoom >= min) return level;
+    return 'country';
+  }
+
+  let regionLayer = null;
+
+  // The viewport is the single source of truth for what is in focus. Clicking a
+  // polygon only fits the map to it and the focus follows, so there is no
+  // mutable `focusedRegion` to fall out of step — and no unset state on the
+  // ordinary path where the user scroll-zooms in without clicking anything.
+  //
+  // This is a point-in-polygon test, NOT "nearest published lat/lon". Measured
+  // on the committed geometry: 20 of 380 powiat and 110 of 2,479 gmina centres
+  // fall OUTSIDE their own polygon, because the ring-shaped `ziemski` powiats
+  // and `wiejska` gminas encircle a city — powiat wałbrzyski's centre sits
+  // inside Wałbrzych. Nearest-centre would be a coin flip between the one-gmina
+  // city and the many-gmina ring around it, fetching different geometry and
+  // drawing different children.
+  //
+  // A level's polygons live in its PARENT's file: kraj.json holds the
+  // voivodeships, woj/{teryt2}.json the powiats, pow/{teryt4}.json the gminas.
+  // So resolving a level resolves its parent first; every step is cached.
+  const PARENT_OF = { voivodeship: 'country', powiat: 'voivodeship', gmina: 'powiat' };
+  const KEY_WIDTH = { voivodeship: 2, powiat: 4, gmina: 6 };
+
+  function pointInRing(pt, ring) {
+    let inside = false;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+      const xi = ring[i][0], yi = ring[i][1];
+      const xj = ring[j][0], yj = ring[j][1];
+      if ((yi > pt[1]) !== (yj > pt[1])
+          && pt[0] < ((xj - xi) * (pt[1] - yi)) / (yj - yi) + xi) inside = !inside;
+    }
+    return inside;
+  }
+
+  // Rings after the first are holes — a point inside one is outside the polygon.
+  function featureContains(feature, pt) {
+    const g = feature.geometry;
+    const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+    return polys.some((rings) => pointInRing(pt, rings[0])
+      && !rings.slice(1).some((hole) => pointInRing(pt, hole)));
+  }
+
+  async function focusFor(level) {
+    if (level === 'country') return '';
+    const parent = PARENT_OF[level];
+    const geo = await loadGeometryFor(parent, await focusFor(parent));
+    const c = map.getCenter();
+    const pt = [c.lng, c.lat];
+    const hit = geo.features.find((f) => featureContains(f, pt));
+    if (hit) return hit.properties.JPT_KOD_JE.slice(0, KEY_WIDTH[level]);
+
+    // The centre is over sea or outside Poland — the Baltic at low zoom, or a
+    // pan past the border. Fall back to the nearest published centre so the map
+    // still resolves to something rather than throwing.
+    const regions = await loadRegions(level);
+    let best = '', bestD = Infinity;
+    regions.regions.teryt.forEach((key, i) => {
+      const dLat = regions.regions.lat[i] - c.lat;
+      const dLon = regions.regions.lon[i] - c.lng;
+      const d = dLat * dLat + dLon * dLon;
+      if (d < bestD) { bestD = d; best = key; }
+    });
+    return best;
+  }
+
+  function regionTooltip(regions, i, feature) {
+    if (i == null) return escapeHTML(feature.properties.JPT_NAZWA_ || '');
+    const r = regions.regions;
+    const score = r.score[state.metric][state.subject][i];
+    const rank = r.rank[state.metric][state.subject][i];
+    const lines = [`<strong>${escapeHTML(r.name[i])}</strong>`];
+    if (score == null) {
+      // Say WHICH reason: no schools at all, or no usable comparison group. A
+      // single grey with no explanation is what makes a choropleth feel broken.
+      lines.push(t(r.n_schools[i] === 0 ? 'regionNoSchools' : 'regionTooSmall'));
+    } else {
+      const n = r.n_ranked[state.metric][state.subject];
+      lines.push(`${score.toFixed(2)}${rank == null ? '' : ` (${rank}/${n})`}`);
+      lines.push(t('schoolsInRegion', r.n_schools[i]));
+    }
+    return lines.join('<br>');
+  }
+
+  async function renderLevel() {
+    const level = levelForZoom(map.getZoom());
+    const childLevel = CHILD_OF[level];
+    const focused = await focusFor(level);
+    // Task 15 defines these two; left commented out so this task's browser
+    // check runs without a ReferenceError.
+    // renderBreadcrumb(level, focused);
+    // syncSelectorAvailability(level);
+    if (childLevel === null) { await renderSchools(focused.slice(0, 4)); return; }
+
+    const geo = await loadGeometryFor(level, focused);
+    if (childLevel === 'gmina' && geo.features.length === 1) {
+      // 66 powiats hold exactly one gmina, where drilling in would draw a single
+      // polygon identical to the outline just left. Skip that rung. `focused` is
+      // the 4-digit powiat here, which is exactly what renderSchools takes.
+      await renderSchools(focused);
+      return;
+    }
+
+    const regions = await loadRegions(childLevel);
+    const idx = new Map(regions.regions.teryt.map((key, i) => [key, i]));
+    const width = KEY_WIDTH[childLevel];
+    const { sigma, sigma_centre } = regions.metadata;
+
+    if (regionLayer) map.removeLayer(regionLayer);
+    // Mirror image of renderSchools' region teardown: without it, zooming out
+    // leaves the markers sitting on top of the choropleth.
+    if (clusterGroup) { clusterGroup.clearLayers(); markersByRspo.clear(); loadedSchools = []; }
+    regionLayer = L.geoJSON(geo, {
+      // colourFor with gradient=false and zero anchors is deliberate: regions
+      // use the three flat classes. The continuous ramp stays a school-level
+      // affordance, where p1/p99 are meaningful.
+      style: (feature) => {
+        const key = feature.properties.JPT_KOD_JE.slice(0, width);
+        const i = idx.get(key);
+        const score = i == null ? null : regions.regions.score[state.metric][state.subject][i];
+        return {
+          fillColor: score == null ? COLOURS.missing
+            : colourFor(score, sigma_centre[state.metric][state.subject],
+                        sigma[state.metric][state.subject], 0, 0, false),
+          fillOpacity: 0.75, color: '#666', weight: 1,
+        };
+      },
+      onEachFeature: (feature, layer) => {
+        const key = feature.properties.JPT_KOD_JE.slice(0, width);
+        layer.bindTooltip(regionTooltip(regions, idx.get(key), feature));
+        layer.on('click', () => { map.fitBounds(layer.getBounds()); });
+      },
+    }).addTo(map);
   }
 
   // ---------------------------------------------------------------------------
@@ -249,11 +461,10 @@
     // Guarded because leaflet.markercluster 1.5.3 throws inside refreshClusters
     // when _topClusterLevel is undefined. That happens because the group builds
     // it in _generateInitialClusters(), called from onAdd via whenReady, which
-    // stays deferred while the map has no view — and with zero markers
-    // plotAllMarkers never reaches fitBounds, so the map never gets one. (An
-    // empty group that HAS been added is fine: it returns [] and does not throw.)
-    // Reachable now: no markers until a powiat is focused, and a filter can
-    // still exclude every school in one.
+    // stays deferred while the map has no view. initMap now sets one up front,
+    // so that half no longer applies. (An empty group that HAS been added is
+    // fine: it returns [] and does not throw.) Still reachable: no markers
+    // above powiat zoom, and a filter can still exclude every school in one.
     if (clusterGroup.getLayers().length) clusterGroup.refreshClusters();
   }
 
@@ -838,13 +1049,15 @@
       return;
     }
     buildClusterGroup();
-    plotAllMarkers();
     buildSchoolSearchIndex();
     fillDataYears();
     wireControls();
     syncURL();          // canonicalise the URL (e.g. add resolved threshold)
     openInitialPopup(); // if ?school=… was in the URL
     loadHistoryInBackground();  // popups' year-by-year charts, no button to press
+
+    map.on('zoomend moveend', () => { renderLevel(); });
+    renderLevel();   // the opening view: the events above only fire on interaction
   }
 
   main();

@@ -354,6 +354,17 @@ async function loadGeometryFor(level, focused) {
     geoCache.set(path, fetch(path).then((r) => {
       if (!r.ok) throw new Error(`no geometry at ${path}`);
       return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing. Caching the REJECTION would
+      // hand the same failure to every later caller for this path, and geometry
+      // is fetched from zoomend/moveend — where panning away and back IS the
+      // natural retry. Without this, one transient blip leaves that region
+      // permanently unrendered for the rest of the session, silently. The
+      // caller still sees the error; only the cache entry goes.
+      // loadRegions and loadShard deliberately keep their cached rejections:
+      // they fire rarely and on deliberate action, not on every gesture.
+      geoCache.delete(path);
+      throw e;
     }));
   }
   return geoCache.get(path);
@@ -498,6 +509,19 @@ const I18N = {
     detailWeakestNote: 'Pogrubienie = przedmiot z najniższym wynikiem (ten, który wyznacza composite_min), niezależnie od pokazywanej miary (wynik/pozycja/percentyl).',
     offMap: 'brak lokalizacji',
     rowsShown: (n, total) => `${n} z ${total} szkół`,
+    regionNoSchools: 'Brak szkół z wynikami egzaminu',
+    // Not "the region is small": the score is withheld when the COMPARISON
+    // population is too small — a difference metric needs siblings to measure
+    // against, and an only child is its own reference (suppression.py).
+    regionTooSmall: 'Za mała grupa odniesienia, aby policzyć wynik',
+    // Polish counts in three forms and 312 gminas hold exactly one school, so
+    // a single fixed noun would read "1 szkół" on the tooltip of every one.
+    schoolsInRegion: (n) => {
+      const d = n % 10, dd = n % 100;
+      const word = n === 1 ? 'szkoła'
+        : (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) ? 'szkoły' : 'szkół';
+      return `${n} ${word}`;
+    },
     dataYears: (lo, hi) => `Egzamin ósmoklasisty ${lo}–${hi}`,
     historyLoading: 'Ładowanie szczegółowych danych…',
     historyFailed: 'Nie udało się wczytać danych rocznych — odśwież stronę.',
@@ -605,6 +629,9 @@ const I18N = {
     detailWeakestNote: 'Bold = the subject with the lowest score (the one that sets composite_min), regardless of the dimension shown (score/rank/percentile).',
     offMap: 'no location',
     rowsShown: (n, total) => `${n} of ${total} schools`,
+    regionNoSchools: 'No schools with exam results',
+    regionTooSmall: 'Reference group too small to score',
+    schoolsInRegion: (n) => `${n} ${n === 1 ? 'school' : 'schools'}`,
     dataYears: (lo, hi) => `8th-grade exam ${lo}–${hi}`,
     historyLoading: 'Loading detailed data…',
     historyFailed: 'Could not load the year-by-year data — try refreshing.',
