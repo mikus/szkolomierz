@@ -200,6 +200,11 @@
     map.addLayer(clusterGroup);
   }
 
+  // What renderSchools last put on the map, or null when the markers have been
+  // torn down. renderLevel's region branch resets it, so zooming out and back
+  // into the same powiat rebuilds rather than leaving the map empty.
+  let renderedSchoolsKey = null;
+
   // Markers for one powiat, joined from its shard to schools-index.json for the
   // identity fields. `powiat` is a 4-DIGIT TERYT — the shard's key.
   //
@@ -207,6 +212,17 @@
   // it is already fetched, and clipping markers at an invisible gmina boundary
   // would read as missing data at the edge of the screen.
   async function renderSchools(powiat) {
+    // moveend fires on every pan — including the small autoPan that opening a
+    // popup triggers — and rebuilding the markers destroys the popup the user
+    // just opened. Panning within one powiat is free.
+    //
+    // The key holds everything this function reads to build a marker: the shard
+    // is per-metric (so a metric change must rebuild — that is what makes
+    // onMetricChange's renderLevel() work at this zoom), and baselineLevel
+    // picks which block of that shard is read.
+    const key = `${powiat}|${state.metric}|${baselineLevel}`;
+    if (key === renderedSchoolsKey) return;
+
     const [shard, index] = await Promise.all([
       loadShard(powiat, state.metric),
       loadIndex(),
@@ -271,6 +287,7 @@
       markersByRspo.set(s.rspo, marker);
     }
     refreshFilters();          // clears the cluster and adds the ones that pass
+    renderedSchoolsKey = key;  // set on success only: a failed shard must retry
     // No fitBounds here, unlike the whole-voivodeship plot this replaces: the
     // viewport is what chose this powiat, so refitting would move the map out
     // from under the user mid-zoom and fire another moveend.
@@ -398,7 +415,16 @@
     if (regionLayer) map.removeLayer(regionLayer);
     // Mirror image of renderSchools' region teardown: without it, zooming out
     // leaves the markers sitting on top of the choropleth.
-    if (clusterGroup) { clusterGroup.clearLayers(); markersByRspo.clear(); loadedSchools = []; }
+    if (clusterGroup) {
+      clusterGroup.clearLayers();
+      markersByRspo.clear();
+      loadedSchools = [];
+      // Without this the panel keeps claiming "138 of 138 schools" over a map
+      // that now has none — refreshFilters is what normally updates it, and
+      // this branch clears the cluster itself.
+      updateFilterSummary(0);
+    }
+    renderedSchoolsKey = null;
     regionLayer = L.geoJSON(geo, {
       // colourFor with gradient=false and zero anchors is deliberate: regions
       // use the three flat classes. The continuous ramp stays a school-level
@@ -657,6 +683,12 @@
     syncThresholdSlider();
     recolourAll();
     refreshFilters();
+    // recolourAll/refreshFilters only touch markers. The choropleth is painted
+    // from the region file's per-metric scores, and at school zoom the markers
+    // come from a per-METRIC shard — neither repaints itself, so without this
+    // the map silently keeps showing the metric the user just switched away
+    // from. renderSchools' key includes state.metric, so it refetches.
+    renderLevel();
     // History (sparkline + table) comes from the per-metric file, so switching
     // metric needs the new metric's file. Reopen right away with whatever is
     // cached; the background fetch reopens again once the new file lands.
@@ -670,6 +702,7 @@
     syncURL();
     recolourAll();
     refreshFilters();
+    renderLevel();   // repaint the choropleth for the new subject; see onMetricChange
     if (state.selectedSchool != null) reopenSelectedPopup();
   }
 
