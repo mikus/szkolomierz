@@ -341,6 +341,43 @@
     return 'country';
   }
 
+  // The lowest zoom at which levelForZoom() returns `level` — i.e. the rung at
+  // which that level's own children are drawn. Read back out of ZOOM_THRESHOLDS
+  // rather than hardcoded, so retuning the ladder cannot leave this behind.
+  function minZoomForLevel(level) {
+    const row = ZOOM_THRESHOLDS.find(([, l]) => l === level);
+    return row ? row[0] : 0;
+  }
+
+  // Fit the map to a region, but never below the rung that region belongs to.
+  //
+  // Plain fitBounds can land BELOW the level just clicked. Mazowieckie and
+  // Wielkopolskie are large enough that their whole bounding box only fits at
+  // zoom 7 in a 960px viewport — one rung under the voivodeship threshold of 8 —
+  // so the map redrew the COUNTRY choropleth and the breadcrumb reset to
+  // "Polska". Clicking a region put you back where you started, and Mazowieckie
+  // is the entire shipped system. Measured at 960x679: 2 of 16 voivodeships and
+  // 1 of Mazowieckie's 42 powiats; a narrower viewport makes it worse.
+  //
+  // The target zoom is computed with getBoundsZoom BEFORE moving, not read back
+  // from getZoom() afterwards: an animated fitBounds has not applied the new
+  // zoom yet when it returns, so checking after the fact would test the old one.
+  function fitRegion(bounds, level, feature) {
+    const floor = minZoomForLevel(level);
+    if (map.getBoundsZoom(bounds) >= floor) { map.fitBounds(bounds); return; }
+    // Clamping means centring on the bounding box, and for a RING-shaped region
+    // that centre lies in the hole — inside a different region. Focus is derived
+    // by point-in-polygon from the map centre, so zooming in there would resolve
+    // to the enclosed city rather than the ring: clicking "powiat bialostocki"
+    // would focus m. Bialystok. Measured at 960x679, 2 of the 14 powiats that
+    // clamp are like this (bialostocki, rzeszowski); no voivodeship is. For
+    // those, fall back to plain fitBounds — one rung out, which is what happened
+    // before this clamp existed, rather than the wrong region entirely.
+    const c = bounds.getCenter();
+    if (feature && !featureContains(feature, [c.lng, c.lat])) { map.fitBounds(bounds); return; }
+    map.setView(c, floor);
+  }
+
   let regionLayer = null;
 
   // The viewport is the single source of truth for what is in focus. Clicking a
@@ -536,7 +573,7 @@
     if (!level) return;
     const geo = await loadGeometryFor(PARENT_OF[level], key);
     const feature = geo.features.find((f) => f.properties.JPT_KOD_JE.startsWith(key));
-    if (feature) map.fitBounds(L.geoJSON(feature).getBounds());
+    if (feature) fitRegion(L.geoJSON(feature).getBounds(), level, feature);
   }
 
   async function renderLevel() {
@@ -604,7 +641,9 @@
       onEachFeature: (feature, layer) => {
         const key = feature.properties.JPT_KOD_JE.slice(0, width);
         layer.bindTooltip(regionTooltip(regions, idx.get(key), feature));
-        layer.on('click', () => { map.fitBounds(layer.getBounds()); });
+        // childLevel, not level: these polygons ARE the children being drawn,
+        // so clicking one must land at the rung where ITS children appear.
+        layer.on('click', () => { fitRegion(layer.getBounds(), childLevel, feature); });
       },
     }).addTo(map);
   }
