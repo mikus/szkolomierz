@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
-"""Geocode school addresses to latitude/longitude using Nominatim (OpenStreetMap).
+"""Geocode schools to latitude/longitude, via RSPO id first, Nominatim as fallback.
 
 This script is meant to be run occasionally — only when new schools appear or
-addresses change. Geocoding is slow (Nominatim rate-limits to ~1 request/second)
-and the result is stable, so it is cached in a CSV that the notebook reads.
+addresses change. Each school's RSPO id is looked up directly against the RSPO
+register; only a school with no usable RSPO geotag falls through to Nominatim
+address geocoding, which is slower (rate-limited to ~1 request/second) and
+depends on the address text. The result is stable, so it is cached in a CSV
+that the notebook reads.
 
 Workflow
 --------
@@ -23,7 +26,9 @@ Usage
 -----
 Nominatim requires a contact (email or URL) in the User-Agent. Supply your own
 via the NOMINATIM_CONTACT env var (or the --contact flag); it is never stored in
-this repo. The script exits with an error if no contact is set.
+this repo. If no contact is set, the script warns and skips the Nominatim
+fallback (those schools are counted as unmapped) — RSPO lookups need no contact
+and run regardless.
 
     NOMINATIM_CONTACT=you@example.com uv run python scripts/geocode_schools.py
     NOMINATIM_CONTACT=you@example.com uv run python scripts/geocode_schools.py --limit 50  # only 50 new (testing)
@@ -53,6 +58,9 @@ SCHOOLS_BASE_JSON = PROJECT_ROOT / 'docs' / 'data' / 'schools-base.json'
 COORDS_CSV = PROJECT_ROOT / 'data' / 'school_coords.csv'
 UNMAPPED_CSV = PROJECT_ROOT / 'data' / 'school_coords_unmapped.csv'
 
+sys.path.insert(0, str(PROJECT_ROOT / 'src'))
+from school_quality.rspo import geotag_from_payload, rspo_detail_url
+
 # Threshold for "suspicious shared-coordinate group". With the new strategy
 # we expect no shared coords at all — except for genuine cases (a school
 # complex at one address). 3+ at the same point is unlikely to be that and
@@ -62,12 +70,11 @@ SHARED_COORD_WARN_THRESHOLD = 3
 NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 REQUEST_DELAY_SECONDS = 1.1  # Nominatim usage policy: max 1 request/second
 
-# Mazowieckie voivodeship bounding box (lon_min, lat_min, lon_max, lat_max).
-# Source: rough envelope around the official borders.
-MAZ_LON_MIN, MAZ_LAT_MIN = 19.2, 51.0
-MAZ_LON_MAX, MAZ_LAT_MAX = 23.2, 53.6
+# Poland bounding box (lon_min, lat_min, lon_max, lat_max), generously rounded.
+POLAND_LON_MIN, POLAND_LAT_MIN = 14.0, 48.9
+POLAND_LON_MAX, POLAND_LAT_MAX = 24.3, 55.0
 # Nominatim viewbox format: "left,top,right,bottom" (west_lon,north_lat,east_lon,south_lat).
-MAZ_VIEWBOX = f'{MAZ_LON_MIN},{MAZ_LAT_MAX},{MAZ_LON_MAX},{MAZ_LAT_MIN}'
+POLAND_VIEWBOX = f'{POLAND_LON_MIN},{POLAND_LAT_MAX},{POLAND_LON_MAX},{POLAND_LAT_MIN}'
 
 # Street prefixes the OKE data tacks on (e.g. "ul. Marszałkowska 1"). Nominatim
 # fares better when we either drop them or also try a stripped form.
@@ -101,22 +108,25 @@ def normalize_address(miejscowosc: str | None, ulica_nr: str | None) -> str:
     return '|'.join(p.lower() for p in parts)
 
 
-def resolve_user_agent(cli_contact: str | None) -> str:
+def resolve_user_agent(cli_contact: str | None) -> str | None:
     """Build the Nominatim User-Agent from a runtime-supplied contact.
 
     Contact precedence: --contact flag, then the NOMINATIM_CONTACT env var.
-    Exits with a clear message if neither is set, because Nominatim rejects
-    requests that lack a valid contact.
+    Returns None and warns if neither is set — RSPO is tried first now, so a
+    run that never falls through to Nominatim should not abort for want of a
+    contact it will not use. `geocode_address` is skipped when this is None.
     """
     contact = (cli_contact or os.environ.get(CONTACT_ENV_VAR) or '').strip()
     if not contact:
-        sys.exit(
-            f'ERROR: no Nominatim contact set. Nominatim requires a valid contact '
-            f'(email or URL) and rejects requests without one.\n'
+        print(
+            f'WARNING: no Nominatim contact set. Schools not resolved via RSPO will '
+            f'be skipped by the address geocoder and counted as unmapped.\n'
             f'  Pass it inline:   {CONTACT_ENV_VAR}=you@example.com uv run python scripts/geocode_schools.py\n'
             f'  Or via the flag:  uv run python scripts/geocode_schools.py --contact you@example.com\n'
-            f'See the README "Geocoding" section for details.'
+            f'See the README "Geocoding" section for details.',
+            file=sys.stderr,
         )
+        return None
     return USER_AGENT_TEMPLATE.format(contact=contact)
 
 
@@ -130,8 +140,8 @@ def _strip_street_prefix(street: str) -> str:
     return s
 
 
-def _in_mazowieckie(lat: float, lon: float) -> bool:
-    return MAZ_LAT_MIN <= lat <= MAZ_LAT_MAX and MAZ_LON_MIN <= lon <= MAZ_LON_MAX
+def _in_poland(lat: float, lon: float) -> bool:
+    return POLAND_LAT_MIN <= lat <= POLAND_LAT_MAX and POLAND_LON_MIN <= lon <= POLAND_LON_MAX
 
 
 def _nominatim_request(params: dict, user_agent: str) -> list:
@@ -155,22 +165,45 @@ def _nominatim_request(params: dict, user_agent: str) -> list:
         time.sleep(REQUEST_DELAY_SECONDS)
 
 
-def geocode_address(
-    miejscowosc: str | None, ulica_nr: str | None, user_agent: str
-) -> tuple[float, float] | None:
-    """Geocode a single address via Nominatim, biased to Mazowieckie.
+RSPO_DELAY_SECONDS = 0.15  # measured ~0.09s/request; this leaves headroom
 
-    Strategy (try in order, accept first result that lands inside Mazowieckie):
-      1. Structured query: street + city + state=Mazowieckie + country=Polska.
-      2. Free-text with viewbox-bounded Mazowieckie: "<street>, <city>, Mazowieckie".
+
+def _rspo_geotag(rspo: int) -> tuple[float, float] | None:
+    """One RSPO detail lookup. Returns None on any failure - the caller falls
+    back to the address geocoder, so a miss must never abort the run."""
+    request = Request(rspo_detail_url(rspo), headers={'User-Agent': 'compare-primary-schools/1.0'})
+    try:
+        with urlopen(request, timeout=20) as response:
+            return geotag_from_payload(json.loads(response.read().decode('utf-8')))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, http.client.HTTPException) as exc:
+        print(f'    RSPO lookup failed for {rspo}: {exc}', file=sys.stderr)
+        return None
+    finally:
+        time.sleep(RSPO_DELAY_SECONDS)
+
+
+def geocode_address(
+    miejscowosc: str | None, ulica_nr: str | None, user_agent: str | None
+) -> tuple[float, float] | None:
+    """Geocode a single address via Nominatim, bounded to Poland.
+
+    Strategy (try in order, accept first result that lands inside Poland):
+      1. Structured query: street + city + country=Polska.
+      2. Free-text with viewbox-bounded Poland: "<street>, <city>, Polska".
       3. Free-text with original prefixed street ("ul. X"), still viewbox-bounded.
 
     There is **no** fallback to a town-only query. If no street-level match is
-    found within Mazowieckie, return None — the school will appear in the
+    found within Poland, return None — the school will appear in the
     ranking but stay off the map. Better than planting it on a city centroid
     (the previous behaviour silently put 773 of 1,720 schools on top of each
     other at the Pałac Kultury location and similar).
+
+    `user_agent` is None when no Nominatim contact was configured; in that
+    case this is skipped entirely (returns None) rather than sending
+    requests Nominatim would reject.
     """
+    if user_agent is None:
+        return None
     miejscowosc = (miejscowosc or '').strip()
     ulica_raw = (ulica_nr or '').strip()
     if not miejscowosc or not ulica_raw:
@@ -185,7 +218,6 @@ def geocode_address(
         {
             'street': street_clean,
             'city': miejscowosc,
-            'state': 'województwo mazowieckie',
             'country': 'Polska',
             'countrycodes': 'pl',
             'format': 'json',
@@ -193,14 +225,17 @@ def geocode_address(
         }
     )
 
-    # 2. Free-text, viewbox-bounded to Mazowieckie.
+    # 2. Free-text, viewbox-bounded to Poland. No region name in the query text:
+    #    the school may be in any of the 16 voivodeships, and asserting one it
+    #    isn't in would degrade Nominatim's text ranking rather than help it.
+    #    countrycodes=pl + POLAND_VIEWBOX (below) do the actual restricting.
     queries.append(
         {
-            'q': f'{street_clean}, {miejscowosc}, województwo mazowieckie, Polska',
+            'q': f'{street_clean}, {miejscowosc}, Polska',
             'format': 'json',
             'limit': '1',
             'countrycodes': 'pl',
-            'viewbox': MAZ_VIEWBOX,
+            'viewbox': POLAND_VIEWBOX,
             'bounded': '1',
         }
     )
@@ -209,11 +244,11 @@ def geocode_address(
     if street_clean != ulica_raw:
         queries.append(
             {
-                'q': f'{ulica_raw}, {miejscowosc}, województwo mazowieckie, Polska',
+                'q': f'{ulica_raw}, {miejscowosc}, Polska',
                 'format': 'json',
                 'limit': '1',
                 'countrycodes': 'pl',
-                'viewbox': MAZ_VIEWBOX,
+                'viewbox': POLAND_VIEWBOX,
                 'bounded': '1',
             }
         )
@@ -227,10 +262,10 @@ def geocode_address(
             lon = float(data[0]['lon'])
         except (KeyError, ValueError, TypeError):
             continue
-        if not _in_mazowieckie(lat, lon):
-            # The query had a Mazowieckie hint but the chosen result drifted
-            # outside the bbox (this can happen with `state=` if Nominatim
-            # treats it as a soft preference). Reject and try next strategy.
+        if not _in_poland(lat, lon):
+            # The chosen result drifted outside the Poland bbox even though the
+            # query was bounded to it (Nominatim's viewbox is a soft bias, not
+            # a hard filter). Reject and try next strategy.
             continue
         return lat, lon
 
@@ -275,7 +310,7 @@ def _gmaps_url(miejscowosc: str, ulica_nr: str) -> str:
     """A Google Maps search URL for the school address — clickable in the CSV."""
     from urllib.parse import quote_plus
 
-    parts = [p for p in [ulica_nr, miejscowosc, 'województwo mazowieckie', 'Polska'] if p]
+    parts = [p for p in [ulica_nr, miejscowosc, 'Polska'] if p]
     q = quote_plus(', '.join(parts))
     return f'https://www.google.com/maps/search/?api=1&query={q}'
 
@@ -337,7 +372,11 @@ def report_shared_coords(rows: list[dict], warn_threshold: int) -> list[tuple]:
         for coord, rspos in by_coord.items()
         if len(rspos) >= warn_threshold
     ]
-    groups.sort(reverse=True)
+    # Sort by count only: coord/rspos are not comparable across groups where one
+    # side came from the CSV cache (str lat/lon) and the other was freshly
+    # geocoded this run (float lat/lon) - sorting the full tuple crashes on that
+    # mismatch as soon as two groups tie on count.
+    groups.sort(key=lambda g: g[0], reverse=True)
     return groups
 
 
@@ -431,7 +470,7 @@ def _assemble_rows(result_by_rspo: dict[int, dict], ordered_rspo: list[int]) -> 
 
 
 def run_geocoding_loop(
-    plan: GeocodingPlan, user_agent: str, save_path: Path, save_every: int = 50
+    plan: GeocodingPlan, user_agent: str | None, save_path: Path, save_every: int = 50
 ) -> GeocodingResult:
     """Geocode every row in `plan.to_geocode`, saving the CSV periodically.
 
@@ -462,7 +501,9 @@ def run_geocoding_loop(
             f'  [{index:>4,}/{n_total:,} ({pct:5.1f}%)] {label} rspo={rspo}: '
             f'{school["miejscowosc"]}, {school["ulica_nr"]}'
         )
-        coords = geocode_address(school['miejscowosc'], school['ulica_nr'], user_agent)
+        coords = _rspo_geotag(school['rspo'])
+        if coords is None:
+            coords = geocode_address(school['miejscowosc'], school['ulica_nr'], user_agent)
         if action == 'update':
             updated_count += 1
         else:

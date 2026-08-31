@@ -68,6 +68,8 @@ def test_url_is_built_from_the_asset_base():
     assert resolved[0]['url'].endswith('/assets/data/CSV/E8/2026/E8_2026_szkoly_07.xlsx')
 
 
-def test_default_pins_cover_every_year_with_school_level_data():
-    assert EDITION_PINS == {2021: '07', 2022: '09', 2023: '06', 2024: '07',
-                            2025: '07', 2026: '07'}
+def test_default_pins_are_the_target_editions():
+    # September wherever it is published: those files are score revisions, and
+    # the revisions are corrections. 2026 has only a July edition so far.
+    assert EDITION_PINS == {2021: '09', 2022: '09', 2023: '09', 2024: '09',
+                            2025: '09', 2026: '07'}

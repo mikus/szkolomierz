@@ -15,7 +15,7 @@ MANIFEST_URL = 'https://mapa.wyniki.edu.pl/MapaEgzaminow/assets/metadata/metadat
 ASSET_BASE = 'https://mapa.wyniki.edu.pl/MapaEgzaminow/assets/data/CSV'
 
 # year -> month part of the manifest's `date` field.
-EDITION_PINS = {2021: '07', 2022: '09', 2023: '06', 2024: '07', 2025: '07', 2026: '07'}
+EDITION_PINS = {2021: '09', 2022: '09', 2023: '09', 2024: '09', 2025: '09', 2026: '07'}
 
 
 def remote_filename(year: int, month: str) -> str:

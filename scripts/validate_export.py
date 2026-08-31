@@ -101,7 +101,6 @@ TIE_EPS = 1e-9
 
 # Source-xlsx column names (after normalisation), needed to read the SAS sheet.
 N_COL, MEAN_COL, MEDIAN_COL = 'liczba zdajacych', 'wynik sredni (%)', 'mediana (%)'
-SCOPE_VOIVODESHIP = 'Mazowieckie'  # mirrors the notebook; both drop when spec step 3 lands
 
 
 # ── xlsx reading (independent re-implementation of the notebook loader) ───────
@@ -187,17 +186,9 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
         per_file_frames.append(pd.DataFrame(column_data))
 
     df = pd.concat(per_file_frames, ignore_index=True)
-    scope_mask = df['wojewodztwo'] == SCOPE_VOIVODESHIP
-    if not scope_mask.any():
-        sys.exit(
-            f'No rows match SCOPE_VOIVODESHIP={SCOPE_VOIVODESHIP!r}. '
-            f'wojewodztwo values seen: {sorted(df["wojewodztwo"].unique())}. '
-            f'Has the spelling drifted from the source xlsx?'
-        )
     keep = df['rspo'].notna() & df['n_polski'].notna() & (df['n_polski'] > 0)
     for subject in CORE_SUBJECTS:
         keep &= df[f'mean_{subject}'].notna() & df[f'median_{subject}'].notna()
-    keep &= scope_mask
     df = df[keep]
 
     rows = []
