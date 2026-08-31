@@ -275,35 +275,68 @@ function subjectLegendHTML(subjects) {
 // for one whole-country file and wrong for 1,520 per-powiat shards. Each cache
 // below is therefore keyed by what makes its payload distinct.
 
+// regionCache and shardCache hold the PROMISE, not the resolved payload, for the
+// same reason geoCache does: zoomend and moveend both fire in one interaction, so
+// the same key can be requested twice before the first fetch lands. Caching the
+// resolved value would let both requests through — 1.68 MB for a powiat shard,
+// 1.59 MB for regions-gmina.json.
 let indexData = null, scaleData = null;
-const regionCache = new Map();   // level    -> payload
-const shardCache  = new Map();   // "1425|mean" -> payload
+const regionCache = new Map();   // level       -> Promise<payload>
+const shardCache  = new Map();   // "1425|mean" -> Promise<payload>
+const NAME_CACHE  = new Map();   // level       -> Map(teryt -> name)
 
 async function loadIndex() {
   if (indexData) return indexData;
-  indexData = await (await fetch('data/schools-index.json')).json();
+  const res = await fetch('data/schools-index.json');
+  if (!res.ok) throw new Error(`schools-index.json: HTTP ${res.status}`);
+  indexData = await res.json();
   return indexData;
 }
 
 async function loadScale() {
   if (scaleData) return scaleData;
-  scaleData = await (await fetch('data/scale.json')).json();
+  const res = await fetch('data/scale.json');
+  if (!res.ok) throw new Error(`scale.json: HTTP ${res.status}`);
+  scaleData = await res.json();
   return scaleData;
 }
 
 async function loadRegions(level) {
-  if (regionCache.has(level)) return regionCache.get(level);
-  const payload = await (await fetch('data/regions-' + level + '.json')).json();
-  regionCache.set(level, payload);
-  return payload;
+  if (!regionCache.has(level)) {
+    regionCache.set(level, fetch('data/regions-' + level + '.json').then((r) => {
+      if (!r.ok) throw new Error(`regions-${level}.json: HTTP ${r.status}`);
+      return r.json();
+    }).then((payload) => {
+      const names = new Map();
+      const { teryt, name } = payload.regions;
+      for (let i = 0; i < teryt.length; i++) names.set(teryt[i], name[i]);
+      NAME_CACHE.set(level, names);
+      return payload;
+    }));
+  }
+  return regionCache.get(level);
+}
+
+// Region display names, filled by loadRegions as each level lands. Here rather
+// than in map.js because ranking.html loads only app.js and ranking.js.
+// schools-index.json carries no gmina name — it has the TERYT code — so a
+// school's gmina label ("gm. Gózd" in the typeahead, a ranking column, and the
+// text the ranking query matches against) resolves through this. Falls back to
+// the code, so a name that has not loaded yet degrades rather than blanks.
+function nameOf(level, teryt) {
+  const m = NAME_CACHE.get(level);
+  return (m && m.get(teryt)) || teryt;
 }
 
 async function loadShard(powiat, metric) {
   const key = powiat + '|' + metric;
-  if (shardCache.has(key)) return shardCache.get(key);
-  const payload = await (await fetch('data/powiat/' + powiat + '-' + metric + '.json')).json();
-  shardCache.set(key, payload);
-  return payload;
+  if (!shardCache.has(key)) {
+    shardCache.set(key, fetch('data/powiat/' + powiat + '-' + metric + '.json').then((r) => {
+      if (!r.ok) throw new Error(`${powiat}-${metric}.json: HTTP ${r.status}`);
+      return r.json();
+    }));
+  }
+  return shardCache.get(key);
 }
 
 // Each geometry file is named for the region in view but contains its CHILDREN,

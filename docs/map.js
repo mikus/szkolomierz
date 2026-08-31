@@ -246,10 +246,14 @@
   function recolourAll() {
     for (const marker of markersByRspo.values()) applyMarkerColour(marker);
     // Cluster colours redraw when the cluster icons regenerate; force it.
-    // Guarded because markercluster 1.9.4 throws inside refreshClusters when the
-    // group is empty (it reaches for a top cluster level that was never built),
-    // and an empty group is now reachable: no markers until a powiat is focused,
-    // and a filter can still exclude every school in one.
+    // Guarded because leaflet.markercluster 1.5.3 throws inside refreshClusters
+    // when _topClusterLevel is undefined. That happens because the group builds
+    // it in _generateInitialClusters(), called from onAdd via whenReady, which
+    // stays deferred while the map has no view — and with zero markers
+    // plotAllMarkers never reaches fitBounds, so the map never gets one. (An
+    // empty group that HAS been added is fine: it returns [] and does not throw.)
+    // Reachable now: no markers until a powiat is focused, and a filter can
+    // still exclude every school in one.
     if (clusterGroup.getLayers().length) clusterGroup.refreshClusters();
   }
 

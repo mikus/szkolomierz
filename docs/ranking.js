@@ -546,9 +546,9 @@
   // above the table and guessed it was related.
 
   async function ensureMetricLoaded() {
-    // No-op until Task 14: the per-metric whole-country files are gone and their
-    // replacement, loadShard, needs a powiat that nothing computes until Task
-    // 14's focus resolution lands. Not an oversight.
+    // No-op until Task 16, which owns this page: the per-metric whole-country
+    // files are gone, and their replacement, loadShard, is per-powiat — so it
+    // needs the region that Task 16's level control selects. Not an oversight.
   }
 
   // Fetch in the background and re-render when it lands. Never awaited by a
