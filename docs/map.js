@@ -30,8 +30,13 @@
   // to schools-index.json. Filled by renderSchools once the viewport resolves
   // to a powiat; empty at every zoom above that, where regions are drawn.
   let loadedSchools = [];
-  let markersByRspo = new Map();  // rspo -> Leaflet circleMarker
-  let schoolSearchIndex = [];     // [{rspo,name,town,gmina,onMap,hay}] for the "find school" box
+  let markersByRspo = new Map();  // rspo -> Leaflet circleMarker (one powiat's worth)
+  let schoolSearchIndex = [];     // [{rspo,name,town,gminaKey,onMap,hay}] for the "find school" box
+  let indexPos = new Map();       // rspo -> row in schools-index.json (all 12,889)
+  // A school whose popup should open as soon as its powiat's markers exist. The
+  // school being searched for is usually in a powiat that is not loaded yet, so
+  // opening cannot happen in the same turn as the request.
+  let pendingSchool = null;
   let historyData = null;         // metric-keyed cache, filled in the background
   let historyError = false;       // last background fetch failed
 
@@ -43,6 +48,11 @@
     state.metric   = resolvePref('metric',  METRICS);
     state.subject  = resolvePref('subject', SUBJECTS);
     state.lang     = resolvePref('lang',    ['pl', 'en']);
+    // Not on `state`: scoreExtent/scaleFor live in app.js and cannot see it, and
+    // ranking.js colours from the same binding. app.js is plain global scope, so
+    // assigning it from here works. resolvePref rejects anything outside the
+    // list, so a stale or hand-edited value falls back to DEFAULTS.baseline.
+    baselineLevel = resolvePref('baseline', REFERENCE_LEVEL_KEYS);
 
     const url = getURLParams();
     const pub = url.get('public');
@@ -70,6 +80,7 @@
     setURLParams({
       metric:     state.metric  !== DEFAULTS.metric  ? state.metric  : null,
       subject:    state.subject !== DEFAULTS.subject ? state.subject : null,
+      baseline:   baselineLevel !== DEFAULTS.baseline ? baselineLevel : null,
       public:     state.publicFilter !== 'all' ? state.publicFilter : null,
       threshold:  thresholdActive ? state.threshold : null,
       min_years:  state.minYears > 1 ? state.minYears : null,
@@ -82,12 +93,16 @@
   // ---------------------------------------------------------------------------
   // Map setup
 
+  // The opening view on Poland. Nothing else sets one: the old fitBounds over
+  // every marker is gone, and the choropleth needs a viewport before it can
+  // resolve which region is in focus. Also where the breadcrumb's "Polska" root
+  // returns to — there is no country polygon to fitBounds against.
+  const POLAND_CENTRE = [52.0, 19.2];
+  const POLAND_ZOOM = 6;
+
   function initMap() {
-    // An explicit opening view on Poland. Nothing else sets one now: the old
-    // fitBounds over every marker is gone, and the choropleth needs a viewport
-    // before it can resolve which region is in focus.
     map = L.map('map', { zoomControl: true, preferCanvas: true, minZoom: 5 })
-      .setView([52.0, 19.2], 6);
+      .setView(POLAND_CENTRE, POLAND_ZOOM);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
       subdomains: 'abcd',
@@ -204,6 +219,8 @@
   // torn down. renderLevel's region branch resets it, so zooming out and back
   // into the same powiat rebuilds rather than leaving the map empty.
   let renderedSchoolsKey = null;
+  // The key of the build currently in flight, if any. See the guard below.
+  let renderingSchoolsKey = null;
 
   // Markers for one powiat, joined from its shard to schools-index.json for the
   // identity fields. `powiat` is a 4-DIGIT TERYT — the shard's key.
@@ -221,13 +238,35 @@
     // onMetricChange's renderLevel() work at this zoom), and baselineLevel
     // picks which block of that shard is read.
     const key = `${powiat}|${state.metric}|${baselineLevel}`;
-    if (key === renderedSchoolsKey) return;
+    // Two halves, and the second is not redundant. One gesture fires BOTH
+    // zoomend and moveend, so renderLevel runs several times over, and every one
+    // of those runs reaches here before any of them has finished — so the
+    // rendered-key check alone lets them all through and each rebuilds the same
+    // markers. Measured: one search jump into a fresh powiat produced three full
+    // 179-marker rebuilds. That is not merely wasteful. Tearing a marker down
+    // closes its popup, so the second rebuild closed the popup the first had
+    // just opened for the searched-for school, and the popupclose handler then
+    // cleared state.selectedSchool and dropped ?school= from the URL.
+    if (key === renderedSchoolsKey || key === renderingSchoolsKey) return;
+    renderingSchoolsKey = key;
+    try {
+      await buildSchools(powiat, key);
+    } finally {
+      // Cleared even when the shard fetch throws, so panning away and back can
+      // retry; renderedSchoolsKey stays unset in that case.
+      renderingSchoolsKey = null;
+    }
+  }
 
+  async function buildSchools(powiat, key) {
     const [shard, index] = await Promise.all([
       loadShard(powiat, state.metric),
       loadIndex(),
-      // Not used directly — it primes NAME_CACHE['gmina'] so nameOf() below can
-      // resolve a gmina's display name. Cached, so this costs one fetch a session.
+      // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
+      // nameOf() resolve a gmina's display name. This is the only place that
+      // file is fetched, and two callers depend on it having been: the
+      // breadcrumb's last segment at school zoom, and the "gm. …" line in the
+      // find-a-school typeahead. Cached, so it costs one fetch a session.
       loadRegions('gmina'),
     ]);
     const level = baselineLevel;
@@ -260,12 +299,6 @@
         name: col.name[i],
         miejscowosc: col.miejscowosc[i],
         ulica_nr: col.ulica_nr[i],
-        // A DISPLAY NAME, not a TERYT: `s.gmina` is rendered as "gm. Gózd" in
-        // the search typeahead and as a ranking-table column, and is matched
-        // against the ranking query. schools-index.json carries no gmina name,
-        // so it comes from regions-gmina.json via nameOf — which is why the
-        // loadRegions('gmina') above is not optional.
-        gmina: nameOf('gmina', col.teryt[i].slice(0, 6)),
         is_public: col.is_public[i],
         n_years: col.n_years[i],
         lat: col.lat[i],
@@ -288,6 +321,7 @@
     }
     refreshFilters();          // clears the cluster and adds the ones that pass
     renderedSchoolsKey = key;  // set on success only: a failed shard must retry
+    openPendingSchool();       // a search or ?school= that was waiting on this powiat
     // No fitBounds here, unlike the whole-voivodeship plot this replaces: the
     // viewport is what chose this powiat, so refitting would move the map out
     // from under the user mid-zoom and fire another moveend.
@@ -370,6 +404,25 @@
     return best;
   }
 
+  // How many regions share each parent, per level. The suppression gate has two
+  // arms (scripts/validate_export.py check_reference_gate): a region whose parent
+  // holds fewer than MIN_REFERENCE_N schools, and a region that is its parent's
+  // ONLY CHILD — compared against itself. They are different facts about a
+  // region and the tooltip must not conflate them; on today's data every
+  // suppressed cell is the second kind, so a single "too small" message is
+  // wrong for all of them. Derived from regions.parent, which ships in the file.
+  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
+
+  function siblingCountsFor(regions) {
+    const level = regions.metadata.level;
+    if (!siblingCache.has(level)) {
+      const counts = new Map();
+      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
+      siblingCache.set(level, counts);
+    }
+    return siblingCache.get(level);
+  }
+
   function regionTooltip(regions, i, feature) {
     if (i == null) return escapeHTML(feature.properties.JPT_NAZWA_ || '');
     const r = regions.regions;
@@ -377,9 +430,12 @@
     const rank = r.rank[state.metric][state.subject][i];
     const lines = [`<strong>${escapeHTML(r.name[i])}</strong>`];
     if (score == null) {
-      // Say WHICH reason: no schools at all, or no usable comparison group. A
-      // single grey with no explanation is what makes a choropleth feel broken.
-      lines.push(t(r.n_schools[i] === 0 ? 'regionNoSchools' : 'regionTooSmall'));
+      // Say WHICH reason: no schools at all, nothing to compare against, or no
+      // usable comparison group. A single grey with no explanation is what makes
+      // a choropleth feel broken — and a wrong explanation is worse than none.
+      const onlyChild = siblingCountsFor(regions).get(r.parent[i]) <= 1;
+      lines.push(t(r.n_schools[i] === 0 ? 'regionNoSchools'
+        : onlyChild ? 'regionOnlyChild' : 'regionTooSmall'));
     } else {
       const n = r.n_ranked[state.metric][state.subject];
       lines.push(`${score.toFixed(2)}${rank == null ? '' : ` (${rank}/${n})`}`);
@@ -388,14 +444,111 @@
     return lines.join('<br>');
   }
 
+  // ---------------------------------------------------------------------------
+  // Breadcrumb and the scope of the baseline selector
+  //
+  // Bound at module scope, not inside wireControls: renderLevel calls both
+  // functions below on every zoom, so the elements cannot be locals of the
+  // wiring function. map.js is loaded at the end of <body>, so the DOM exists.
+
+  const baselineSelect = document.getElementById('baseline-select');
+  const baselineNote   = document.getElementById('baseline-note');
+  const breadcrumbEl   = document.getElementById('breadcrumb');
+
+  // The selector decides what a SCHOOL is compared against. Above school zoom
+  // the ladder decides instead — a region's colour is always its distance from
+  // its own parent — so disable the control and say why, rather than leaving it
+  // live and inert.
+  //
+  // Separately: `mean` and `median` are raw 0-100 scores with no reference
+  // population at all, so scale.json's anchors are byte-identical across all
+  // four levels. Since DEFAULTS.metric is `mean`, a reader's first use of this
+  // control would otherwise change nothing at all and read as broken.
+  const RAW_METRICS = ['mean', 'median'];
+
+  // Same shape as app.js's fillMetricSelect / fillSubjectSelect. Local because
+  // ranking.html carries no baseline control.
+  function fillBaselineSelect() {
+    baselineSelect.innerHTML = '';
+    for (const key of REFERENCE_LEVEL_KEYS) {
+      const opt = document.createElement('option');
+      opt.value = key;
+      opt.textContent = t('level' + key[0].toUpperCase() + key.slice(1));
+      if (key === baselineLevel) { opt.selected = true; opt.setAttribute('selected', ''); }
+      baselineSelect.appendChild(opt);
+    }
+  }
+
+  function syncSelectorAvailability(level) {
+    const applies = CHILD_OF[level] === null;
+    baselineSelect.disabled = !applies;
+    baselineNote.textContent = !applies ? t('baselineFollowsZoom')
+      : RAW_METRICS.includes(state.metric) ? t('baselineRawMetric')
+      : '';
+  }
+
+  // Focus is derived from the viewport, so a breadcrumb segment is just a prefix
+  // of the focused TERYT: 2 digits = voivodeship, 4 = powiat, 6 = gmina. The
+  // last segment is where you are, so it is plain text; the rest are links.
+  //
+  // nameOf falls back to the raw TERYT for a level whose regions file has not
+  // been fetched yet, which is legitimate for an ancestor at low zoom.
+  function renderBreadcrumb(level, focused) {
+    const parts = [{ key: '', label: t('breadcrumbPoland') }];
+    if (focused) {
+      if (focused.length >= 2) parts.push({ key: focused.slice(0, 2), label: nameOf('voivodeship', focused.slice(0, 2)) });
+      if (focused.length >= 4) parts.push({ key: focused.slice(0, 4), label: nameOf('powiat', focused.slice(0, 4)) });
+      if (focused.length >= 6) parts.push({ key: focused.slice(0, 6), label: nameOf('gmina', focused.slice(0, 6)) });
+    }
+    breadcrumbEl.innerHTML = parts.map((p, i) =>
+      i === parts.length - 1 ? escapeHTML(p.label)
+        : `<a href="#" data-region="${p.key}">${escapeHTML(p.label)}</a>`).join(' › ');
+  }
+
+  // Fetch whatever the breadcrumb is missing names for, then repaint it.
+  //
+  // On the ordinary zoom-in path every ancestor's regions file has been fetched
+  // on the way down, so the synchronous render above is already correct. Two
+  // paths skip rungs and land with an empty NAME_CACHE for a level the crumb
+  // needs, and both then render a raw TERYT where a name belongs: a school
+  // search jump straight from the country view to zoom 14 (never loading
+  // regions-powiat.json), and the very first drill into a gmina, whose names
+  // renderSchools fetches only after renderLevel has already painted the crumb.
+  // Every loadRegions here is cached and shares its in-flight promise with the
+  // choropleth's own fetch, so this costs at most one extra file per session.
+  async function ensureBreadcrumbNames(level, focused) {
+    const levels = [];
+    if (focused.length >= 2) levels.push('voivodeship');
+    if (focused.length >= 4) levels.push('powiat');
+    if (focused.length >= 6) levels.push('gmina');
+    await Promise.all(levels.map((l) => loadRegions(l)));
+    renderBreadcrumb(level, focused);
+  }
+
+  // Fit the map to one region's polygon. A region's geometry lives in its
+  // PARENT's file (see loadGeometryFor), and JPT_KOD_JE is the full 7-digit code
+  // at gmina level, so match on prefix. Verified unique: across all 380
+  // geo/pow/*.json files no two features share a 6-digit prefix.
+  const LEVEL_FOR_KEY = { 2: 'voivodeship', 4: 'powiat', 6: 'gmina' };
+
+  async function zoomToRegion(key) {
+    const level = LEVEL_FOR_KEY[key.length];
+    if (!level) return;
+    const geo = await loadGeometryFor(PARENT_OF[level], key);
+    const feature = geo.features.find((f) => f.properties.JPT_KOD_JE.startsWith(key));
+    if (feature) map.fitBounds(L.geoJSON(feature).getBounds());
+  }
+
   async function renderLevel() {
     const level = levelForZoom(map.getZoom());
     const childLevel = CHILD_OF[level];
     const focused = await focusFor(level);
-    // Task 15 defines these two; left commented out so this task's browser
-    // check runs without a ReferenceError.
-    // renderBreadcrumb(level, focused);
-    // syncSelectorAvailability(level);
+    renderBreadcrumb(level, focused);   // immediately, from whatever names are cached
+    // Not awaited: the crumb must not hold up the map, and a missing name
+    // already degrades to the raw TERYT rather than blanking.
+    ensureBreadcrumbNames(level, focused)
+      .catch((e) => console.warn('breadcrumb names unavailable', e));
+    syncSelectorAvailability(level);
     if (childLevel === null) { await renderSchools(focused.slice(0, 4)); return; }
 
     const geo = await loadGeometryFor(level, focused);
@@ -403,6 +556,10 @@
       // 66 powiats hold exactly one gmina, where drilling in would draw a single
       // polygon identical to the outline just left. Skip that rung. `focused` is
       // the 4-digit powiat here, which is exactly what renderSchools takes.
+      //
+      // These powiats draw school markers while `level` is still 'powiat', so
+      // the level-based gate above disabled a selector that does apply here.
+      syncSelectorAvailability('gmina');
       await renderSchools(focused);
       return;
     }
@@ -425,6 +582,10 @@
       updateFilterSummary(0);
     }
     renderedSchoolsKey = null;
+    // Zoomed back out to regions: whatever school was being navigated to is no
+    // longer what the user is looking at, and leaving it armed would pop a
+    // popup open the next time any powiat renders.
+    pendingSchool = null;
     regionLayer = L.geoJSON(geo, {
       // colourFor with gradient=false and zero anchors is deliberate: regions
       // use the three flat classes. The continuous ramp stays a school-level
@@ -762,29 +923,60 @@
   }
 
   // Precompute once after load: the haystack matches on name + town (decision §1).
+  //
+  // Built from schools-index.json, which knows all 12,889 schools in the
+  // country. It used to be built from loadedSchools — one powiat's worth, and
+  // empty at page open — so the box could only find a school already on screen,
+  // which is the one case the reader does not need it for.
   function buildSchoolSearchIndex() {
-    schoolSearchIndex = loadedSchools.map(s => ({
-      rspo:  s.rspo,
-      name:  s.name,
-      town:  s.miejscowosc || '',
-      gmina: s.gmina || '',
-      onMap: s.lat != null && s.lon != null,
-      hay:   normalizeText(s.name + ' ' + (s.miejscowosc || '')),
-    }));
+    const c = indexData.schools;
+    indexPos = new Map();
+    schoolSearchIndex = c.rspo.map((rspo, i) => {
+      indexPos.set(rspo, i);
+      return {
+        rspo,
+        name:  c.name[i],
+        town:  c.miejscowosc[i] || '',
+        // The index carries a TERYT, not a gmina name. Resolved at render time
+        // (15 rows at most) rather than here, so page open does not have to pull
+        // the 1.6 MB regions-gmina.json just to label a dropdown.
+        gminaKey: c.teryt[i].slice(0, 6),
+        onMap: c.on_map[i],
+        hay:   normalizeText(c.name[i] + ' ' + (c.miejscowosc[i] || '')),
+      };
+    });
   }
 
-  // On-map school: zoom into its cluster and open the popup. If the school is
-  // currently hidden by the filters, just pan to it (no marker in the cluster).
-  function goToSchoolOnMap(rspo) {
-    const marker = markersByRspo.get(rspo);
-    if (!marker) return;
+  // Past disableClusteringAtZoom (14), so the marker stands on its own and its
+  // popup can open without a cluster having to spiderfy first.
+  const SCHOOL_ZOOM = 14;
+
+  function openPendingSchool() {
+    if (pendingSchool == null) return;
+    const marker = markersByRspo.get(pendingSchool);
+    if (!marker) return;                 // its powiat has not rendered yet
+    pendingSchool = null;
+    // Not in the cluster = hidden by the current filters. Panning there is the
+    // honest outcome; opening a popup for a school the filters exclude is not.
+    if (clusterGroup.hasLayer(marker)) marker.openPopup();
+  }
+
+  // Go to any school in the country, whether or not it is currently drawn.
+  // Replaces clusterGroup.zoomToShowLayer, which could only reach a marker that
+  // was already on the map — true of one powiat, false of the other 379. The
+  // school's own coordinates decide the viewport; renderLevel then resolves that
+  // viewport to the school's gmina and renderSchools builds its powiat's
+  // markers, at which point openPendingSchool fires.
+  function focusSchool(rspo) {
+    const i = indexPos.get(rspo);
+    if (i == null) return;
+    const c = indexData.schools;
+    if (!c.on_map[i]) return;   // no coordinates; callers route those to the ranking
     state.selectedSchool = rspo;
     syncURL();
-    if (clusterGroup.hasLayer(marker)) {
-      clusterGroup.zoomToShowLayer(marker, () => marker.openPopup());
-    } else {
-      map.setView(marker.getLatLng(), 14);
-    }
+    pendingSchool = rspo;
+    map.setView([c.lat[i], c.lon[i]], SCHOOL_ZOOM);
+    openPendingSchool();        // same powiat already drawn? then open it now
   }
 
   // Off-map school (no coordinates): hand off to the ranking, which selects and
@@ -817,7 +1009,11 @@
         list.innerHTML = `<li class="ac-empty" aria-disabled="true">${t('findSchoolNoResults')}</li>`;
       } else {
         list.innerHTML = results.map((r, i) => {
-          const loc = [r.town, r.gmina && ('gm. ' + r.gmina)].filter(Boolean).join(' · ');
+          // nameOf returns the key itself when regions-gmina.json has not been
+          // fetched yet (it lands on the first drill into any powiat). Show the
+          // town alone rather than a bare 6-digit code.
+          const gmina = nameOf('gmina', r.gminaKey);
+          const loc = [r.town, gmina !== r.gminaKey && ('gm. ' + gmina)].filter(Boolean).join(' · ');
           const tag = r.onMap ? '' : ` <span class="ac-offmap">${t('findSchoolOffMap')}</span>`;
           return `<li role="option" data-i="${i}"${i === activeIndex ? ' class="active"' : ''}>`
             + `<span class="ac-name">${escapeHTML(r.name)}</span>`
@@ -833,7 +1029,7 @@
       if (!r) return;
       input.value = r.name;
       close();
-      if (r.onMap) goToSchoolOnMap(r.rspo);
+      if (r.onMap) focusSchool(r.rspo);
       else goToSchoolInRanking(r.rspo);
     }
 
@@ -951,6 +1147,35 @@
     subjectSel.addEventListener('change', e => onSubjectChange(e.target.value));
     metricSel .addEventListener('change', e => onMetricChange(e.target.value));
 
+    fillBaselineSelect();
+    baselineSelect.addEventListener('change', () => {
+      baselineLevel = baselineSelect.value;
+      writePref('baseline', baselineLevel);
+      // The slider's min/max/step come from slider_ranges[baselineLevel] and do
+      // differ per level for the difference metrics (unit_norm_diff_mean runs
+      // -0.9041..0.8307 nationally and -0.8966..0.7824 at gmina). Leaving it
+      // alone would have it describing the level the user just left.
+      syncThresholdSlider();
+      syncURL();
+      // Re-colours: every anchor in scale.json moves with the level, and at
+      // school zoom renderSchools' cache key includes baselineLevel, so the
+      // scores themselves are re-read from that level's block of the shard.
+      renderLevel();
+    });
+
+    // The breadcrumb emits <a data-region="…"> links; delegated because it is
+    // rewritten on every renderLevel.
+    breadcrumbEl.addEventListener('click', (event) => {
+      const link = event.target.closest('a[data-region]');
+      if (!link) return;
+      event.preventDefault();
+      const key = link.dataset.region;
+      // Empty key = "Polska": zoom out to the country view. Otherwise fit the
+      // clicked ancestor, and let renderLevel derive the focus from the viewport.
+      if (!key) map.setView(POLAND_CENTRE, POLAND_ZOOM);
+      else zoomToRegion(key);
+    });
+
     // Public/private radios
     for (const r of document.querySelectorAll('input[name="public"]')) {
       r.removeAttribute('checked');
@@ -1032,8 +1257,14 @@
       syncURL();
       fillSubjectSelect(subjectSel, state.subject);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
+      fillBaselineSelect();
       fillDataYears();
       refreshFilters();
+      // The breadcrumb root ("Polska"/"Poland"), the selector note and the
+      // region tooltips are all built from t() at render time, so re-render
+      // rather than translating them in place. Everything it touches is cached;
+      // renderSchools sees an unchanged key and returns immediately.
+      renderLevel();
       if (state.selectedSchool != null) reopenSelectedPopup();
     });
   }
@@ -1056,15 +1287,15 @@
     link.addEventListener('pointerdown', update);
   }
 
+  // ?school=<rspo> — resolve the school through schools-index.json rather than
+  // through the markers, which at page open are none: the opening view is the
+  // whole country, where the map draws voivodeship polygons. focusSchool moves
+  // the viewport to the school, which is what makes renderLevel fetch its shard.
+  // A school with no coordinates simply does not move the map (focusSchool
+  // returns) — a deep link should not redirect the page to the ranking.
   function openInitialPopup() {
     if (state.selectedSchool == null) return;
-    const marker = markersByRspo.get(state.selectedSchool);
-    if (marker) {
-      // Wait for cluster to settle before zooming.
-      clusterGroup.zoomToShowLayer(marker, () => {
-        marker.openPopup();
-      });
-    }
+    focusSchool(state.selectedSchool);
   }
 
   // ---------------------------------------------------------------------------

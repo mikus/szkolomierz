@@ -422,6 +422,7 @@ const I18N = {
     navMap: 'Mapa',
     navRanking: 'Ranking',
     navHelp: 'Pomoc',
+    breadcrumbPoland: 'Polska',
     helpTitle: 'Pomoc',
     helpLink: 'Jak liczone są wyniki? → Pomoc',
     tocFabLabel: 'Do spisu treści',
@@ -439,6 +440,14 @@ const I18N = {
     gradientHelp: 'Płynne przejście koloru w klasach A i C (im dalej od średniej, tym mocniej, aż do 1.–99. percentyla). Środek (B) pozostaje jednolicie żółty.',
     labelSubject: 'Przedmiot',
     labelMetric: 'Metryka',
+    labelBaseline: 'Punkt odniesienia',
+    // The four REFERENCE_LEVEL_KEYS. Deliberately not the same vocabulary as the
+    // zoom levels: `country` is a zoom rung, `national` is what a school is
+    // compared against.
+    levelNational: 'Cała Polska',
+    levelVoivodeship: 'Województwo',
+    levelPowiat: 'Powiat',
+    levelGmina: 'Gmina',
     labelPublic: 'Publiczna',
     publicAll: 'Wszystkie',
     publicYes: 'Tak',
@@ -514,6 +523,11 @@ const I18N = {
     // population is too small — a difference metric needs siblings to measure
     // against, and an only child is its own reference (suppression.py).
     regionTooSmall: 'Za mała grupa odniesienia, aby policzyć wynik',
+    // The other half of that gate, and on today's data the ONLY half that fires:
+    // every suppressed region is the single gmina of a one-gmina powiat, whose
+    // parent holds far more than MIN_REFERENCE_N schools. Saying "too small"
+    // there is simply false.
+    regionOnlyChild: 'Jedyna jednostka w jednostce nadrzędnej — nie ma z czym porównać',
     // Polish counts in three forms and 312 gminas hold exactly one school, so
     // a single fixed noun would read "1 szkół" on the tooltip of every one.
     schoolsInRegion: (n) => {
@@ -528,6 +542,9 @@ const I18N = {
     chartYearsCaption: 'Wynik w poszczególnych latach',
     helpPopupChart: 'Wykres pokazuje wynik policzony osobno dla każdego roku — to nie jest wynik zbiorczy za wszystkie lata ani wersja LOO. Wynik zbiorczy masz w tabeli powyżej.',
     helpMetric: 'Średnia to zwykły wynik procentowy — tyle procent punktów zdobyli przeciętnie uczniowie tej szkoły. Wynik znormalizowany to odległość od średniej województwa z tego samego roku: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej niej, ujemne poniżej. Kliknij, aby przeczytać o wszystkich metrykach.',
+    helpBaseline: 'Wynik szkoły to odległość od średniej grupy odniesienia. Ten wybór decyduje, jaka to grupa: cała Polska, województwo, powiat czy gmina. Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy”, a mniej „jak na tle kraju”.',
+    baselineFollowsZoom: 'Dotyczy tylko widoku szkół. Wyżej kolor regionu zawsze porównuje go z jednostką nadrzędną.',
+    baselineRawMetric: 'Średnia i Mediana to surowy wynik procentowy — nie mają grupy odniesienia, więc ten wybór ich nie zmienia.',
     advancedMetrics: 'Metryki zaawansowane',
     advancedMetricsHelp: 'Dokłada „Mediana” i „Różnica od średniej”. Różnica od średniej ustawia szkoły w dokładnie tej samej kolejności co wynik znormalizowany — zmienia się tylko skala liczb.',
     chartDiffCaption: 'LOO a pojedyncze lata — jaka różnica?',
@@ -542,6 +559,7 @@ const I18N = {
     navMap: 'Map',
     navRanking: 'Ranking',
     navHelp: 'Help',
+    breadcrumbPoland: 'Poland',
     helpTitle: 'Help',
     helpLink: 'How are scores computed? → Help',
     tocFabLabel: 'To contents',
@@ -559,6 +577,11 @@ const I18N = {
     gradientHelp: 'Smooth colour within classes A and C (stronger the further from average, up to the 1st/99th percentile). The middle (B) stays solid yellow.',
     labelSubject: 'Subject',
     labelMetric: 'Metric',
+    labelBaseline: 'Reference point',
+    levelNational: 'Whole country',
+    levelVoivodeship: 'Voivodeship',
+    levelPowiat: 'County',
+    levelGmina: 'Municipality',
     labelPublic: 'Public',
     publicAll: 'All',
     publicYes: 'Yes',
@@ -631,6 +654,7 @@ const I18N = {
     rowsShown: (n, total) => `${n} of ${total} schools`,
     regionNoSchools: 'No schools with exam results',
     regionTooSmall: 'Reference group too small to score',
+    regionOnlyChild: 'The only unit within its parent — nothing to compare it against',
     schoolsInRegion: (n) => `${n} ${n === 1 ? 'school' : 'schools'}`,
     dataYears: (lo, hi) => `8th-grade exam ${lo}–${hi}`,
     historyLoading: 'Loading detailed data…',
@@ -638,6 +662,9 @@ const I18N = {
     chartYearsCaption: 'Score in each year',
     helpPopupChart: 'The chart plots the score computed from each year on its own — not the multi-year score, and not the LOO version. The multi-year score is in the table above.',
     helpMetric: 'Mean is the plain percentage score — the share of points this school\'s pupils scored on average. Normalised score is the distance from the voivodeship average of the same year: 0 is exactly average, positive values sit above it, negative below. Click to read about all the metrics.',
+    helpBaseline: 'A school\'s score is its distance from the mean of a reference group. This choice sets that group: the whole country, the voivodeship, the county or the municipality. The narrower the group, the more the score says "compared with its immediate surroundings" rather than "compared with the country".',
+    baselineFollowsZoom: 'Applies to the school view only. Above it a region\'s colour always compares it with its parent unit.',
+    baselineRawMetric: 'Mean and Median are raw percentage scores — they have no reference population, so this choice does not change them.',
     advancedMetrics: 'Advanced metrics',
     advancedMetricsHelp: 'Adds "Median" and "Difference from mean". Difference from mean orders schools exactly as the normalised score does — only the scale of the numbers changes.',
     chartDiffCaption: 'LOO vs single years — what is the difference?',

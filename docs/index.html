@@ -20,6 +20,11 @@
     </nav>
   </header>
 
+  <!-- Above the map rather than inside <main>: .page-map main is a horizontal
+       flex row, so a nav placed there would become a vertical strip beside the
+       map. body is a column flex, which puts it where a breadcrumb belongs. -->
+  <nav id="breadcrumb" class="breadcrumb" aria-label="Region"></nav>
+
   <main>
     <div id="map" aria-label="Mapa szkół"></div>
 
@@ -40,6 +45,16 @@
               data-i18n-attr="data-help|helpMetric">i</a>
           </span>
           <select id="metric-select"></select>
+        </div>
+
+        <div class="field">
+          <span>
+            <label for="baseline-select" data-i18n="labelBaseline">Punkt odniesienia</label><a
+              class="help-icon" href="help.html#baseline" aria-label="?"
+              data-i18n-attr="data-help|helpBaseline">i</a>
+          </span>
+          <select id="baseline-select"></select>
+          <span id="baseline-note" class="field-note"></span>
         </div>
       </section>
 

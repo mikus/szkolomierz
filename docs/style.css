@@ -67,6 +67,24 @@ body { display: flex; flex-direction: column; }
   cursor: default;
 }
 
+/* Region breadcrumb (map page) — a strip between the nav and the map. Its own
+   body-level row rather than a child of <main>, which is a horizontal flex row.
+   flex-shrink: 0 so it keeps its height while the map takes the rest. */
+.breadcrumb {
+  flex-shrink: 0;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  /* One long gmina name plus its ancestors can outrun a phone's width; scroll
+     that strip rather than wrapping it into a second row that shifts the map. */
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.breadcrumb a { color: var(--accent); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
 /* Low-data warning icon (ranking "Lata" column) */
 .warn-icon { cursor: help; font-size: 0.85em; }
 
@@ -184,6 +202,11 @@ body.page-help { display: block; height: auto; }
   margin-bottom: 0.6rem;
 }
 .field > span { font-size: 0.85rem; color: var(--text-muted); }
+
+/* A note under a control saying why it is inert or limited. :empty so the
+   flex gap above it disappears when there is nothing to say. */
+.field-note { font-size: 0.8rem; line-height: 1.35; color: var(--text-muted); }
+.field-note:empty { display: none; }
 
 .field select, .field input[type="text"], .field input[type="number"] {
   padding: 0.35rem 0.5rem;
