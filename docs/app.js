@@ -484,6 +484,15 @@ const I18N = {
     rankingTitle: 'Ranking szkół — Mazowieckie',
     rankingNameSearch: 'Szukaj po nazwie lub lokalizacji',
     rankingSearchPlaceholder: 'np. STO, Vizja, Słupica',
+    // The ranking page's level control. Deliberately asymmetric, and the help
+    // text says why rather than leaving the reader to discover it by clicking.
+    labelRankLevel: 'Poziom rankingu',
+    levelSchool: 'Szkoła',
+    helpRankLevel: 'Województwa, powiaty i gminy są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły tylko w obrębie jednego powiatu: ogólnopolski ranking szkół wymagałby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
+    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc wybór powiatu, widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
+    labelRegion: 'Wybrany powiat',
+    regionPlaceholder: '— wybierz powiat —',
+    rankingPickRegion: 'Wybierz powiat, aby zobaczyć ranking jego szkół. Szkoły są rankingowane w obrębie jednego powiatu — pokazanie części listy jako całości byłoby mylące, więc dopóki powiat nie jest wybrany, ranking się nie pojawia.',
     lastKRow: (k) => `ostatnie ${k}`,
     rankingView: 'Widok danych',
     rankingViewParam: 'Parametr widoku',
@@ -498,7 +507,20 @@ const I18N = {
     colPowiat: 'Powiat',
     colPublic: 'Publiczna',
     colNYears: 'Lata',
-    colRank: 'Miejsce',
+    // `rank` is national at every level — for regions among all regions of that
+    // level in Poland, for schools among all 12,889. `pct` is NOT: it is scoped
+    // to the siblings under the same parent. Different denominators on purpose,
+    // so the headers name the scope instead of leaving it to the tooltip.
+    colRankNational: 'Miejsce w kraju',
+    helpRankNational: (n) => (n == null
+      ? 'Miejsce wśród wszystkich szkół w Polsce, policzone dla wybranego punktu odniesienia. W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.'
+      : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
+    colPctInCountry: 'Percentyl w kraju',
+    colPctInVoivodeship: 'Percentyl w województwie',
+    colPctInPowiat: 'Percentyl w powiecie',
+    helpPctInParent: (n) => `Percentyl liczony wyłącznie wśród jednostek o tej samej jednostce nadrzędnej — inaczej niż miejsce, które jest ogólnopolskie. Pusty, gdy takich jednostek jest mniej niż ${n}: w tak małej grupie percentyl niczego nie mówi.`,
+    colNSchools: 'Szkoły',
+    colNStudents: 'Uczniowie',
     colLOORange: 'Zakres pozycji (LOO)',
     colSingleRange: 'Zakres pozycji (pojed. lata)',
     helpLOORange: 'Zakres miejsc w rankingu, gdy z obliczeń pominiemy po kolei każdy rok (jackknife „leave-one-out”). Szeroki zakres = pozycja mocno zależy od tego, który rok uwzględnimy.',
@@ -518,6 +540,12 @@ const I18N = {
     detailWeakestNote: 'Pogrubienie = przedmiot z najniższym wynikiem (ten, który wyznacza composite_min), niezależnie od pokazywanej miary (wynik/pozycja/percentyl).',
     offMap: 'brak lokalizacji',
     rowsShown: (n, total) => `${n} z ${total} szkół`,
+    // One per region level. No three-form plural logic here, unlike
+    // schoolsInRegion: the noun after "z" agrees with `total`, which is the
+    // level's whole population (16 / 380 / 2479) — always genitive plural.
+    rowsShownVoivodeship: (n, total) => `${n} z ${total} województw`,
+    rowsShownPowiat: (n, total) => `${n} z ${total} powiatów`,
+    rowsShownGmina: (n, total) => `${n} z ${total} gmin`,
     regionNoSchools: 'Brak szkół z wynikami egzaminu',
     // Not "the region is small": the score is withheld when the COMPARISON
     // population is too small — a difference metric needs siblings to measure
@@ -618,6 +646,13 @@ const I18N = {
     rankingTitle: 'School ranking — Mazowieckie',
     rankingNameSearch: 'Search by name or location',
     rankingSearchPlaceholder: 'e.g. STO, Vizja, Słupica',
+    labelRankLevel: 'Ranking level',
+    levelSchool: 'School',
+    helpRankLevel: 'Voivodeships, counties and municipalities rank across the whole country — their files already cover all of Poland. Schools rank within one county only: a national school ranking would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
+    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the county picker, the view selector and the school-type filter apply to the school level alone.',
+    labelRegion: 'Selected county',
+    regionPlaceholder: '— pick a county —',
+    rankingPickRegion: 'Pick a county to rank its schools. Schools are ranked within a single county — showing part of the list as if it were the whole would mislead, so no ranking appears until a county is chosen.',
     lastKRow: (k) => `last ${k}`,
     rankingView: 'View',
     rankingViewParam: 'View parameter',
@@ -632,7 +667,16 @@ const I18N = {
     colPowiat: 'County',
     colPublic: 'Public',
     colNYears: 'Years',
-    colRank: 'Rank',
+    colRankNational: 'Rank in Poland',
+    helpRankNational: (n) => (n == null
+      ? 'Rank among every school in Poland, computed for the selected reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.'
+      : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
+    colPctInCountry: 'Percentile in Poland',
+    colPctInVoivodeship: 'Percentile in voivodeship',
+    colPctInPowiat: 'Percentile in county',
+    helpPctInParent: (n) => `A percentile computed only among the units sharing the same parent — unlike the rank, which is national. Empty when there are fewer than ${n} of them: in a group that small a percentile says nothing.`,
+    colNSchools: 'Schools',
+    colNStudents: 'Pupils',
     colLOORange: 'Rank range (LOO)',
     colSingleRange: 'Rank range (single-year)',
     helpLOORange: 'Range of ranks when each year is left out in turn (leave-one-out jackknife). A wide range means the position depends a lot on which year is included.',
@@ -652,6 +696,9 @@ const I18N = {
     detailWeakestNote: 'Bold = the subject with the lowest score (the one that sets composite_min), regardless of the dimension shown (score/rank/percentile).',
     offMap: 'no location',
     rowsShown: (n, total) => `${n} of ${total} schools`,
+    rowsShownVoivodeship: (n, total) => `${n} of ${total} voivodeships`,
+    rowsShownPowiat: (n, total) => `${n} of ${total} counties`,
+    rowsShownGmina: (n, total) => `${n} of ${total} municipalities`,
     regionNoSchools: 'No schools with exam results',
     regionTooSmall: 'Reference group too small to score',
     regionOnlyChild: 'The only unit within its parent — nothing to compare it against',

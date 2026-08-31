@@ -666,12 +666,16 @@ table.ranking-table tr.detail-row > td {
     row-gap: 0.45rem;
     align-items: start;
   }
-  .ranking-controls .field--metric   { grid-column: 1; grid-row: 1; }
-  .ranking-controls .field--subject  { grid-column: 2; grid-row: 1; }
-  .ranking-controls .field--view     { grid-column: 1; grid-row: 2; }
-  .ranking-controls .field--search   { grid-column: 1; grid-row: 3; }
-  .ranking-controls .radio-group     { grid-column: 2; grid-row: 2 / span 2; }
-  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 4; }
+  /* Level and county lead: they decide what the table ranks at all, so they must
+     not auto-flow to the bottom past the explicitly placed fields below. */
+  .ranking-controls .field--level    { grid-column: 1; grid-row: 1; }
+  .ranking-controls .field--region   { grid-column: 2; grid-row: 1; }
+  .ranking-controls .field--metric   { grid-column: 1; grid-row: 2; }
+  .ranking-controls .field--subject  { grid-column: 2; grid-row: 2; }
+  .ranking-controls .field--view     { grid-column: 1; grid-row: 3; }
+  .ranking-controls .field--search   { grid-column: 1; grid-row: 4; }
+  .ranking-controls .radio-group     { grid-column: 2; grid-row: 3 / span 2; }
+  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 5; }
   /* Grid columns are half the viewport, so the desktop min-widths would overflow. */
   .ranking-controls .field,
   .ranking-controls .field input[type="text"] { min-width: 0; }
@@ -693,13 +697,19 @@ table.ranking-table tr.detail-row > td {
   .ranking-meta > details { margin: 0; }
   .ranking-meta .data-years { grid-column: 1; grid-row: 1; font-size: 0.9rem; }
   .ranking-meta #ranking-info { grid-column: 2; grid-row: 1; }
-  .ranking-meta .click-hint { grid-column: 1 / -1; grid-row: 2; }
+  /* Both are full-width sentences, and each is empty in the state the other
+     shows in, so they never both take a row: the prompt replaces the table at
+     school level with no county, the note explains the greyed-out controls at a
+     region level. */
+  .ranking-meta #level-note { grid-column: 1 / -1; grid-row: 2; }
+  .ranking-meta #ranking-prompt { grid-column: 1 / -1; grid-row: 3; }
+  .ranking-meta .click-hint { grid-column: 1 / -1; grid-row: 4; }
   /* Collapsed, the settings toggle rides along in the methodology link's row, so
      it adds no height at all. Opened, it drops to a full-width row of its own —
      a half-width column would squeeze the explanation into a ribbon. */
-  .ranking-meta .meta-links { grid-column: 1; grid-row: 3; }
-  .ranking-meta .settings-block { grid-column: 2; grid-row: 3; justify-self: end; }
-  .ranking-meta .settings-block[open] { grid-column: 1 / -1; grid-row: 4; justify-self: stretch; }
+  .ranking-meta .meta-links { grid-column: 1; grid-row: 5; }
+  .ranking-meta .settings-block { grid-column: 2; grid-row: 5; justify-self: end; }
+  .ranking-meta .settings-block[open] { grid-column: 1 / -1; grid-row: 6; justify-self: stretch; }
 
   .page-map main { flex-direction: column; }
   #map { height: 60vh; flex: 0 0 60vh; }

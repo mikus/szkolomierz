@@ -1,10 +1,41 @@
-// Ranking page: sortable/filterable table of schools by (metric, subject, view).
-// Scores and the LOO/single_year/last_k views now live in the per-powiat shards
-// (docs/data/powiat/{teryt4}-{metric}.json), so the table has no whole-country
-// population to read; Task 16's level control decides what it ranks.
+// Ranking page: a sortable/filterable table of whatever the level control picks
+// — voivodeships, powiats, gminas or schools — by (metric, subject, view).
+//
+// The four levels are deliberately NOT symmetric:
+//   voivodeship / powiat / gmina  rank NATIONALLY, straight from
+//     regions-{level}.json. Those files are 2.8 / 49 / 284 KB gzipped and
+//     already whole-country, so the twenty best gminas in Poland cost nothing.
+//   school                        ranks WITHIN ONE POWIAT, from that powiat's
+//     shard (docs/data/powiat/{teryt4}-{metric}.json). A national school ranking
+//     would need every school's scores at every reference level in one file,
+//     ~5 MB gzipped — exactly the payload the per-powiat sharding exists to
+//     avoid. So with no powiat chosen the page shows a prompt rather than
+//     quietly ranking one powiat's worth and calling it a ranking.
 
 (function () {
+  const RANK_LEVELS = ['voivodeship', 'powiat', 'gmina', 'school'];
+  const REGION_LEVELS = ['voivodeship', 'powiat', 'gmina'];
+  // Whose name the "parent" column shows. Voivodeships have no parent (their
+  // `parent` field is ''), so they get no such column.
+  const PARENT_LEVEL = { powiat: 'voivodeship', gmina: 'powiat' };
+  // `pct` is scoped to the siblings under the same parent, so the header names
+  // that scope — the rank beside it is national and the two must not be read
+  // as the same denominator.
+  const PCT_COLUMN = {
+    voivodeship: 'colPctInCountry',      // all 16 share the empty parent
+    powiat: 'colPctInVoivodeship',
+    gmina: 'colPctInPowiat',
+  };
+  const ROWS_SHOWN = {
+    voivodeship: 'rowsShownVoivodeship',
+    powiat: 'rowsShownPowiat',
+    gmina: 'rowsShownGmina',
+    school: 'rowsShown',
+  };
+
   const state = {
+    level: 'school',              // one of RANK_LEVELS
+    region: null,                 // 4-digit powiat TERYT; school level only
     metric: DEFAULTS.metric,
     subject: DEFAULTS.subject,
     view: 'base',                 // 'base' | 'last_k' | 'single_year' | 'loo'
@@ -23,23 +54,58 @@
 
   const ALLOWED_VIEWS = ['base', 'last_k', 'single_year', 'loo'];
 
-  // The schools the table ranks. Empty until Task 16 gives this page its level
-  // control, which decides what populates it: regions rank nationally from
-  // regions-{level}.json, schools only within a chosen region's shards.
-  let loadedSchools = [];
+  // What the table currently ranks. Exactly one of the two is populated:
+  // regionData at a region level, schoolRows at school level.
+  let regionData = null;    // the regions-{level}.json payload for state.level
+  let schoolRows = [];      // school objects built from state.region's shard
+  // The same shard, indexed for the rank-range columns, the non-base views and
+  // the detail panel — it carries base/loo/single_year/last_k already, so those
+  // need no second fetch. { schools: { rspo: { subject: {views} } } }.
+  let shardHistory = null;
+  let populationError = false;
+  // What is actually in memory, as a populationKey(). Guards two things at once:
+  // a response that lost the race (regions-gmina.json is 1.59 MB and can land
+  // after a 13 KB voivodeship file requested later), and rendering the previous
+  // level's rows under the new level's column headers while the switch is in
+  // flight. Anything that is not the current key counts as "not loaded".
+  let loadedKey = null;
 
-  // History data fetched in the background (per-metric).
-  const histByMetric = {};
-  let historyError = false;       // last background fetch failed
+  function populationKey() {
+    return state.level === 'school' ? `school|${state.region}|${state.metric}` : state.level;
+  }
+
+  function populationLoaded() { return loadedKey === populationKey(); }
 
   // ---------------------------------------------------------------------------
   // State resolution
+
+  // Level and region are resolved here rather than through resolvePref: both are
+  // this page's alone, so they must not join the DEFAULTS object that map.js
+  // also reads, and their storage keys are namespaced for the same reason.
+  function resolveLevel() {
+    const url = getURLParams().get('level');
+    if (RANK_LEVELS.includes(url)) return url;
+    const stored = readPrefs().rank_level;
+    if (RANK_LEVELS.includes(stored)) return stored;
+    // The page is the school ranking; a default of "voivodeship" would rank
+    // something its own title does not promise.
+    return 'school';
+  }
+
+  function resolveRegion() {
+    const url = getURLParams().get('region');
+    if (/^\d{4}$/.test(url || '')) return url;
+    const stored = readPrefs().rank_region;
+    return /^\d{4}$/.test(stored || '') ? stored : null;
+  }
 
   function resolveInitialState() {
     state.advancedMetrics = resolveAdvancedMetrics();
     state.metric  = resolvePref('metric',  METRICS);
     state.subject = resolvePref('subject', SUBJECTS);
     state.lang    = resolvePref('lang',    ['pl', 'en']);
+    state.level   = resolveLevel();
+    state.region  = resolveRegion();
 
     const url = getURLParams();
     const view = url.get('view');
@@ -62,6 +128,8 @@
 
   function syncURL() {
     setURLParams({
+      level:      state.level !== 'school' ? state.level : null,
+      region:     state.level === 'school' ? state.region : null,
       metric:     state.metric  !== DEFAULTS.metric  ? state.metric  : null,
       subject:    state.subject !== DEFAULTS.subject ? state.subject : null,
       view:       state.view !== 'base' ? state.view : null,
@@ -78,17 +146,78 @@
   // ---------------------------------------------------------------------------
   // Row construction
 
+  // How many regions share each parent, per level — the second arm of the
+  // suppression gate (a region that is its parent's ONLY CHILD is compared
+  // against itself). Derived from regions.parent, which ships in the file.
+  //
+  // A near-twin of map.js's siblingCountsFor. Not shared through app.js because
+  // map.js is not loaded on this page and unifying them would mean editing a
+  // third file for no behavioural gain; escapeHTML is already duplicated across
+  // the two page scripts for the same reason.
+  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
+
+  function siblingCountsFor(regions) {
+    const level = regions.metadata.level;
+    if (!siblingCache.has(level)) {
+      const counts = new Map();
+      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
+      siblingCache.set(level, counts);
+    }
+    return siblingCache.get(level);
+  }
+
+  // For one region, a flat object with the fields we sort/render. Unlike the
+  // map, this page DOES render suppressed regions — a table enumerating a
+  // population must not silently omit 69 of its 2,479 gminas — so a null score
+  // yields a row carrying the reason instead of being dropped.
+  function buildRegionRow(i) {
+    const { metric, subject, level } = state;
+    const r = regionData.regions;
+    const score = r.score[metric][subject][i];
+
+    // Flat class colours, not the gradient the school rows use: the region files
+    // carry no p1/p99 anchors, and map.js colours its choropleth the same way —
+    // so the same gmina reads as the same class in both places. Sigma/centre come
+    // from THIS level's own metadata; regions and schools have different spreads.
+    const { sigma, sigma_centre } = regionData.metadata;
+    const classIndex = classIndex3(score, sigma_centre[metric][subject], sigma[metric][subject]);
+    const classColour = classIndex == null ? null : CLASS3_FLAT[classIndex];
+
+    const parentLevel = PARENT_LEVEL[level];
+    return {
+      key: r.teryt[i],
+      name: r.name[i],
+      parent: parentLevel ? nameOf(parentLevel, r.parent[i]) : null,
+      n_schools: r.n_schools[i],
+      n_students: r.n_students[i],
+      score,
+      rank: r.rank[metric][subject][i],
+      pct: r.pct[metric][subject][i],
+      classIndex,
+      classLetter: classIndex == null ? null : CLASS3_LETTERS[classIndex],
+      classColour,
+      classTextColour: classColour ? textOn(classColour) : null,
+      suppressed: score == null,
+      // Say WHICH reason. A single "—" with no explanation is what makes a table
+      // feel broken, and a wrong explanation is worse than none.
+      reasonKey: score != null ? null
+        : r.n_schools[i] === 0 ? 'regionNoSchools'
+        : siblingCountsFor(regionData).get(r.parent[i]) <= 1 ? 'regionOnlyChild'
+        : 'regionTooSmall',
+    };
+  }
+
   // For each school, produce a flat object with the fields we sort/render.
-  function buildRow(school) {
+  function buildSchoolRow(school) {
     const { metric, subject } = state;
     const base = school.scores?.[metric]?.[subject];
 
-    // For non-base views, look up the per-metric/per-subject data if loaded.
+    // For non-base views, look up the per-subject views from the loaded shard.
     let viewScore = null, viewRank = null;
     let looMinR = null, looMaxR = null;
     let singleMinR = null, singleMaxR = null;
 
-    const hist = histByMetric[metric]?.schools?.[String(school.rspo)]?.[subject];
+    const hist = shardHistory?.schools?.[String(school.rspo)]?.[subject];
     if (hist) {
       // LOO range
       const loo = hist.loo || {};
@@ -151,6 +280,7 @@
       classTextColour: classColour ? textOn(classColour) : null,
       looMinR, looMaxR,
       singleMinR, singleMaxR,
+      suppressed: false,        // school rows with no score are filtered out
     };
   }
 
@@ -159,19 +289,23 @@
 
   function filterRows(rows) {
     const q = state.nameQuery.trim().toLowerCase();
+    const schools = state.level === 'school';
     return rows.filter(r => {
-      if (state.publicFilter === 'tak' && !r.pub) return false;
-      if (state.publicFilter === 'nie' &&  r.pub) return false;
-      if (q) {
-        const inName = r.name.toLowerCase().includes(q);
-        const inTown = (r.town || '').toLowerCase().includes(q);
-        const inStreet = (r.street || '').toLowerCase().includes(q);
-        const inGmina = (r.gmina || '').toLowerCase().includes(q);
-        const inPowiat = (r.powiat || '').toLowerCase().includes(q);
-        if (!inName && !inTown && !inStreet && !inGmina && !inPowiat) return false;
+      if (schools) {
+        if (state.publicFilter === 'tak' && !r.pub) return false;
+        if (state.publicFilter === 'nie' &&  r.pub) return false;
+        // Drop rows where the view's score is missing — they can't be ranked
+        // here. Region rows are kept instead and carry their reason: the table
+        // IS the enumeration of that level's population, so an omitted region
+        // would read as a region that does not exist.
+        if (r.score == null) return false;
       }
-      // Drop rows where the view's score is missing — they can't be ranked here.
-      if (r.score == null) return false;
+      if (q) {
+        const hay = schools
+          ? [r.name, r.town, r.street, r.gmina, r.powiat]
+          : [r.name, r.parent];
+        if (!hay.some(v => (v || '').toLowerCase().includes(q))) return false;
+      }
       return true;
     });
   }
@@ -180,6 +314,10 @@
     const key = state.sortKey;
     const dir = state.sortDir === 'asc' ? 1 : -1;
     rows.sort((a, b) => {
+      // Suppressed regions sort last under every key and direction. They have a
+      // name and a school count, so sorting by those would otherwise scatter
+      // scoreless rows through a table whose point is the score.
+      if (a.suppressed !== b.suppressed) return a.suppressed ? 1 : -1;
       const va = a[key], vb = b[key];
       if (va == null && vb == null) return 0;
       if (va == null) return 1;          // nulls last regardless of dir
@@ -193,20 +331,64 @@
   // ---------------------------------------------------------------------------
   // Rendering
 
-  const COLUMNS = [
-    { key: 'rank',       i18n: 'colRank',        num: true,  width: '4rem' },
-    { key: 'name',       i18n: 'colName',        num: false },
-    { key: 'town',       i18n: 'colTown',        num: false },
-    { key: 'street',     i18n: 'colStreet',      num: false },
-    { key: 'pub',        i18n: 'colPublic',      num: false, width: '5rem' },
-    { key: 'n_years',    i18n: 'colNYears',      num: true,  width: '4rem' },
-    { key: 'score',       i18n: 'colScore',       num: true },
-    { key: 'classLetter', i18n: 'colClass',       num: true,  width: '4rem' },
-    { key: 'looMinR',     i18n: 'colLOORange',    num: true,  help: 'helpLOORange' },
-    { key: 'singleMinR',  i18n: 'colSingleRange', num: true,  help: 'helpSingleRange' },
-    { key: 'gmina',       i18n: 'colGmina',       num: false },
-    { key: 'powiat',      i18n: 'colPowiat',      num: false },
-  ];
+  // `label` is resolved at render time (renderAll re-runs on a language switch).
+  // `helpArgs` are passed through to t(), so a help string can name the
+  // denominator the column actually uses.
+  function schoolColumns() {
+    return [
+      { key: 'rank',       label: t('colRankNational'), num: true,  width: '6rem',
+        help: 'helpRankNational', helpArgs: [null] },
+      { key: 'name',       label: t('colName'),        num: false },
+      { key: 'town',       label: t('colTown'),        num: false },
+      { key: 'street',     label: t('colStreet'),      num: false },
+      { key: 'pub',        label: t('colPublic'),      num: false, width: '5rem' },
+      { key: 'n_years',    label: t('colNYears'),      num: true,  width: '4rem' },
+      { key: 'score',       label: t('colScore'),       num: true },
+      { key: 'classLetter', label: t('colClass'),       num: true,  width: '4rem' },
+      { key: 'looMinR',     label: t('colLOORange'),    num: true,  help: 'helpLOORange' },
+      { key: 'singleMinR',  label: t('colSingleRange'), num: true,  help: 'helpSingleRange' },
+      { key: 'gmina',       label: t('colGmina'),       num: false },
+      { key: 'powiat',      label: t('colPowiat'),      num: false },
+    ];
+  }
+
+  function levelLabel(level) {
+    return t('level' + level[0].toUpperCase() + level.slice(1));
+  }
+
+  // Exactly what the region files carry — no street/town/public/n_years, and no
+  // LOO or single-year folds (regions ship the `base` view alone).
+  function regionColumns() {
+    const parentLevel = PARENT_LEVEL[state.level];
+    // Null-safe: currentColumnKeys() calls this during a level change, before the
+    // new level's file has landed. Only the help strings read these.
+    const loaded = populationLoaded() ? regionData : null;
+    const nRanked = loaded ? loaded.regions.n_ranked[state.metric][state.subject] : null;
+    const minPct = loaded ? loaded.metadata.min_percentile_n : null;
+    const cols = [
+      { key: 'rank', label: t('colRankNational'), num: true, width: '6rem',
+        help: 'helpRankNational', helpArgs: [nRanked] },
+      { key: 'name', label: levelLabel(state.level), num: false },
+    ];
+    if (parentLevel) cols.push({ key: 'parent', label: levelLabel(parentLevel), num: false });
+    cols.push(
+      { key: 'n_schools',   label: t('colNSchools'),  num: true, width: '5rem' },
+      { key: 'n_students',  label: t('colNStudents'), num: true, width: '6rem' },
+      { key: 'score',       label: t('colScore'),     num: true },
+      { key: 'classLetter', label: t('colClass'),     num: true, width: '4rem' },
+      { key: 'pct', label: t(PCT_COLUMN[state.level]), num: true,
+        help: 'helpPctInParent', helpArgs: [minPct] },
+    );
+    return cols;
+  }
+
+  function currentColumns() {
+    return state.level === 'school' ? schoolColumns() : regionColumns();
+  }
+
+  function currentColumnKeys() {
+    return currentColumns().map(c => c.key);
+  }
 
   // A/B/C badge coloured by the continuous gradient (soft boundaries).
   function classBadge(score, centre, sigma, p1, p99) {
@@ -308,12 +490,11 @@
   // all subjects, and numeric tables behind a toggle. Needs the per-metric
   // history file, which is fetched in the background from page load — so the
   // only time it is absent is while that fetch is still in flight.
-  function renderDetailRow(row) {
-    const colspan = COLUMNS.length;
-    const hist = histByMetric[state.metric]?.schools?.[String(row.rspo)];
+  function renderDetailRow(row, colspan) {
+    const hist = shardHistory?.schools?.[String(row.rspo)];
     if (!hist) {
       return `<tr class="detail-row"><td colspan="${colspan}">
-        <span class="muted small">${t(historyError ? 'historyFailed' : 'historyLoading')}</span>
+        <span class="muted small">${t(populationError ? 'historyFailed' : 'historyLoading')}</span>
       </td></tr>`;
     }
 
@@ -391,28 +572,19 @@
     </td></tr>`;
   }
 
-  function renderTable(rows) {
-    const table = document.getElementById('ranking-table');
-    const head = `<thead><tr>${COLUMNS.map(col => {
-      const indicator = (state.sortKey === col.key)
-        ? `<span class="sort-indicator">${state.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
-      const style = col.width ? ` style="width:${col.width};"` : '';
-      const help = col.help
-        ? ` <span class="help-icon" tabindex="0" role="button" aria-label="?" data-help="${escapeHTML(t(col.help))}">i</span>`
-        : '';
-      return `<th data-col="${col.key}" class="${col.num ? 'num' : ''}"${style}>${t(col.i18n)}${help}${indicator}</th>`;
-    }).join('')}</tr></thead>`;
+  function classCellHTML(r) {
+    return r.classLetter
+      ? `<span class="class-badge" style="background:${r.classColour};color:${r.classTextColour}">${r.classLetter}</span>`
+      : '—';
+  }
 
-    const body = `<tbody>${rows.map(r => {
-      const offMap = !r.hasCoords ? ` <span class="off-map" title="${t('offMap')}">📍✗</span>` : '';
-      const looCell = (r.looMinR != null) ? `${r.looMinR}–${r.looMaxR}` : '—';
-      const syCell  = (r.singleMinR != null) ? `${r.singleMinR}–${r.singleMaxR}` : '—';
-      const pubLabel = r.pub ? t('publicYesShort') : t('publicNoShort');
-      const classCell = (r.classLetter)
-        ? `<span class="class-badge" style="background:${r.classColour};color:${r.classTextColour}">${r.classLetter}</span>`
-        : '—';
-      const selected = (r.rspo === state.selectedSchool);
-      const mainRow = `<tr data-rspo="${r.rspo}"${selected ? ' class="highlight"' : ''}>
+  function schoolRowHTML(r, colspan) {
+    const offMap = !r.hasCoords ? ` <span class="off-map" title="${t('offMap')}">📍✗</span>` : '';
+    const looCell = (r.looMinR != null) ? `${r.looMinR}–${r.looMaxR}` : '—';
+    const syCell  = (r.singleMinR != null) ? `${r.singleMinR}–${r.singleMaxR}` : '—';
+    const pubLabel = r.pub ? t('publicYesShort') : t('publicNoShort');
+    const selected = (r.rspo === state.selectedSchool);
+    const mainRow = `<tr data-rspo="${r.rspo}"${selected ? ' class="highlight"' : ''}>
         <td class="num">${r.rank ?? '—'}</td>
         <td>${escapeHTML(r.name)}${offMap}</td>
         <td>${escapeHTML(r.town || '')}</td>
@@ -420,15 +592,55 @@
         <td>${pubLabel}</td>
         <td class="num">${r.n_years}${r.n_years < 3 ? ` <span class="warn-icon" title="${escapeHTML(t('warnShortHistory'))}">⚠️</span>` : ''}</td>
         <td class="num">${fmtScoreHTML(r.score, state.metric)}</td>
-        <td class="num class-cell">${classCell}</td>
+        <td class="num class-cell">${classCellHTML(r)}</td>
         <td class="num">${looCell}</td>
         <td class="num">${syCell}</td>
         <td>${escapeHTML(r.gmina || '')}</td>
         <td>${escapeHTML(r.powiat || '')}</td>
       </tr>`;
-      // A selected row expands an inline detail panel below it.
-      return mainRow + (selected ? renderDetailRow(r) : '');
-    }).join('')}</tbody>`;
+    // A selected row expands an inline detail panel below it.
+    return mainRow + (selected ? renderDetailRow(r, colspan) : '');
+  }
+
+  // No data-rspo, so the row-click handler below never binds to a region — the
+  // detail panel is a per-school affordance and the region files carry nothing
+  // to put in it.
+  function regionRowHTML(r, hasParent) {
+    // The reason rides in the name cell, not the score cell: at gmina level 69
+    // rows carry it, and a sentence in a numeric column would set that column's
+    // width for all 2,479.
+    const reason = r.suppressed
+      ? ` <span class="muted small">${escapeHTML(t(r.reasonKey))}</span>` : '';
+    return `<tr data-region="${r.key}">
+        <td class="num">${r.rank ?? '—'}</td>
+        <td>${escapeHTML(r.name)}${reason}</td>
+        ${hasParent ? `<td>${escapeHTML(r.parent || '')}</td>` : ''}
+        <td class="num">${r.n_schools}</td>
+        <td class="num">${r.n_students}</td>
+        <td class="num">${fmtScoreHTML(r.score, state.metric)}</td>
+        <td class="num class-cell">${classCellHTML(r)}</td>
+        <td class="num">${r.pct == null ? '—' : r.pct.toFixed(1)}</td>
+      </tr>`;
+  }
+
+  function renderTable(rows) {
+    const table = document.getElementById('ranking-table');
+    const columns = currentColumns();
+    const head = `<thead><tr>${columns.map(col => {
+      const indicator = (state.sortKey === col.key)
+        ? `<span class="sort-indicator">${state.sortDir === 'asc' ? '▲' : '▼'}</span>` : '';
+      const style = col.width ? ` style="width:${col.width};"` : '';
+      const help = col.help
+        ? ` <span class="help-icon" tabindex="0" role="button" aria-label="?" data-help="${escapeHTML(t(col.help, ...(col.helpArgs || [])))}">i</span>`
+        : '';
+      return `<th data-col="${col.key}" class="${col.num ? 'num' : ''}"${style}>${col.label}${help}${indicator}</th>`;
+    }).join('')}</tr></thead>`;
+
+    const schools = state.level === 'school';
+    const hasParent = !!PARENT_LEVEL[state.level];
+    const body = `<tbody>${rows.map(r =>
+      schools ? schoolRowHTML(r, columns.length) : regionRowHTML(r, hasParent)
+    ).join('')}</tbody>`;
 
     table.innerHTML = head + body;
 
@@ -489,13 +701,51 @@
     renderAll();
   }
 
+  // Every row the current level ranks, before filtering. Regions are mapped from
+  // the columnar payload by index rather than materialised up front, so a metric
+  // or subject change re-reads the same loaded file instead of refetching it.
+  function allRows() {
+    if (!populationLoaded()) return [];
+    if (state.level === 'school') return schoolRows.map(buildSchoolRow);
+    return regionData.regions.teryt.map((_, i) => buildRegionRow(i));
+  }
+
+  // The denominator for "N of M". The level's whole population — for schools the
+  // SELECTED POWIAT's school count, never the 12,889 nationally: claiming the
+  // larger number is precisely the partial-ranking-as-a-whole this level control
+  // exists to prevent.
+  function populationSize() {
+    if (!populationLoaded()) return 0;
+    return state.level === 'school' ? schoolRows.length : regionData.regions.teryt.length;
+  }
+
+  // What stands in for the table when there is nothing honest to rank yet.
+  // Returns the message, or '' when the table itself should render.
+  function blockingMessage() {
+    if (state.level === 'school' && !state.region) return t('rankingPickRegion');
+    if (populationError) return t('historyFailed');
+    if (!populationLoaded()) return t('historyLoading');
+    return '';
+  }
+
   function renderAll() {
-    const rows = loadedSchools.map(buildRow);
-    const filtered = sortRows(filterRows(rows));
-    document.getElementById('ranking-info').textContent =
-      t('rowsShown', filtered.length, loadedSchools.length);
+    const promptEl = document.getElementById('ranking-prompt');
+    const infoEl   = document.getElementById('ranking-info');
+    const table    = document.getElementById('ranking-table');
+
+    const blocked = blockingMessage();
+    promptEl.textContent = blocked;
+    promptEl.style.display = blocked ? '' : 'none';
+    if (blocked) {
+      infoEl.textContent = '';
+      table.innerHTML = '';       // headers over an empty body just read as broken
+      return;
+    }
+
+    const filtered = sortRows(filterRows(allRows()));
+    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, populationSize());
     renderTable(filtered);
-    if (state.selectedSchool != null) {
+    if (state.level === 'school' && state.selectedSchool != null) {
       const tr = document.querySelector(`tr[data-rspo="${state.selectedSchool}"]`);
       if (tr) tr.scrollIntoView({ block: 'center', behavior: 'auto' });
     }
@@ -508,6 +758,9 @@
     const wrap = document.getElementById('view-param-field');
     const sel = document.getElementById('view-param-select');
     sel.innerHTML = '';
+    // Regions ship the `base` view alone, so the whole view machinery is a
+    // school-level affordance (#level-note says so beside the disabled select).
+    if (state.level !== 'school') { wrap.style.display = 'none'; return; }
     const years = scaleData.metadata.years_in_data;
     let options = [];
     if (state.view === 'single_year' || state.view === 'loo') {
@@ -537,49 +790,206 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Per-metric history file
+  // Loading the population the table ranks
   //
-  // The rank-range columns, the non-base views and the detail panel all need it,
-  // so it is fetched for whatever metric is selected — always, in the background,
-  // never behind a checkbox. Asking first made the ranking look broken: picking
-  // a non-base view showed "—" everywhere until you spotted an opt-in row well
-  // above the table and guessed it was related.
+  // One fetch per level change, metric change (school level only — the region
+  // files carry every metric) or region change. Every loader in app.js caches
+  // its promise, so revisiting a level or powiat costs nothing.
+  //
+  // At school level the shard doubles as the history file: it already carries
+  // base/loo/single_year/last_k per subject, which is what the rank-range
+  // columns, the non-base views and the detail panel need. There is no second
+  // download the way there was when those lived in whole-country per-metric
+  // files.
 
-  async function ensureMetricLoaded() {
-    // No-op until Task 16, which owns this page: the per-metric whole-country
-    // files are gone, and their replacement, loadShard, is per-powiat — so it
-    // needs the region that Task 16's level control selects. Not an oversight.
+  async function fetchPopulation(level, region, metric) {
+    if (REGION_LEVELS.includes(level)) {
+      const parentLevel = PARENT_LEVEL[level];
+      // The parent file is fetched only for its names (the "parent" column) —
+      // 13 KB for voivodeship, 242 KB for powiat, both cached for the session.
+      const [regions] = await Promise.all([
+        loadRegions(level),
+        parentLevel ? loadRegions(parentLevel) : Promise.resolve(null),
+      ]);
+      return { regions, schools: [], history: null };
+    }
+    if (!region) return { regions: null, schools: [], history: null };
+    const [shard, index] = await Promise.all([
+      loadShard(region, metric),
+      loadIndex(),
+      // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
+      // nameOf() resolve the gmina column and makes the name search match on it.
+      // Same deal as map.js's buildSchools: one 1.59 MB fetch a session, and
+      // only once a powiat has been deliberately chosen.
+      loadRegions('gmina'),
+      loadRegions('powiat'),
+    ]);
+    const col = index.schools;
+    const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
+    const schools = Object.entries(shard.schools).map(([rspo, byLevel]) => {
+      const i = pos.get(rspo);
+      if (i == null) return null;
+      const byMetric = byLevel[baselineLevel] || {};
+      // The shape buildSchoolRow expects: school.scores[metric][subject].score.
+      // `views.base` is legitimately absent for some cells (suppression is per
+      // view), and assigning `undefined` here is correct — the row then shows
+      // "—" rather than throwing. Do NOT rewrite as `views.base.score`.
+      const scores = { [metric]: {} };
+      for (const [subject, views] of Object.entries(byMetric)) {
+        scores[metric][subject] = views.base;
+      }
+      return {
+        rspo: Number(rspo),
+        name: col.name[i],
+        miejscowosc: col.miejscowosc[i],
+        ulica_nr: col.ulica_nr[i],
+        gmina: nameOf('gmina', col.teryt[i].slice(0, 6)),
+        powiat: nameOf('powiat', col.powiat[i]),
+        is_public: col.is_public[i],
+        n_years: col.n_years[i],
+        lat: col.lat[i],
+        lon: col.lon[i],
+        scores,
+      };
+    }).filter(Boolean);
+    const history = { schools: Object.fromEntries(
+      Object.entries(shard.schools).map(([rspo, byLevel]) => [rspo, byLevel[baselineLevel] || {}])
+    ) };
+    return { regions: null, schools, history };
   }
 
-  // Fetch in the background and re-render when it lands. Never awaited by a
-  // handler, so the table stays interactive for the whole download; a failure
-  // leaves the base view working rather than blanking the page.
-  function loadMetricInBackground() {
-    if (histByMetric[state.metric]) return;
-    historyError = false;
-    ensureMetricLoaded()
-      .then(renderAll)
-      .catch(e => {
-        // Say so rather than leaving "Ładowanie…" on screen forever.
-        console.error('history load failed', e);
-        historyError = true;
-        renderAll();
-      });
+  // Request the current level's population and re-render when it lands. Never
+  // awaited by a handler, so the page stays interactive for the whole download;
+  // a response the user has already navigated away from is discarded by the key
+  // check rather than clobbering what is on screen.
+  function refreshPopulation() {
+    const key = populationKey();
+    const { level, region, metric } = state;
+    populationError = false;
+    if (loadedKey !== key) renderAll();   // show the loading state at once
+    fetchPopulation(level, region, metric).then((got) => {
+      if (key !== populationKey()) return;
+      regionData = got.regions;
+      schoolRows = got.schools;
+      shardHistory = got.history;
+      loadedKey = key;
+      renderAll();
+    }).catch((e) => {
+      if (key !== populationKey()) return;
+      // Say so rather than leaving "Ładowanie…" on screen forever.
+      console.error('population load failed', e);
+      populationError = true;
+      renderAll();
+    });
   }
 
   // ---------------------------------------------------------------------------
   // Controls wiring
 
+  function fillLevelSelect(selectEl) {
+    selectEl.innerHTML = '';
+    for (const level of RANK_LEVELS) {
+      const opt = document.createElement('option');
+      opt.value = level;
+      opt.textContent = levelLabel(level);
+      if (level === state.level) { opt.selected = true; opt.setAttribute('selected', ''); }
+      selectEl.appendChild(opt);
+    }
+  }
+
+  // 380 powiats in <optgroup>s by voivodeship. Filled lazily — only once school
+  // level is actually in play — because at a region level the two files behind
+  // it may not be needed at all.
+  let regionSelectFilled = false;
+
+  async function fillRegionSelect() {
+    const sel = document.getElementById('region-select');
+    const [voiv, pow] = await Promise.all([loadRegions('voivodeship'), loadRegions('powiat')]);
+    sel.innerHTML = '';
+    const placeholder = document.createElement('option');
+    placeholder.value = '';
+    placeholder.textContent = t('regionPlaceholder');
+    sel.appendChild(placeholder);
+    const groups = new Map();
+    const v = voiv.regions, p = pow.regions;
+    for (let i = 0; i < v.teryt.length; i++) {
+      const group = document.createElement('optgroup');
+      group.label = v.name[i];
+      groups.set(v.teryt[i], group);
+      sel.appendChild(group);
+    }
+    for (let i = 0; i < p.teryt.length; i++) {
+      const group = groups.get(p.parent[i]);
+      if (!group) continue;
+      const opt = document.createElement('option');
+      opt.value = p.teryt[i];
+      opt.textContent = p.name[i];
+      group.appendChild(opt);
+    }
+    regionSelectFilled = true;
+    sel.value = state.region || '';
+    // A URL or stored TERYT that names no real powiat leaves the select on the
+    // placeholder; drop it from state too, so the prompt appears instead of the
+    // page silently ranking nothing.
+    if (sel.value !== (state.region || '')) {
+      state.region = null;
+      writePref('rank_region', null);
+      syncURL();
+    }
+  }
+
+  // Level and region only mean something together; everything below them is a
+  // school-level affordance. Disabled with a reason rather than hidden — the map
+  // handles its own inapplicable baseline selector the same way.
+  function syncControlAvailability() {
+    const schools = state.level === 'school';
+    document.getElementById('region-select').disabled = !schools;
+    document.getElementById('view-select').disabled = !schools;
+    for (const r of document.querySelectorAll('input[name="public"]')) r.disabled = !schools;
+    document.getElementById('level-note').textContent = schools ? '' : t('levelRegionNote');
+    const hint = document.querySelector('.click-hint');
+    if (hint) hint.style.display = schools ? '' : 'none';
+  }
+
   function wireControls() {
+    const levelSel   = document.getElementById('level-select');
+    const regionSel  = document.getElementById('region-select');
     const metricSel  = document.getElementById('metric-select');
     const subjectSel = document.getElementById('subject-select');
     const viewSel    = document.getElementById('view-select');
     const viewParamSel = document.getElementById('view-param-select');
     const nameInput  = document.getElementById('name-search');
 
+    fillLevelSelect(levelSel);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
     fillSubjectSelect(subjectSel, state.subject);
     viewSel.value = state.view;
+
+    levelSel.addEventListener('change', () => {
+      state.level = levelSel.value;
+      writePref('rank_level', state.level);
+      // The two shapes share only rank/name/score/classLetter, so a sort on a
+      // column the new level does not have would silently order by nothing.
+      if (!currentColumnKeys().includes(state.sortKey)) {
+        state.sortKey = 'rank';
+        state.sortDir = 'asc';
+      }
+      if (state.level === 'school' && !regionSelectFilled) {
+        fillRegionSelect().catch(e => console.error('region list unavailable', e));
+      }
+      syncControlAvailability();
+      updateViewParamField();
+      syncURL();
+      refreshPopulation();
+    });
+
+    regionSel.addEventListener('change', () => {
+      state.region = regionSel.value || null;
+      writePref('rank_region', state.region);
+      state.selectedSchool = null;   // that school is not in the new powiat
+      syncURL();
+      refreshPopulation();
+    });
 
     const advancedCB = document.getElementById('advanced-metrics-toggle');
     advancedCB.checked = state.advancedMetrics;
@@ -591,7 +1001,7 @@
       if (!state.advancedMetrics && isAdvancedMetric(state.metric)) {
         state.metric = DEFAULTS.metric;
         writePref('metric', state.metric);
-        loadMetricInBackground();
+        refreshPopulation();
       }
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       syncURL();
@@ -602,9 +1012,10 @@
       state.metric = metricSel.value;
       writePref('metric', state.metric);
       syncURL();
-      renderAll();
-      // The range columns need the new metric's file even on the base view.
-      loadMetricInBackground();
+      // The shards are per-metric, so school level needs a new one. The region
+      // files carry every metric, so there it is a cache hit and renderAll alone
+      // would do — refreshPopulation short-circuits to exactly that.
+      refreshPopulation();
     });
 
     subjectSel.addEventListener('change', () => {
@@ -618,8 +1029,8 @@
       state.view = viewSel.value;
       updateViewParamField();
       syncURL();
+      // No fetch: the shard already carries loo/single_year/last_k alongside base.
       renderAll();
-      loadMetricInBackground();
     });
 
     viewParamSel.addEventListener('change', () => {
@@ -653,8 +1064,15 @@
     wireLangToggle(() => {
       state.lang = currentLang;
       syncURL();
+      fillLevelSelect(levelSel);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillSubjectSelect(subjectSel, state.subject);
+      // Only the placeholder is translated; the 380 powiat names are not.
+      if (regionSelectFilled) {
+        const placeholder = regionSel.querySelector('option[value=""]');
+        if (placeholder) placeholder.textContent = t('regionPlaceholder');
+      }
+      syncControlAvailability();
       fillDataYears();
       renderAll();
     });
@@ -689,17 +1107,27 @@
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
       return;
     }
+    // The map hands a school over as ranking.html?school=<rspo> and carries no
+    // region with it. Deriving the powiat from the index keeps that handoff
+    // landing on the school instead of on the pick-a-county prompt.
+    if (state.level === 'school' && !state.region && state.selectedSchool != null) {
+      const col = indexData.schools;
+      const i = col.rspo.indexOf(state.selectedSchool);
+      if (i >= 0) state.region = col.powiat[i];
+    }
+
     wireControls();
+    syncControlAvailability();
+    if (state.level === 'school') {
+      fillRegionSelect().catch(e => console.error('region list unavailable', e));
+    }
     fillDataYears();
     updateViewParamField();
 
-    // Render immediately from whatever population is loaded. Empty until Task 16.
-    renderAll();
     syncURL();
-
-    // Then fill the range columns, the non-base views and the detail panels from
-    // the shards. Unawaited, so the page stays usable for the whole download.
-    loadMetricInBackground();
+    // Unawaited, so the page stays usable for the whole download; renderAll runs
+    // inside it, first for the loading state and again when the data lands.
+    refreshPopulation();
   }
 
   main();

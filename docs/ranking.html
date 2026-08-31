@@ -19,6 +19,25 @@
 
   <main>
     <div class="ranking-controls">
+      <div class="field field--level">
+        <span>
+          <label for="level-select" data-i18n="labelRankLevel">Poziom rankingu</label><span
+            class="help-icon" tabindex="0" role="button" aria-label="?"
+            data-i18n-attr="data-help|helpRankLevel">i</span>
+        </span>
+        <select id="level-select"></select>
+      </div>
+
+      <!-- Only meaningful at school level, so it is disabled (not hidden) at the
+           three region levels, with #level-note saying why — the same pattern as
+           the map's baseline-select / #baseline-note. That note lives in
+           .ranking-meta rather than here: this is a flex row of short fields, and
+           a sentence inside one of them stretches it across half the row. -->
+      <div class="field field--region">
+        <label for="region-select" data-i18n="labelRegion">Wybrany powiat</label>
+        <select id="region-select"></select>
+      </div>
+
       <div class="field field--metric">
         <span>
           <label for="metric-select" data-i18n="labelMetric">Metryka</label><a
@@ -64,6 +83,13 @@
     <div class="ranking-meta">
       <p class="data-years" id="data-years"></p>
       <p id="ranking-info"></p>
+      <!-- Why the region / view / public controls are greyed out at a region
+           level. Empty (and collapsed by .field-note:empty) at school level. -->
+      <p id="level-note" class="field-note"></p>
+      <!-- Stands in for the table when there is nothing honest to rank yet:
+           school level with no county picked, a population still loading, or a
+           failed fetch. Hidden by JS when the table has rows. -->
+      <p id="ranking-prompt"></p>
       <p class="small click-hint" data-i18n="clickHint">Kliknij wiersz, aby rozwinąć szczegóły szkoły.</p>
       <p class="muted small meta-links"><a href="help.html#stability" data-i18n="helpLink">Jak liczone są wyniki? → Pomoc</a></p>
 
