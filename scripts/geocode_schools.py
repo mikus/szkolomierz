@@ -10,7 +10,7 @@ that the notebook reads.
 
 Workflow
 --------
-1. Reads the schools and their addresses from docs/data/schools-base.json
+1. Reads the schools and their addresses from docs/data/schools-index.json
    (which the analysis notebook produces).
 2. Reads the existing cache data/school_coords.csv (if present).
 3. For each school:
@@ -54,7 +54,7 @@ from urllib.request import Request, urlopen
 
 # ── Paths (relative to project root; script lives in scripts/) ──────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCHOOLS_BASE_JSON = PROJECT_ROOT / 'docs' / 'data' / 'schools-base.json'
+SCHOOLS_INDEX_JSON = PROJECT_ROOT / 'docs' / 'data' / 'schools-index.json'
 COORDS_CSV = PROJECT_ROOT / 'data' / 'school_coords.csv'
 UNMAPPED_CSV = PROJECT_ROOT / 'data' / 'school_coords_unmapped.csv'
 
@@ -281,19 +281,22 @@ def load_existing_cache(path: Path) -> list[dict]:
 
 
 def load_schools(path: Path) -> list[dict]:
-    """Load schools (rspo, miejscowosc, ulica_nr) from schools-base.json."""
+    """Load schools (rspo, miejscowosc, ulica_nr) from schools-index.json.
+
+    The index is columnar — parallel arrays under 'schools', one element per
+    school — so the three columns this script needs are zipped back into rows.
+    strict=True because a length mismatch between them would otherwise truncate
+    silently, dropping schools off the end of the shortest column.
+    """
     if not path.exists():
         raise FileNotFoundError(
             f'{path} not found. Run the analysis notebook first to generate it.'
         )
-    payload = json.loads(path.read_text(encoding='utf-8'))
+    columns = json.loads(path.read_text(encoding='utf-8'))['schools']
     return [
-        {
-            'rspo': school['rspo'],
-            'miejscowosc': school.get('miejscowosc'),
-            'ulica_nr': school.get('ulica_nr'),
-        }
-        for school in payload['schools']
+        {'rspo': rspo, 'miejscowosc': miejscowosc, 'ulica_nr': ulica_nr}
+        for rspo, miejscowosc, ulica_nr in zip(
+            columns['rspo'], columns['miejscowosc'], columns['ulica_nr'], strict=True)
     ]
 
 
@@ -602,8 +605,8 @@ def main() -> None:
 
     user_agent = resolve_user_agent(args.contact)
 
-    schools = load_schools(SCHOOLS_BASE_JSON)
-    print(f'Loaded {len(schools):,} schools from {SCHOOLS_BASE_JSON.name}')
+    schools = load_schools(SCHOOLS_INDEX_JSON)
+    print(f'Loaded {len(schools):,} schools from {SCHOOLS_INDEX_JSON.name}')
 
     existing_rows = [] if args.force else load_existing_cache(COORDS_CSV)
     print(
