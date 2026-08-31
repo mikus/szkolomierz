@@ -61,6 +61,11 @@ Checks
   L. Size budgets (§7.11): every emitted file gzipped and compared to §5.7.
   M. Percentiles gated on the SIBLING count (§7.5).
   N. Diff scores gated on the PARENT's school count (§7.6).
+  O. Voivodeship codes and names are a bijection (§7.2), 16 of each.
+  P. Region keys are stable across years (§7.4): the voivodeship and powiat keys
+     must not move, the published teryt must be the school's newest source row,
+     and a school whose gmina genuinely changes is reported by name rather than
+     failed — that is a real event, not a fault.
 
 M and N gate on two different populations, and conflating them is the easiest
 way to break this map. Both derive their populations independently — the
@@ -142,6 +147,11 @@ PARENT_REFERENCE_LEVEL = {'voivodeship': 'national', 'powiat': 'voivodeship',
 # agree with itself. Check F compares these against the published metadata.
 MIN_REFERENCE_N = 5
 MIN_PERCENTILE_N = 8
+
+# Poland has had 16 voivodeships since 1999. Check O pins the count so a source
+# edition that merged or renamed one says so instead of quietly reshaping a
+# reference population.
+EXPECTED_VOIVODESHIPS = 16
 
 # Spec §5.7, in gzipped KiB. Budgets are a gate, not guidance.
 FILE_BUDGETS_KB = {
@@ -1506,6 +1516,134 @@ def check_reference_gate(regions, recomputed_regions, rep: Report):
                      f'diff cells blanked by the gate: {blanked:,}')
 
 
+def check_voivodeship_bijection(rows, rep: Report):
+    """O (spec §7 assertion 2) — the voivodeship code takes exactly 16 values and
+    the code <-> name mapping is one-to-one in both directions.
+
+    Every grouping in the pipeline keys on the CODE (§4.1), so nothing downstream
+    would raise if a source edition renamed a voivodeship or reused a name: one
+    reference population would quietly split in two, or two would pool into one.
+    Both directions are asserted because each catches a different fault — a
+    renamed region shows up as one code with two names, a mis-keyed one as one
+    name with two codes.
+    """
+    rep.section('O. Voivodeship codes and names are a bijection')
+    width = REFERENCE_WIDTH['voivodeship']
+    names_by_code: dict[Teryt, set] = defaultdict(set)
+    codes_by_name: dict[str, set] = defaultdict(set)
+    for row in rows:
+        names_by_code[row['teryt'][:width]].add(row['wojewodztwo'])
+        codes_by_name[row['wojewodztwo']].add(row['teryt'][:width])
+
+    problems = []
+    if len(names_by_code) != EXPECTED_VOIVODESHIPS:
+        problems.append(f'{len(names_by_code)} distinct voivodeship codes, expected '
+                        f'{EXPECTED_VOIVODESHIPS}: {sorted(names_by_code)}')
+    for code, names in sorted(names_by_code.items()):
+        if len(names) > 1:
+            problems.append(f'code {code} carries {len(names)} names: {sorted(names)}')
+    for name, codes in sorted(codes_by_name.items()):
+        if len(codes) > 1:
+            problems.append(f'name {name!r} carries {len(codes)} codes: {sorted(codes)}')
+
+    rep.checked += len(names_by_code) + len(codes_by_name)
+    if problems:
+        rep.fail('the voivodeship code <-> name mapping is not one-to-one', problems)
+    else:
+        rep.ok(f'{len(names_by_code)} voivodeship codes, one name each and one code per '
+               f'name ({len(codes_by_name)} names)')
+
+
+def describe_key_history(entries: list[tuple[Year, str]], width: int) -> str:
+    """'141204 in 2021-2025, then 141211 in 2026' — the runs of one key, in order."""
+    runs: list[tuple[str, list[Year]]] = []
+    for year, teryt in entries:
+        key = teryt[:width]
+        if runs and runs[-1][0] == key:
+            runs[-1][1].append(year)
+        else:
+            runs.append((key, [year]))
+    return ', then '.join(
+        f'{key} in {years[0]}-{years[-1]}' if len(years) > 1 else f'{key} in {years[0]}'
+        for key, years in runs
+    )
+
+
+def check_region_key_stability(rows, index: dict, rep: Report):
+    """P (spec §7 assertion 4) — a school's region keys must not wander.
+
+    Deliberately NOT a flat stability assertion at every level, because that is
+    false today and a check that fails on arrival is one you learn to ignore
+    rather than learn from. The three parts do different jobs:
+
+    * voivodeship and powiat keys MUST be constant. Both are today, and a change
+      there is a data fault, not a boundary reform a school can undergo.
+    * The published `teryt` in schools-index.json MUST equal the school's newest
+      source row. That is the pinning the pipeline actually applies (`df_recent`
+      in the export), and it is what decides which gmina row a school's whole
+      multi-year aggregate lands in. Nothing else compares the two.
+    * A school whose gmina key genuinely changes is REPORTED, not failed, and
+      named. It is a real event with a real consequence — the gmina it left
+      loses a school it held for years, silently — so the count is printed every
+      run whether or not it is zero.
+
+    The full seven-digit code is noisier still: its last digit is the gmina TYPE
+    (1 urban, 2 rural, 4/5 the halves of an urban-rural gmina), which moves for
+    schools that never went anywhere. Keying every level on a prefix of at most
+    six digits is exactly what keeps those histories in one piece, and the count
+    printed below is the standing evidence for that decision.
+    """
+    rep.section('P. Region keys are stable across years, and the gmina pinning holds')
+    history: dict[Rspo, list[tuple[Year, str]]] = defaultdict(list)
+    for row in rows:
+        history[row['rspo']].append((row['year'], row['teryt']))
+    for entries in history.values():
+        entries.sort()
+
+    moved: dict[Level, list[str]] = {level: [] for level in REGION_LEVELS}
+    type_digit_only = 0
+    for rspo, entries in sorted(history.items()):
+        for level in REGION_LEVELS:
+            width = REFERENCE_WIDTH[level]
+            if len({teryt[:width] for _, teryt in entries}) > 1:
+                moved[level].append(f'rspo {rspo}: {describe_key_history(entries, width)}')
+        codes = {teryt for _, teryt in entries}
+        if len(codes) > 1 and len({teryt[:REFERENCE_WIDTH['gmina']] for teryt in codes}) == 1:
+            type_digit_only += 1
+
+    published_teryt = {int(rspo): str(teryt)
+                       for rspo, teryt in zip(index['rspo'], index['teryt'])}
+    mispinned = [
+        f'rspo {rspo}: index={published_teryt.get(rspo)} newest source row={entries[-1][1]}'
+        for rspo, entries in sorted(history.items())
+        if published_teryt.get(rspo) != entries[-1][1]
+    ]
+
+    rep.checked += len(history) * len(REGION_LEVELS) + len(history)
+    problems = []
+    for level in ('voivodeship', 'powiat'):
+        if moved[level]:
+            problems.append(f'{len(moved[level])} schools change their {level} key: '
+                            f'{moved[level][:3]}')
+    if mispinned:
+        problems.append(f'{len(mispinned)} schools pinned to a gmina that is not their '
+                        f'newest source row: {mispinned[:3]}')
+    if problems:
+        rep.fail('region keys are not stable', problems)
+    else:
+        rep.ok(f'{len(history):,} schools: voivodeship and powiat keys constant across '
+               f'years, every published teryt its newest source row')
+
+    rep.note(f'schools whose gmina key changes across years: {len(moved["gmina"])}')
+    for line in moved['gmina'][:10]:
+        rep.note(f'  {line}')
+    if len(moved['gmina']) > 10:
+        rep.note(f'  … and {len(moved["gmina"]) - 10:,} more')
+    rep.note(f'schools whose 7-digit teryt changes but whose gmina does not: '
+             f'{type_digit_only:,} — the gmina TYPE digit, which is why every level '
+             f'keys on a prefix of at most six')
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -1605,6 +1743,8 @@ def main():
     check_size_budgets(args.docs_data, args.geo_dir, rep)
     check_percentile_gate(region_payloads, recomputed_regions, rep)
     check_reference_gate(region_payloads, recomputed_regions, rep)
+    check_voivodeship_bijection(rows, rep)
+    check_region_key_stability(rows, index, rep)
 
     print(f'\n{"=" * 64}')
     if rep.failures == 0:
