@@ -54,9 +54,10 @@ const SUBJECTS = ['polski', 'matematyka', 'angielski', 'composite_min'];
 const CORE_SUBJECTS = ['polski', 'matematyka', 'angielski'];
 
 const DEFAULTS = {
-  metric:  'mean',
-  subject: 'composite_min',
-  lang:    'pl',
+  metric:   'mean',
+  subject:  'composite_min',
+  lang:     'pl',
+  baseline: 'voivodeship',   // the level the map used before this change
 };
 
 const COLOURS = {
@@ -142,21 +143,25 @@ function colourFor(score, centre, sigma, p1, p99, gradient) {
   return gradient ? gradient3Colour(score, centre, sigma, p1, p99) : CLASS3_FLAT[i];
 }
 
-// p1/p99 of the base scores for a (metric, subject), computed once and cached.
-// 1720 numbers → sorting is sub-millisecond; recomputed only on a cache miss
-// (per metric/subject), never per marker. No notebook/metadata change needed.
-const _extentCache = {};
+const REFERENCE_LEVEL_KEYS = ['national', 'voivodeship', 'powiat', 'gmina'];
+
+// What a SCHOOL is compared against (spec §6.2). Shared rather than per-page:
+// index.html and ranking.html both load app.js and both colour by these anchors.
+let baselineLevel = DEFAULTS.baseline;
+
+// p1/p99 are precomputed nationally in scale.json. They used to be derived here
+// by sorting every school's score, which with per-powiat shards would sort ~27
+// schools and colour the same school differently depending which shard loaded
+// first.
+function scaleFor(metric, subject) {
+  const byMetric = scaleData && scaleData.school[baselineLevel];
+  return (byMetric && byMetric[metric] && byMetric[metric][subject])
+    || { sigma: 1, sigma_centre: 0, p1: 0, p99: 0 };
+}
+
 function scoreExtent(metric, subject) {
-  const key = metric + '|' + subject;
-  if (_extentCache[key]) return _extentCache[key];
-  const vals = baseData.schools
-    .map(s => s.scores?.[metric]?.[subject]?.score)
-    .filter(v => v != null)
-    .sort((a, b) => a - b);
-  const at = (p) => vals.length ? vals[Math.min(vals.length - 1, Math.max(0, Math.round(p / 100 * (vals.length - 1))))] : 0;
-  const r = { p1: at(1), p99: at(99) };
-  _extentCache[key] = r;
-  return r;
+  const { p1, p99 } = scaleFor(metric, subject);
+  return { p1, p99 };
 }
 
 // Per-subject line colours, shared by the map popup sparkline and the ranking
@@ -265,23 +270,60 @@ function subjectLegendHTML(subjects) {
 // -----------------------------------------------------------------------------
 // Data loading
 
-let baseData = null;
-const metricCache = {};  // metric -> parsed JSON
+// One loader per artifact. The old loadBaseData was a single-shot memoised
+// global with no merge path: a second fetch overwrote the first, which is fine
+// for one whole-country file and wrong for 1,520 per-powiat shards. Each cache
+// below is therefore keyed by what makes its payload distinct.
 
-async function loadBaseData() {
-  if (baseData) return baseData;
-  const res = await fetch('data/schools-base.json');
-  if (!res.ok) throw new Error(`schools-base.json: HTTP ${res.status}`);
-  baseData = await res.json();
-  return baseData;
+let indexData = null, scaleData = null;
+const regionCache = new Map();   // level    -> payload
+const shardCache  = new Map();   // "1425|mean" -> payload
+
+async function loadIndex() {
+  if (indexData) return indexData;
+  indexData = await (await fetch('data/schools-index.json')).json();
+  return indexData;
 }
 
-async function loadMetricData(metric) {
-  if (metricCache[metric]) return metricCache[metric];
-  const res = await fetch(`data/schools-${metric}.json`);
-  if (!res.ok) throw new Error(`schools-${metric}.json: HTTP ${res.status}`);
-  metricCache[metric] = await res.json();
-  return metricCache[metric];
+async function loadScale() {
+  if (scaleData) return scaleData;
+  scaleData = await (await fetch('data/scale.json')).json();
+  return scaleData;
+}
+
+async function loadRegions(level) {
+  if (regionCache.has(level)) return regionCache.get(level);
+  const payload = await (await fetch('data/regions-' + level + '.json')).json();
+  regionCache.set(level, payload);
+  return payload;
+}
+
+async function loadShard(powiat, metric) {
+  const key = powiat + '|' + metric;
+  if (shardCache.has(key)) return shardCache.get(key);
+  const payload = await (await fetch('data/powiat/' + powiat + '-' + metric + '.json')).json();
+  shardCache.set(key, payload);
+  return payload;
+}
+
+// Each geometry file is named for the region in view but contains its CHILDREN,
+// so `level` here is the parent's level, not the level being drawn. There is no
+// gmina branch because there is no geometry below gmina — at that level the map
+// draws school markers instead. Caching the promise rather than the resolved
+// value means two moveend events in the same tick share one fetch.
+const geoCache = new Map();
+
+async function loadGeometryFor(level, focused) {
+  const path = level === 'country' ? 'geo/kraj.json'
+    : level === 'voivodeship' ? `geo/woj/${focused.slice(0, 2)}.json`
+    : `geo/pow/${focused.slice(0, 4)}.json`;
+  if (!geoCache.has(path)) {
+    geoCache.set(path, fetch(path).then((r) => {
+      if (!r.ok) throw new Error(`no geometry at ${path}`);
+      return r.json();
+    }));
+  }
+  return geoCache.get(path);
 }
 
 // -----------------------------------------------------------------------------
@@ -622,13 +664,13 @@ function wireLangToggle(onAfterChange) {
   });
 }
 
-// Fill the #data-years subtitle (if present) from the loaded base metadata.
+// Fill the #data-years subtitle (if present) from the loaded scale metadata.
 // Range min–max, so it auto-updates when a new exam year is added. Re-callable
 // (e.g. after a language switch) since the label text is language-dependent.
 function fillDataYears() {
   const el = document.getElementById('data-years');
-  if (!el || typeof baseData === 'undefined' || !baseData) return;
-  const years = baseData.metadata.years_in_data;
+  if (!el || !scaleData) return;
+  const years = scaleData.metadata.years_in_data;
   if (!years || !years.length) return;
   el.textContent = t('dataYears', Math.min(...years), Math.max(...years));
 }

@@ -1,6 +1,7 @@
 // Ranking page: sortable/filterable table of schools by (metric, subject, view).
-// Base view works from schools-base.json alone; LOO/single_year/last_k require
-// an opt-in download of the per-metric file.
+// Scores and the LOO/single_year/last_k views now live in the per-powiat shards
+// (docs/data/powiat/{teryt4}-{metric}.json), so the table has no whole-country
+// population to read; Task 16's level control decides what it ranks.
 
 (function () {
   const state = {
@@ -21,6 +22,11 @@
   };
 
   const ALLOWED_VIEWS = ['base', 'last_k', 'single_year', 'loo'];
+
+  // The schools the table ranks. Empty until Task 16 gives this page its level
+  // control, which decides what populates it: regions rank nationally from
+  // regions-{level}.json, schools only within a chosen region's shards.
+  let loadedSchools = [];
 
   // History data fetched in the background (per-metric).
   const histByMetric = {};
@@ -110,7 +116,7 @@
       }
     }
 
-    // For base view without history loaded, fall back to base from schools-base.json.
+    // For base view without history loaded, fall back to the row's own base scores.
     if (state.view === 'base') {
       viewScore = base?.score ?? null;
       viewRank  = base?.rank  ?? null;
@@ -121,8 +127,7 @@
     // The cell is coloured by the continuous gradient (not a flat class colour),
     // so two schools either side of a boundary look almost the same — the letter
     // flips but the colour barely moves, showing the boundary is soft.
-    const centre = baseData.metadata.sigma_centre[metric][subject];
-    const sigma  = baseData.metadata.sigma[metric][subject];
+    const { sigma, sigma_centre: centre } = scaleFor(metric, subject);
     const { p1, p99 } = scoreExtent(metric, subject);
     const classIndex = classIndex3(viewScore, centre, sigma);
     const classColour = classIndex == null ? null : gradient3Colour(viewScore, centre, sigma, p1, p99);
@@ -312,15 +317,14 @@
       </td></tr>`;
     }
 
-    const years = baseData.metadata.years_in_data;
+    const years = scaleData.metadata.years_in_data;
     const yearsPresent = years.filter(y =>
       DETAIL_SUBJECTS.some(s => hist[s]?.single_year?.[String(y)] != null));
 
     // Class trajectory for the SELECTED subject (composite_min when that's the
     // chosen subject), plus how often the school lands in each class.
     const subj = state.subject;
-    const cCentre = baseData.metadata.sigma_centre[state.metric][subj];
-    const cSigma  = baseData.metadata.sigma[state.metric][subj];
+    const { sigma: cSigma, sigma_centre: cCentre } = scaleFor(state.metric, subj);
     const { p1: cP1, p99: cP99 } = scoreExtent(state.metric, subj);
     const counts = [0, 0, 0];
     const trajBadges = yearsPresent.map(y => {
@@ -486,10 +490,10 @@
   }
 
   function renderAll() {
-    const rows = baseData.schools.map(buildRow);
+    const rows = loadedSchools.map(buildRow);
     const filtered = sortRows(filterRows(rows));
     document.getElementById('ranking-info').textContent =
-      t('rowsShown', filtered.length, baseData.schools.length);
+      t('rowsShown', filtered.length, loadedSchools.length);
     renderTable(filtered);
     if (state.selectedSchool != null) {
       const tr = document.querySelector(`tr[data-rspo="${state.selectedSchool}"]`);
@@ -504,7 +508,7 @@
     const wrap = document.getElementById('view-param-field');
     const sel = document.getElementById('view-param-select');
     sel.innerHTML = '';
-    const years = baseData.metadata.years_in_data;
+    const years = scaleData.metadata.years_in_data;
     let options = [];
     if (state.view === 'single_year' || state.view === 'loo') {
       options = years.map(y => ({ value: String(y), label: String(y) }));
@@ -542,9 +546,9 @@
   // above the table and guessed it was related.
 
   async function ensureMetricLoaded() {
-    if (histByMetric[state.metric]) return;
-    const metric = state.metric;
-    histByMetric[metric] = await loadMetricData(metric);
+    // No-op until Task 14: the per-metric whole-country files are gone and their
+    // replacement, loadShard, needs a powiat that nothing computes until Task
+    // 14's focus resolution lands. Not an oversight.
   }
 
   // Fetch in the background and re-render when it lands. Never awaited by a
@@ -679,7 +683,7 @@
     resolveInitialState();
     setLang(state.lang);
     try {
-      await loadBaseData();
+      await Promise.all([loadIndex(), loadScale()]);
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
@@ -689,14 +693,12 @@
     fillDataYears();
     updateViewParamField();
 
-    // Show the base table immediately — it works from schools-base.json alone.
+    // Render immediately from whatever population is loaded. Empty until Task 16.
     renderAll();
     syncURL();
 
-    // Then pull the per-metric file (~0.8 MB gzipped) so the range columns, the
-    // non-base views and the detail panels fill in. After the first render and
-    // unawaited: the page stays usable for the whole download instead of showing
-    // "Ładowanie…" with no data.
+    // Then fill the range columns, the non-base views and the detail panels from
+    // the shards. Unawaited, so the page stays usable for the whole download.
     loadMetricInBackground();
   }
 

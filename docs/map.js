@@ -26,6 +26,10 @@
 
   let map = null;
   let clusterGroup = null;
+  // The schools currently on the map: one powiat's worth, joined from a shard
+  // to schools-index.json. Empty until Task 14 wires the focus resolution that
+  // decides WHICH powiat — until then the map draws no markers by design.
+  let loadedSchools = [];
   let markersByRspo = new Map();  // rspo -> Leaflet circleMarker
   let schoolSearchIndex = [];     // [{rspo,name,town,gmina,onMap,hay}] for the "find school" box
   let historyData = null;         // metric-keyed cache, filled in the background
@@ -61,7 +65,7 @@
   }
 
   function syncURL() {
-    const range = baseData?.metadata.slider_ranges[state.metric];
+    const range = scaleData?.metadata.slider_ranges[baselineLevel][state.metric];
     const thresholdActive = range && state.threshold != null && state.threshold > range.min;
     setURLParams({
       metric:     state.metric  !== DEFAULTS.metric  ? state.metric  : null,
@@ -141,8 +145,7 @@
 
   function colourOfSchool(school, metric, subject) {
     const score = scoreOf(school, metric, subject);
-    const centre = baseData.metadata.sigma_centre[metric][subject];
-    const sigma  = baseData.metadata.sigma[metric][subject];
+    const { sigma, sigma_centre: centre } = scaleFor(metric, subject);
     const { p1, p99 } = scoreExtent(metric, subject);
     return colourFor(score, centre, sigma, p1, p99, state.gradient);
   }
@@ -159,8 +162,7 @@
       const sc = scoreOf(m._school, state.metric, state.subject);
       if (sc != null) { sum += sc; n++; }
     }
-    const centre = baseData.metadata.sigma_centre[state.metric][state.subject];
-    const sigma  = baseData.metadata.sigma[state.metric][state.subject];
+    const { sigma, sigma_centre: centre } = scaleFor(state.metric, state.subject);
     const { p1, p99 } = scoreExtent(state.metric, state.subject);
     const fill = n > 0 ? colourFor(sum / n, centre, sigma, p1, p99, state.gradient) : COLOURS.missing;
     const count = children.length;
@@ -197,7 +199,7 @@
   function plotAllMarkers() {
     markersByRspo.clear();
     const latlngs = [];
-    for (const s of baseData.schools) {
+    for (const s of loadedSchools) {
       if (s.lat == null || s.lon == null) continue;
       const marker = createMarker(s);
       applyMarkerColour(marker);
@@ -226,7 +228,7 @@
   function refreshFilters() {
     clusterGroup.clearLayers();
     const visible = [];
-    for (const s of baseData.schools) {
+    for (const s of loadedSchools) {
       const marker = markersByRspo.get(s.rspo);
       if (!marker) continue;
       if (schoolPassesFilters(s)) visible.push(marker);
@@ -236,15 +238,19 @@
   }
 
   function updateFilterSummary(nVisible) {
-    const total = baseData.schools.filter(s => s.lat != null).length;
+    const total = loadedSchools.filter(s => s.lat != null).length;
     document.getElementById('filter-summary').textContent =
       t('rowsShown', nVisible, total);
   }
 
   function recolourAll() {
     for (const marker of markersByRspo.values()) applyMarkerColour(marker);
-    // Cluster colours redraw when the cluster icons regenerate; force it:
-    clusterGroup.refreshClusters();
+    // Cluster colours redraw when the cluster icons regenerate; force it.
+    // Guarded because markercluster 1.9.4 throws inside refreshClusters when the
+    // group is empty (it reaches for a top cluster level that was never built),
+    // and an empty group is now reachable: no markers until a powiat is focused,
+    // and a filter can still exclude every school in one.
+    if (clusterGroup.getLayers().length) clusterGroup.refreshClusters();
   }
 
   // ---------------------------------------------------------------------------
@@ -311,7 +317,7 @@
       const looScores = Object.values(loo).map(v => v?.score).filter(v => v != null);
       if (looScores.length >= 2) {
         const range = Math.max(...looScores) - Math.min(...looScores);
-        const sigma = baseData.metadata.sigma[state.metric].composite_min;
+        const { sigma } = scaleFor(state.metric, 'composite_min');
         if (range > sigma) out.push(t('warnVolatile'));
       }
     }
@@ -328,7 +334,7 @@
   }
 
   function renderHistoryTableAndSparkline(school, hist) {
-    const years = baseData.metadata.years_in_data;
+    const years = scaleData.metadata.years_in_data;
     const subjects = ['polski', 'matematyka', 'angielski', 'composite_min'];
 
     // Build single-year matrix: rows=years (only present), cols=subjects.
@@ -414,7 +420,7 @@
   function syncThresholdSlider() {
     const slider = document.getElementById('threshold-slider');
     const display = document.getElementById('threshold-display');
-    const range = baseData.metadata.slider_ranges[state.metric];
+    const range = scaleData.metadata.slider_ranges[baselineLevel][state.metric];
     slider.min = range.min;
     slider.max = range.max;
     slider.step = range.step;
@@ -430,7 +436,7 @@
   async function onMetricChange(newMetric) {
     state.metric = newMetric;
     // Reset threshold when metric changes (scales differ; §5).
-    state.threshold = baseData.metadata.slider_ranges[newMetric].min;
+    state.threshold = scaleData.metadata.slider_ranges[baselineLevel][newMetric].min;
     writePref('metric', newMetric);
     syncURL();
     syncThresholdSlider();
@@ -509,7 +515,7 @@
 
   // Precompute once after load: the haystack matches on name + town (decision §1).
   function buildSchoolSearchIndex() {
-    schoolSearchIndex = baseData.schools.map(s => ({
+    schoolSearchIndex = loadedSchools.map(s => ({
       rspo:  s.rspo,
       name:  s.name,
       town:  s.miejscowosc || '',
@@ -633,10 +639,9 @@
   // not as a choice.
 
   async function ensureHistoryLoaded() {
-    if (historyData?.[state.metric]) return;
-    historyData = historyData || {};
-    const metric = state.metric;
-    historyData[metric] = await loadMetricData(metric);
+    // No-op until Task 14: history now lives in the per-powiat shards, and
+    // loadShard needs a powiat that nothing computes until Task 14's focus
+    // resolution lands. Not an oversight — the popup shows "loading" instead.
   }
 
   // The legend has to follow the gradient toggle, not describe one fixed scheme.
@@ -715,7 +720,7 @@
     const display = document.getElementById('threshold-display');
     slider.addEventListener('input', () => {
       state.threshold = parseFloat(slider.value);
-      const range = baseData.metadata.slider_ranges[state.metric];
+      const range = scaleData.metadata.slider_ranges[baselineLevel][state.metric];
       display.textContent = (state.threshold === range.min)
         ? '—' : fmtScore(state.threshold, state.metric);
       syncURL();
@@ -726,7 +731,7 @@
     // exam year lands; also clamp a too-large minYears carried over from an older URL.
     const myr = document.getElementById('min-years-slider');
     const myrDisp = document.getElementById('min-years-display');
-    const maxYears = baseData.metadata.years_in_data.length;
+    const maxYears = scaleData.metadata.years_in_data.length;
     myr.max = maxYears;
     state.minYears = Math.min(state.minYears, maxYears);
     myr.value = state.minYears;
@@ -822,7 +827,7 @@
     setLang(state.lang);
     initMap();
     try {
-      await loadBaseData();
+      await Promise.all([loadIndex(), loadScale()]);
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
