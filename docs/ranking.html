@@ -35,7 +35,12 @@
            a sentence inside one of them stretches it across half the row. -->
       <div class="field field--region">
         <label for="region-select" data-i18n="labelRegion">Wybrany powiat</label>
-        <select id="region-select"></select>
+        <!-- One static option so the disabled control at a region level reads as an
+             empty picker rather than an empty box. fillRegionSelect() replaces it
+             with an identical one when the 380 powiats land. -->
+        <select id="region-select">
+          <option value="" data-i18n="regionPlaceholder">— wybierz powiat —</option>
+        </select>
       </div>
 
       <div class="field field--metric">

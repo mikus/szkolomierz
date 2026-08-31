@@ -150,10 +150,13 @@
   // suppression gate (a region that is its parent's ONLY CHILD is compared
   // against itself). Derived from regions.parent, which ships in the file.
   //
-  // A near-twin of map.js's siblingCountsFor. Not shared through app.js because
-  // map.js is not loaded on this page and unifying them would mean editing a
-  // third file for no behavioural gain; escapeHTML is already duplicated across
-  // the two page scripts for the same reason.
+  // A near-twin of map.js's siblingCountsFor. Sharing it would be a MOVE, not an
+  // addition — app.js gains the function only if map.js loses its copy — and that
+  // means editing a freshly landed file this task does not own, with no JS test
+  // layer to catch a slip. Hence the copy. What will actually drift is not the
+  // counting but the reason ladder built on it (buildRegionRow below vs
+  // map.js's regionTooltip): change one branch and the map and the table start
+  // explaining the same suppressed gmina differently.
   const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
 
   function siblingCountsFor(regions) {
@@ -336,8 +339,12 @@
   // denominator the column actually uses.
   function schoolColumns() {
     return [
+      // Second arg names the reference level actually in force. This page has no
+      // baseline control, so it is always DEFAULTS.baseline — but the map writes
+      // its own choice to the same localStorage, which is exactly why the help
+      // must not say "the selected reference point".
       { key: 'rank',       label: t('colRankNational'), num: true,  width: '6rem',
-        help: 'helpRankNational', helpArgs: [null] },
+        help: 'helpRankNational', helpArgs: [null, levelLabel(baselineLevel)] },
       { key: 'name',       label: t('colName'),        num: false },
       { key: 'town',       label: t('colTown'),        num: false },
       { key: 'street',     label: t('colStreet'),      num: false },
@@ -721,10 +728,16 @@
 
   // What stands in for the table when there is nothing honest to rank yet.
   // Returns the message, or '' when the table itself should render.
+  // The two messages differ per level because the two files differ. At school
+  // level the thing being fetched genuinely IS the year-by-year data (the shard
+  // carries loo/single_year/last_k); at a region level it is regions-{level}.json,
+  // which has no yearly views at all, so borrowing the school copy would tell a
+  // reader their yearly data failed when nothing yearly was ever requested.
   function blockingMessage() {
     if (state.level === 'school' && !state.region) return t('rankingPickRegion');
-    if (populationError) return t('historyFailed');
-    if (!populationLoaded()) return t('historyLoading');
+    const schools = state.level === 'school';
+    if (populationError) return t(schools ? 'historyFailed' : 'regionsFailed');
+    if (!populationLoaded()) return t(schools ? 'historyLoading' : 'regionsLoading');
     return '';
   }
 
@@ -736,6 +749,10 @@
     const blocked = blockingMessage();
     promptEl.textContent = blocked;
     promptEl.style.display = blocked ? '' : 'none';
+    // "Click a row to expand" only makes sense with school rows on screen — not
+    // at a region level, and not under the pick-a-county prompt either.
+    const hint = document.querySelector('.click-hint');
+    if (hint) hint.style.display = (state.level === 'school' && !blocked) ? '' : 'none';
     if (blocked) {
       infoEl.textContent = '';
       table.innerHTML = '';       // headers over an empty body just read as broken
@@ -909,6 +926,9 @@
     const placeholder = document.createElement('option');
     placeholder.value = '';
     placeholder.textContent = t('regionPlaceholder');
+    // Carries data-i18n like its static twin in the HTML, so applyI18N retranslates
+    // it on a language switch and no hand-written patch is needed.
+    placeholder.setAttribute('data-i18n', 'regionPlaceholder');
     sel.appendChild(placeholder);
     const groups = new Map();
     const v = voiv.regions, p = pow.regions;
@@ -947,8 +967,8 @@
     document.getElementById('view-select').disabled = !schools;
     for (const r of document.querySelectorAll('input[name="public"]')) r.disabled = !schools;
     document.getElementById('level-note').textContent = schools ? '' : t('levelRegionNote');
-    const hint = document.querySelector('.click-hint');
-    if (hint) hint.style.display = schools ? '' : 'none';
+    // The click hint is NOT set here: it depends on whether rows are on screen,
+    // which changes on region selection and on load too. renderAll owns it.
   }
 
   function wireControls() {
@@ -1067,11 +1087,8 @@
       fillLevelSelect(levelSel);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillSubjectSelect(subjectSel, state.subject);
-      // Only the placeholder is translated; the 380 powiat names are not.
-      if (regionSelectFilled) {
-        const placeholder = regionSel.querySelector('option[value=""]');
-        if (placeholder) placeholder.textContent = t('regionPlaceholder');
-      }
+      // The placeholder carries data-i18n, so setLang's applyI18N already
+      // retranslated it; the 380 powiat names are proper nouns and are not.
       syncControlAvailability();
       fillDataYears();
       renderAll();

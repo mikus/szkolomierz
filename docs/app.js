@@ -512,8 +512,13 @@ const I18N = {
     // to the siblings under the same parent. Different denominators on purpose,
     // so the headers name the scope instead of leaving it to the tooltip.
     colRankNational: 'Miejsce w kraju',
-    helpRankNational: (n) => (n == null
-      ? 'Miejsce wśród wszystkich szkół w Polsce, policzone dla wybranego punktu odniesienia. W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.'
+    // `ref` names the reference level actually in force, not "the selected" one:
+    // the ranking page carries no baseline control, so it always uses the
+    // default — while the map writes a user-chosen baseline into the same
+    // localStorage. Claiming a control this page does not have would be wrong
+    // for anyone who had changed it on the map.
+    helpRankNational: (n, ref) => (n == null
+      ? `Miejsce wśród wszystkich szkół w Polsce, policzone przy punkcie odniesienia „${ref}". W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.`
       : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
     colPctInCountry: 'Percentyl w kraju',
     colPctInVoivodeship: 'Percentyl w województwie',
@@ -567,6 +572,12 @@ const I18N = {
     dataYears: (lo, hi) => `Egzamin ósmoklasisty ${lo}–${hi}`,
     historyLoading: 'Ładowanie szczegółowych danych…',
     historyFailed: 'Nie udało się wczytać danych rocznych — odśwież stronę.',
+    // The two above are right only where the file being fetched really is the
+    // year-by-year data — that is, the per-powiat shard. The region levels load
+    // regions-{level}.json, which carries no yearly views at all, so they say so
+    // themselves rather than borrowing copy about data they never ask for.
+    regionsLoading: 'Ładowanie zestawienia regionów…',
+    regionsFailed: 'Nie udało się wczytać zestawienia regionów — odśwież stronę.',
     chartYearsCaption: 'Wynik w poszczególnych latach',
     helpPopupChart: 'Wykres pokazuje wynik policzony osobno dla każdego roku — to nie jest wynik zbiorczy za wszystkie lata ani wersja LOO. Wynik zbiorczy masz w tabeli powyżej.',
     helpMetric: 'Średnia to zwykły wynik procentowy — tyle procent punktów zdobyli przeciętnie uczniowie tej szkoły. Wynik znormalizowany to odległość od średniej województwa z tego samego roku: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej niej, ujemne poniżej. Kliknij, aby przeczytać o wszystkich metrykach.',
@@ -668,8 +679,8 @@ const I18N = {
     colPublic: 'Public',
     colNYears: 'Years',
     colRankNational: 'Rank in Poland',
-    helpRankNational: (n) => (n == null
-      ? 'Rank among every school in Poland, computed for the selected reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.'
+    helpRankNational: (n, ref) => (n == null
+      ? `Rank among every school in Poland, computed against the "${ref}" reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.`
       : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
     colPctInCountry: 'Percentile in Poland',
     colPctInVoivodeship: 'Percentile in voivodeship',
@@ -706,6 +717,8 @@ const I18N = {
     dataYears: (lo, hi) => `8th-grade exam ${lo}–${hi}`,
     historyLoading: 'Loading detailed data…',
     historyFailed: 'Could not load the year-by-year data — try refreshing.',
+    regionsLoading: 'Loading the region ranking…',
+    regionsFailed: 'Could not load the region ranking — try refreshing.',
     chartYearsCaption: 'Score in each year',
     helpPopupChart: 'The chart plots the score computed from each year on its own — not the multi-year score, and not the LOO version. The multi-year score is in the table above.',
     helpMetric: 'Mean is the plain percentage score — the share of points this school\'s pupils scored on average. Normalised score is the distance from the voivodeship average of the same year: 0 is exactly average, positive values sit above it, negative below. Click to read about all the metrics.',
