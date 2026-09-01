@@ -66,6 +66,11 @@ Checks
      must not move, the published teryt must be the school's newest source row,
      and a school whose gmina genuinely changes is reported by name rather than
      failed — that is a real event, not a fault.
+  Q. Every published coordinate falls inside its own powiat polygon. The only
+     check here that reads docs/geo as geometry rather than as a key set, and
+     the only one that can see a wrong geocode at all: a school's score, rank
+     and shard are all TERYT-keyed, so a marker 600 km from the school it names
+     is invisible to every other check in this file.
 
 M and N gate on two different populations, and conflating them is the easiest
 way to break this map. Both derive their populations independently — the
@@ -737,6 +742,60 @@ def geometry_keys(geo_dir: Path, level: Level) -> set[Teryt]:
         for feature in json.loads(path.read_text(encoding='utf-8'))['features']:
             keys.add(feature['properties']['JPT_KOD_JE'][:width])
     return keys
+
+
+def region_polygons(geo_dir: Path, level: Level) -> dict[Teryt, list]:
+    """Every polygon at `level`, keyed by TERYT, as a list of [outer, *holes].
+
+    Only 'voivodeship' and 'powiat' are wired up — nothing below needs geometry
+    here, and silently serving the wrong file for 'gmina' would make the check
+    pass for the wrong reason.
+    """
+    if level == 'voivodeship':
+        files = [geo_dir / 'kraj.json']
+    elif level == 'powiat':
+        files = sorted((geo_dir / 'woj').glob('*.json'))
+    else:
+        raise ValueError(f'no polygon source wired up for level {level!r}')
+    width = REFERENCE_WIDTH[level]
+    out: dict[Teryt, list] = {}
+    for path in files:
+        for feature in json.loads(path.read_text(encoding='utf-8'))['features']:
+            geometry = feature['geometry']
+            rings = ([geometry['coordinates']] if geometry['type'] == 'Polygon'
+                     else geometry['coordinates'])
+            out.setdefault(feature['properties']['JPT_KOD_JE'][:width], []).extend(rings)
+    return out
+
+
+def ring_contains(lon: float, lat: float, ring: list) -> bool:
+    """Ray casting, written out here rather than imported: this file re-derives
+    what it checks, and a shared implementation would let one bug agree with
+    itself in both places."""
+    inside = False
+    previous = len(ring) - 1
+    for current in range(len(ring)):
+        lon_i, lat_i = ring[current][0], ring[current][1]
+        lon_j, lat_j = ring[previous][0], ring[previous][1]
+        # `and` short-circuits, so the division is only reached once the two
+        # latitudes straddle `lat` and therefore cannot be equal.
+        if (lat_i > lat) != (lat_j > lat) and (
+            lon < (lon_j - lon_i) * (lat - lat_i) / (lat_j - lat_i) + lon_i
+        ):
+            inside = not inside
+        previous = current
+    return inside
+
+
+def polygons_contain(polygons: list, lon: float, lat: float) -> bool:
+    """True if (lon, lat) is inside any polygon of `polygons` and in none of its
+    holes."""
+    for rings in polygons:
+        if rings and ring_contains(lon, lat, rings[0]) and not any(
+            ring_contains(lon, lat, hole) for hole in rings[1:]
+        ):
+            return True
+    return False
 
 
 # ── reporting ────────────────────────────────────────────────────────────────
@@ -1644,6 +1703,86 @@ def check_region_key_stability(rows, index: dict, rep: Report):
              f'keys on a prefix of at most six')
 
 
+# Schools whose published coordinate is ALREADY known to sit outside the powiat
+# the exam data assigns them, measured at the time this check was written. They
+# are grandfathered so the check can go in without a national re-geocode; a
+# school that is not on this list and lands outside its powiat is a FAILURE.
+#
+# Cause, established by measurement rather than inference: 57 are Mazowieckie
+# rows carried over byte-identical from before the national extension, written
+# by the old voivodeship-bbox geocoder and never refreshed because their
+# addresses did not change; the other 77 are the RSPO register's own geotag
+# adopted verbatim, which the register places in a different powiat than the OKE
+# file does. Neither came from Nominatim.
+#
+# THIS LIST IS EXPECTED TO SHRINK, NEVER TO GROW. Do not add an id to silence a
+# failure — a new entry means a school moved somewhere it is not, which is the
+# defect this check exists to catch. The remedy is
+#     NOMINATIM_CONTACT=you@example.com uv run python scripts/geocode_schools.py --force
+# which re-fetches every coordinate through the voivodeship gate in
+# scripts/geocode_schools.py, then re-running the notebook's export cells.
+# Afterwards, delete from this list every id the run below reports as recovered.
+KNOWN_MISPLACED_RSPO = frozenset({
+    3688, 3773, 4063, 5971, 6062, 6331, 6360, 6890, 8529, 8847, 8849, 8976, 8977, 9250,
+    9299, 9897, 9936, 11307, 11374, 11581, 11629, 12654, 12992, 13019, 13023, 13259, 13456,
+    14396, 16656, 19254, 20176, 21269, 21345, 21950, 22762, 23429, 23548, 23571, 24477,
+    26614, 27549, 30396, 31138, 31552, 31823, 31895, 32071, 34259, 34836, 35079, 41811,
+    41869, 47208, 47376, 47665, 48273, 48454, 48608, 49765, 49775, 50338, 51785, 53565,
+    53713, 53752, 54001, 54081, 54090, 55791, 55956, 56655, 57152, 59081, 59112, 59584,
+    59948, 63261, 63266, 64452, 64483, 64527, 66314, 70496, 70560, 70775, 70780, 71177,
+    71253, 71527, 71677, 72349, 72355, 74083, 74662, 74811, 75649, 80414, 80430, 80611,
+    80612, 81320, 81330, 82574, 82807, 83229, 83698, 83774, 84007, 84051, 84069, 84244,
+    85256, 86246, 86826, 90302, 92158, 92166, 103371, 104744, 105452, 106087, 107387,
+    109089, 109837, 110219, 110272, 111833, 118705, 119294, 121792, 132109, 263342, 263781,
+    267617
+})
+
+
+def check_school_coordinates(index: dict, geo_dir: Path, rep: Report):
+    """Q — a published lat/lon must fall inside the school's own powiat polygon.
+
+    Everything else in this file is keyed by TERYT, which is exactly why a wrong
+    coordinate is invisible to all of it: the score, the rank, the shard and the
+    choropleth are all correct for a school whose marker is in another
+    voivodeship. This is the only check that reads the geometry as geometry.
+    """
+    rep.section('Q. Published coordinates fall inside their own powiat')
+    polygons = region_polygons(geo_dir, 'powiat')
+    outside: list[tuple[Rspo, Teryt, float, float]] = []
+    recovered: list[Rspo] = []
+    checked = 0
+    for rspo, powiat, lat, lon in zip(
+        index['rspo'], index['powiat'], index['lat'], index['lon'], strict=True
+    ):
+        if lat is None or lon is None:
+            continue
+        checked += 1
+        if polygons_contain(polygons[powiat], lon, lat):
+            if rspo in KNOWN_MISPLACED_RSPO:
+                recovered.append(rspo)
+        else:
+            outside.append((rspo, powiat, lat, lon))
+    rep.checked += checked
+
+    unexpected = [row for row in outside if row[0] not in KNOWN_MISPLACED_RSPO]
+    if unexpected:
+        rep.fail(
+            f'{len(unexpected)} school(s) published outside their own powiat and not on '
+            f'the known-misplaced list',
+            [f'rspo {rspo}: powiat {powiat}, published {lat},{lon}'
+             for rspo, powiat, lat, lon in unexpected],
+        )
+    else:
+        rep.ok(f'{checked - len(outside):,} of {checked:,} coordinates inside their own powiat')
+        rep.note(f'{len(outside):,} known-misplaced schools grandfathered '
+                 f'(see KNOWN_MISPLACED_RSPO)')
+    if recovered:
+        rep.note(f'{len(recovered):,} grandfathered school(s) are now inside their own powiat — '
+                 f'drop them from KNOWN_MISPLACED_RSPO: '
+                 + ', '.join(str(rspo) for rspo in sorted(recovered)[:10])
+                 + (' …' if len(recovered) > 10 else ''))
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -1745,6 +1884,7 @@ def main():
     check_reference_gate(region_payloads, recomputed_regions, rep)
     check_voivodeship_bijection(rows, rep)
     check_region_key_stability(rows, index, rep)
+    check_school_coordinates(index, args.geo_dir, rep)
 
     print(f'\n{"=" * 64}')
     if rep.failures == 0:

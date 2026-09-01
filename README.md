@@ -114,10 +114,12 @@ After a new year of results is published:
    The script reads `docs/data/schools-index.json` and writes the result to
    `data/school_coords.csv`. Schools already cached with an unchanged address keep
    their coordinates. The Nominatim fallback is rate-limited to ~1 request/second,
-   so run this only when new schools appear. Schools neither route can place keep
-   `lat`/`lon` empty, are listed in `data/school_coords_unmapped.csv` for manual
-   triage, and stay off the map but in the ranking — coordinates are never
-   invented.
+   so run this only when new schools appear. Every coordinate — from either route
+   — must fall inside the voivodeship the exam data assigns the school; one that
+   does not is dropped rather than written. Schools left without coordinates are
+   listed in `data/school_coords_unmapped.csv` for manual triage and stay off the
+   map but in the ranking — coordinates are never invented, and never guessed at
+   the wrong end of the country.
 
 5. **Re-run the export cells** (or the whole notebook) so the fresh coordinates
    are merged into `schools-index.json`.

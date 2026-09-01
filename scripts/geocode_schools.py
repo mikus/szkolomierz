@@ -20,6 +20,13 @@ Workflow
      either updated in place (changed address) or appended at the end (new RSPO).
 4. Writes the updated cache back to data/school_coords.csv.
 
+Both routes are gated on the school's own voivodeship, taken from the TERYT the
+exam data assigns it and tested against the PRG polygon in docs/geo/kraj.json.
+A coordinate that lands outside is dropped rather than written: a marker 600 km
+from the school is not partial information, it is wrong information carrying the
+same confidence as everything else on the map, while a school with no
+coordinates says something true and lands in the triage report.
+
 CSV columns: rspo, miejscowosc, ulica_nr, latitude, longitude
 
 Usage
@@ -57,8 +64,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 SCHOOLS_INDEX_JSON = PROJECT_ROOT / 'docs' / 'data' / 'schools-index.json'
 COORDS_CSV = PROJECT_ROOT / 'data' / 'school_coords.csv'
 UNMAPPED_CSV = PROJECT_ROOT / 'data' / 'school_coords_unmapped.csv'
+# The PRG voivodeship polygons the map already ships. Committed, so the accept
+# rule below costs no new data and no network call.
+VOIVODESHIP_GEOJSON = PROJECT_ROOT / 'docs' / 'geo' / 'kraj.json'
 
 sys.path.insert(0, str(PROJECT_ROOT / 'src'))
+from school_quality.geometry import bounding_box, contains_point
 from school_quality.rspo import geotag_from_payload, rspo_detail_url
 
 # Threshold for "suspicious shared-coordinate group". With the new strategy
@@ -69,12 +80,6 @@ SHARED_COORD_WARN_THRESHOLD = 3
 
 NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search'
 REQUEST_DELAY_SECONDS = 1.1  # Nominatim usage policy: max 1 request/second
-
-# Poland bounding box (lon_min, lat_min, lon_max, lat_max), generously rounded.
-POLAND_LON_MIN, POLAND_LAT_MIN = 14.0, 48.9
-POLAND_LON_MAX, POLAND_LAT_MAX = 24.3, 55.0
-# Nominatim viewbox format: "left,top,right,bottom" (west_lon,north_lat,east_lon,south_lat).
-POLAND_VIEWBOX = f'{POLAND_LON_MIN},{POLAND_LAT_MAX},{POLAND_LON_MAX},{POLAND_LAT_MIN}'
 
 # Street prefixes the OKE data tacks on (e.g. "ul. Marszałkowska 1"). Nominatim
 # fares better when we either drop them or also try a stripped form.
@@ -140,8 +145,25 @@ def _strip_street_prefix(street: str) -> str:
     return s
 
 
-def _in_poland(lat: float, lon: float) -> bool:
-    return POLAND_LAT_MIN <= lat <= POLAND_LAT_MAX and POLAND_LON_MIN <= lon <= POLAND_LON_MAX
+def load_voivodeship_polygons(path: Path) -> dict[str, dict]:
+    """PRG voivodeship geometry, keyed by the 2-digit TERYT prefix."""
+    features = json.loads(path.read_text(encoding='utf-8'))['features']
+    return {f['properties']['JPT_KOD_JE'][:2]: f['geometry'] for f in features}
+
+
+def _viewbox(geometry: dict) -> str:
+    """Nominatim's viewbox: "left,top,right,bottom" (W lon, N lat, E lon, S lat)."""
+    lon_min, lat_min, lon_max, lat_max = bounding_box(geometry)
+    return f'{lon_min},{lat_max},{lon_max},{lat_min}'
+
+
+def _inside(geometry: dict, coords: tuple[float, float] | None) -> bool:
+    """True if a (lat, lon) pair falls inside `geometry`. None is never inside.
+
+    Note the swap: coordinates travel lat-first through this script and lon-first
+    through GeoJSON, and this is the one place the two meet.
+    """
+    return coords is not None and contains_point(geometry, coords[1], coords[0])
 
 
 def _nominatim_request(params: dict, user_agent: str) -> list:
@@ -183,17 +205,30 @@ def _rspo_geotag(rspo: int) -> tuple[float, float] | None:
 
 
 def geocode_address(
-    miejscowosc: str | None, ulica_nr: str | None, user_agent: str | None
+    miejscowosc: str | None,
+    ulica_nr: str | None,
+    user_agent: str | None,
+    voivodeship: dict,
 ) -> tuple[float, float] | None:
-    """Geocode a single address via Nominatim, bounded to Poland.
+    """Geocode a single address via Nominatim, bounded to one voivodeship.
 
-    Strategy (try in order, accept first result that lands inside Poland):
+    Strategy (try in order, accept the first result inside `voivodeship`):
       1. Structured query: street + city + country=Polska.
-      2. Free-text with viewbox-bounded Poland: "<street>, <city>, Polska".
-      3. Free-text with original prefixed street ("ul. X"), still viewbox-bounded.
+      2. Free-text: "<street>, <city>, Polska".
+      3. Free-text with the original prefixed street ("ul. X").
+
+    All three are viewbox-bounded to the school's own voivodeship, and every
+    candidate is then tested against that voivodeship's polygon. The box alone
+    would not do: Poland's voivodeships interlock, so a box around one covers
+    large parts of four others — which is how a same-named village on the far
+    side of the country used to pass for a match under the old Poland-wide box.
+    The polygon is the gate; the viewbox only points Nominatim's ranking at the
+    right part of the map. The voivodeship **name** stays out of the query text
+    on purpose (see CLAUDE.md): asserting a region in free text degrades
+    Nominatim's own ranking rather than helping it.
 
     There is **no** fallback to a town-only query. If no street-level match is
-    found within Poland, return None — the school will appear in the
+    found within the voivodeship, return None — the school will appear in the
     ranking but stay off the map. Better than planting it on a city centroid
     (the previous behaviour silently put 773 of 1,720 schools on top of each
     other at the Pałac Kultury location and similar).
@@ -210,6 +245,7 @@ def geocode_address(
         return None  # no street → no street-level match possible
 
     street_clean = _strip_street_prefix(ulica_raw)
+    bounds = {'countrycodes': 'pl', 'viewbox': _viewbox(voivodeship), 'bounded': '1'}
     queries: list[dict] = []
 
     # 1. Structured query — Nominatim prefers `street=<housenumber> <streetname>`
@@ -219,24 +255,19 @@ def geocode_address(
             'street': street_clean,
             'city': miejscowosc,
             'country': 'Polska',
-            'countrycodes': 'pl',
             'format': 'json',
             'limit': '1',
+            **bounds,
         }
     )
 
-    # 2. Free-text, viewbox-bounded to Poland. No region name in the query text:
-    #    the school may be in any of the 16 voivodeships, and asserting one it
-    #    isn't in would degrade Nominatim's text ranking rather than help it.
-    #    countrycodes=pl + POLAND_VIEWBOX (below) do the actual restricting.
+    # 2. Free-text. The region is expressed as a viewbox, never as words.
     queries.append(
         {
             'q': f'{street_clean}, {miejscowosc}, Polska',
             'format': 'json',
             'limit': '1',
-            'countrycodes': 'pl',
-            'viewbox': POLAND_VIEWBOX,
-            'bounded': '1',
+            **bounds,
         }
     )
 
@@ -247,9 +278,7 @@ def geocode_address(
                 'q': f'{ulica_raw}, {miejscowosc}, Polska',
                 'format': 'json',
                 'limit': '1',
-                'countrycodes': 'pl',
-                'viewbox': POLAND_VIEWBOX,
-                'bounded': '1',
+                **bounds,
             }
         )
 
@@ -262,10 +291,10 @@ def geocode_address(
             lon = float(data[0]['lon'])
         except (KeyError, ValueError, TypeError):
             continue
-        if not _in_poland(lat, lon):
-            # The chosen result drifted outside the Poland bbox even though the
+        if not _inside(voivodeship, (lat, lon)):
+            # The chosen result drifted outside the voivodeship even though the
             # query was bounded to it (Nominatim's viewbox is a soft bias, not
-            # a hard filter). Reject and try next strategy.
+            # a hard filter). Reject and try the next strategy.
             continue
         return lat, lon
 
@@ -281,12 +310,15 @@ def load_existing_cache(path: Path) -> list[dict]:
 
 
 def load_schools(path: Path) -> list[dict]:
-    """Load schools (rspo, miejscowosc, ulica_nr) from schools-index.json.
+    """Load schools (rspo, teryt, miejscowosc, ulica_nr) from schools-index.json.
 
     The index is columnar — parallel arrays under 'schools', one element per
-    school — so the three columns this script needs are zipped back into rows.
+    school — so the columns this script needs are zipped back into rows.
     strict=True because a length mismatch between them would otherwise truncate
     silently, dropping schools off the end of the shortest column.
+
+    `teryt` is the gmina code the exam data assigns the school; its first two
+    digits are the voivodeship both geocoding routes are gated on.
     """
     if not path.exists():
         raise FileNotFoundError(
@@ -294,9 +326,10 @@ def load_schools(path: Path) -> list[dict]:
         )
     columns = json.loads(path.read_text(encoding='utf-8'))['schools']
     return [
-        {'rspo': rspo, 'miejscowosc': miejscowosc, 'ulica_nr': ulica_nr}
-        for rspo, miejscowosc, ulica_nr in zip(
-            columns['rspo'], columns['miejscowosc'], columns['ulica_nr'], strict=True)
+        {'rspo': rspo, 'teryt': teryt, 'miejscowosc': miejscowosc, 'ulica_nr': ulica_nr}
+        for rspo, teryt, miejscowosc, ulica_nr in zip(
+            columns['rspo'], columns['teryt'], columns['miejscowosc'], columns['ulica_nr'],
+            strict=True)
     ]
 
 
@@ -318,16 +351,35 @@ def _gmaps_url(miejscowosc: str, ulica_nr: str) -> str:
     return f'https://www.google.com/maps/search/?api=1&query={q}'
 
 
-def write_unmapped_report(rows: list[dict], path: Path) -> int:
-    """Write a CSV listing every school the geocoder couldn't pin to a street.
+def _row_has_coords(row: dict | None) -> bool:
+    """True if a cache row carries both halves of a coordinate."""
+    return bool(row) and bool(row.get('latitude')) and bool(row.get('longitude'))
+
+
+def write_unmapped_report(schools: list[dict], cache_rows: list[dict], path: Path) -> int:
+    """Write a CSV listing every school left without coordinates.
+
+    That is three different situations with one consequence: no street-level
+    match was found, the register's geotag was rejected by the voivodeship gate,
+    or the school was never attempted at all. All three leave the school off the
+    map, and all three want the same manual triage.
 
     Columns: rspo, miejscowosc, ulica_nr, google_maps_search.
     The Google Maps URL is meant for manual triage: open it, find the school,
     eyeball the coordinates, and paste them into school_coords.csv by hand.
 
+    Driven by the school population, not by the cache. A school with no cache
+    row at all — one the index gained after the last run, or one a --limit run
+    never reached — has nothing for a cache-driven filter to catch, so it fell
+    out of the triage list as well as off the map and there was nowhere left
+    pointing at it. Exactly one school (rspo 269571) was in that state. The
+    addresses come from the index for the same reason: there may be no cache
+    row to read them from.
+
     Returns the count of unmapped schools (so the caller can summarise).
     """
-    unmapped = [r for r in rows if not (r.get('latitude') and r.get('longitude'))]
+    cache_by_rspo = {int(row['rspo']): row for row in cache_rows}
+    unmapped = [s for s in schools if not _row_has_coords(cache_by_rspo.get(s['rspo']))]
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open('w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(
@@ -335,16 +387,15 @@ def write_unmapped_report(rows: list[dict], path: Path) -> int:
             fieldnames=['rspo', 'miejscowosc', 'ulica_nr', 'google_maps_search'],
         )
         writer.writeheader()
-        for r in unmapped:
+        for school in unmapped:
+            miejscowosc = str(school.get('miejscowosc') or '')
+            ulica_nr = str(school.get('ulica_nr') or '')
             writer.writerow(
                 {
-                    'rspo': r.get('rspo', ''),
-                    'miejscowosc': r.get('miejscowosc', ''),
-                    'ulica_nr': r.get('ulica_nr', ''),
-                    'google_maps_search': _gmaps_url(
-                        str(r.get('miejscowosc', '')),
-                        str(r.get('ulica_nr', '')),
-                    ),
+                    'rspo': school['rspo'],
+                    'miejscowosc': miejscowosc,
+                    'ulica_nr': ulica_nr,
+                    'google_maps_search': _gmaps_url(miejscowosc, ulica_nr),
                 }
             )
     return len(unmapped)
@@ -410,6 +461,11 @@ class GeocodingResult:
     rows: list[dict]
     updated_count: int
     new_count: int
+    # Schools whose RSPO register geotag was thrown away for falling outside the
+    # voivodeship the exam data assigns them. Kept separate from "not found"
+    # because it is not the same fact: two authoritative sources disagree about
+    # where the school is, and one of them is wrong. See print_rejected_geotags.
+    rejected_geotags: list[dict] = field(default_factory=list)
 
 
 def plan_geocoding(
@@ -473,12 +529,20 @@ def _assemble_rows(result_by_rspo: dict[int, dict], ordered_rspo: list[int]) -> 
 
 
 def run_geocoding_loop(
-    plan: GeocodingPlan, user_agent: str | None, save_path: Path, save_every: int = 50
+    plan: GeocodingPlan,
+    user_agent: str | None,
+    save_path: Path,
+    voivodeships: dict[str, dict],
+    save_every: int = 50,
 ) -> GeocodingResult:
     """Geocode every row in `plan.to_geocode`, saving the CSV periodically.
 
     Rows in `plan.cache_by_rspo` that aren't being re-geocoded pass through
     unchanged. Deferred rows are also left untouched.
+
+    `voivodeships` maps a 2-digit TERYT prefix to its PRG polygon. Every
+    coordinate written here — register geotag or geocoded address alike — has
+    been tested against the school's own one.
     """
     # Seed result with every row we are NOT re-geocoding (kept + deferred).
     to_geocode_rspos = {rspo for rspo, _, _ in plan.to_geocode}
@@ -495,6 +559,7 @@ def run_geocoding_loop(
 
     updated_count = 0
     new_count = 0
+    rejected_geotags: list[dict] = []
     ordered_rspo = list(plan.ordered_rspo)  # may grow when new schools land
 
     for index, (rspo, school, action) in enumerate(plan.to_geocode, start=1):
@@ -504,9 +569,31 @@ def run_geocoding_loop(
             f'  [{index:>4,}/{n_total:,} ({pct:5.1f}%)] {label} rspo={rspo}: '
             f'{school["miejscowosc"]}, {school["ulica_nr"]}'
         )
+        code = str(school['teryt'])[:2]
+        voivodeship = voivodeships.get(code)
+        if voivodeship is None:
+            raise KeyError(
+                f'rspo={rspo}: no voivodeship polygon for TERYT prefix {code!r}. '
+                f'{VOIVODESHIP_GEOJSON.name} and schools-index.json disagree; '
+                f'refusing to geocode against an unknown region.'
+            )
         coords = _rspo_geotag(school['rspo'])
+        if coords is not None and not _inside(voivodeship, coords):
+            # The register's own geotag puts the school in a different
+            # voivodeship than the exam data does. Both are authoritative and
+            # one is wrong, so the honest answer is "we do not know where this
+            # is" — dropping it here sends the school to the triage report
+            # instead of onto the map at a place it demonstrably is not.
+            print(f'    RSPO geotag {coords} is outside voivodeship {code} — rejected')
+            rejected_geotags.append(
+                {'rspo': rspo, 'teryt': school['teryt'], 'miejscowosc': school['miejscowosc'],
+                 'ulica_nr': school['ulica_nr'], 'latitude': coords[0], 'longitude': coords[1]}
+            )
+            coords = None
         if coords is None:
-            coords = geocode_address(school['miejscowosc'], school['ulica_nr'], user_agent)
+            coords = geocode_address(
+                school['miejscowosc'], school['ulica_nr'], user_agent, voivodeship
+            )
         if action == 'update':
             updated_count += 1
         else:
@@ -526,7 +613,12 @@ def run_geocoding_loop(
 
     final_rows = _assemble_rows(result_by_rspo, ordered_rspo)
     write_cache(save_path, final_rows)
-    return GeocodingResult(rows=final_rows, updated_count=updated_count, new_count=new_count)
+    return GeocodingResult(
+        rows=final_rows,
+        updated_count=updated_count,
+        new_count=new_count,
+        rejected_geotags=rejected_geotags,
+    )
 
 
 def print_run_summary(plan: GeocodingPlan, result: GeocodingResult, csv_path: Path) -> None:
@@ -540,9 +632,39 @@ def print_run_summary(plan: GeocodingPlan, result: GeocodingResult, csv_path: Pa
     print(f'  still missing coords: {missing:,}')
 
 
-def emit_post_run_reports(rows: list[dict], unmapped_path: Path, warn_threshold: int) -> None:
-    """Refresh the unmapped CSV and print the shared-coords warning."""
-    n_unmapped = write_unmapped_report(rows, unmapped_path)
+def print_rejected_geotags(rejected: list[dict]) -> None:
+    """Name every school whose register geotag disagreed with its own TERYT.
+
+    Deliberately loud and deliberately separate from the unmapped count. These
+    are not addresses the geocoder failed to find: they are schools where the
+    RSPO register and the OKE exam file place the school in different
+    voivodeships. That is a data-quality question about two upstream sources,
+    worth an investigation of its own, and it should not disappear into a filter.
+    """
+    if not rejected:
+        print('\n✓ No RSPO geotag fell outside its school\'s own voivodeship.')
+        return
+    print(f'\n⚠ {len(rejected):,} RSPO geotag(s) rejected: the register places the school in a')
+    print('  different voivodeship than the exam data does. Dropped rather than mapped;')
+    print('  each one is now in the unmapped triage report. Worth investigating which')
+    print('  source is wrong — this is not a geocoding failure.')
+    for row in rejected[:20]:
+        print(f'    rspo={row["rspo"]} teryt={row["teryt"]} '
+              f'({row["miejscowosc"]}, {row["ulica_nr"]}) '
+              f'register said {row["latitude"]},{row["longitude"]}')
+    if len(rejected) > 20:
+        print(f'    … and {len(rejected) - 20:,} more')
+
+
+def emit_post_run_reports(
+    schools: list[dict], rows: list[dict], unmapped_path: Path, warn_threshold: int
+) -> None:
+    """Refresh the unmapped CSV and print the shared-coords warning.
+
+    Takes both populations: the unmapped report is about schools that should be
+    on the map, the shared-coords warning about coordinates actually written.
+    """
+    n_unmapped = write_unmapped_report(schools, rows, unmapped_path)
     print()
     if n_unmapped:
         print(f'⚠ {n_unmapped:,} school(s) without coordinates — wrote {unmapped_path}')
@@ -597,6 +719,7 @@ def main() -> None:
 
     if args.report_only:
         emit_post_run_reports(
+            load_schools(SCHOOLS_INDEX_JSON),
             load_existing_cache(COORDS_CSV),
             UNMAPPED_CSV,
             SHARED_COORD_WARN_THRESHOLD,
@@ -614,10 +737,14 @@ def main() -> None:
         + (' (ignored due to --force)' if args.force else '')
     )
 
+    voivodeships = load_voivodeship_polygons(VOIVODESHIP_GEOJSON)
+    print(f'Loaded {len(voivodeships)} voivodeship polygons from {VOIVODESHIP_GEOJSON.name}')
+
     plan = plan_geocoding(schools, existing_rows, args.limit)
-    result = run_geocoding_loop(plan, user_agent, COORDS_CSV)
+    result = run_geocoding_loop(plan, user_agent, COORDS_CSV, voivodeships)
     print_run_summary(plan, result, COORDS_CSV)
-    emit_post_run_reports(result.rows, UNMAPPED_CSV, SHARED_COORD_WARN_THRESHOLD)
+    print_rejected_geotags(result.rejected_geotags)
+    emit_post_run_reports(schools, result.rows, UNMAPPED_CSV, SHARED_COORD_WARN_THRESHOLD)
 
 
 if __name__ == '__main__':

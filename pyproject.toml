@@ -23,8 +23,11 @@ dev = [
 
 [tool.pytest.ini_options]
 # src/ is on the path rather than installed: no build backend needed, and the
-# notebook reaches the same modules by adding ../src to sys.path.
-pythonpath = ["src"]
+# notebook reaches the same modules by adding ../src to sys.path. scripts/ joins
+# it so the reporting helpers in geocode_schools.py can be tested the same way -
+# they are pure enough to unit-test, and the alternative is exercising them by
+# re-running a national geocode.
+pythonpath = ["src", "scripts"]
 testpaths = ["tests"]
 
 [tool.ruff]

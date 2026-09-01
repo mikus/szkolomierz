@@ -57,14 +57,14 @@ compare-primary-schools-mazowieckie/
 │   ├── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
 │   └── …-2021-2025.ipynb, …-old-approach-…   # superseded; kept as historical records
 ├── src/school_quality/                       # pure functions the notebook imports
-│   ├── address.py  aggregate.py  levels.py   #   (src/ is on the path, not installed)
-│   ├── rspo.py     sources.py    suppression.py
-│   └── teryt.py    zoom.py
-├── tests/                                    # pytest over src/ — fast, no I/O
+│   ├── address.py  aggregate.py  geometry.py # (src/ is on the path, not installed)
+│   ├── levels.py   rspo.py       sources.py
+│   └── suppression.py  teryt.py  zoom.py
+├── tests/                                    # pytest over src/ and the script helpers — fast, no I/O
 ├── scripts/
 │   ├── fetch_sources.py                      # download the pinned CIE source files
 │   ├── fetch_geometry.py                     # download the PRG polygons → docs/geo/
-│   ├── geocode_schools.py                    # RSPO, then Nominatim → data/school_coords.csv
+│   ├── geocode_schools.py                    # RSPO, then Nominatim; both gated on the voivodeship
 │   └── validate_export.py                    # check the published JSON against the source xlsx
 ├── data/                                     # INPUT (read-only source data)
 │   ├── egzamin-osmoklasisty/                 # CIE xlsx files, national, one per year
@@ -564,7 +564,7 @@ immune to it. Only a school with no usable RSPO geotag falls through to address
 geocoding. The pure half — URL construction and payload parsing — is
 `src/school_quality/rspo.py`, so it is testable without a network.
 
-- **Input**: `docs/data/schools-index.json` (rspo + address).
+- **Input**: `docs/data/schools-index.json` (rspo + `teryt` + address).
 - **Cache**: `data/school_coords.csv` with columns
   `rspo, miejscowosc, ulica_nr, latitude, longitude`.
 - **Logic**: if an rspo is in the cache and its address is unchanged, keep the
@@ -576,25 +576,56 @@ geocoding. The pure half — URL construction and payload parsing — is
 - **Flags**: `--limit N` (cap new requests, for testing), `--force` (ignore
   cache), `--report-only` (regenerate the reports, geocode nothing).
 
+### The voivodeship gate (both routes)
+
+Every coordinate this script writes — register geotag and geocoded address
+alike — must fall inside the polygon of the voivodeship the **exam data**
+assigns the school, taken from the first two digits of its `teryt` and tested
+against `docs/geo/kraj.json`. The point-in-polygon itself is
+`src/school_quality/geometry.py`; the boundaries are already committed for the
+map, so the gate costs no new data and no network call.
+
+A bounding box is not enough and was the original defect: Poland's voivodeships
+interlock, so a box around one covers large parts of four others, and a
+same-named village on the far side of the country passed for a match.
+
+**A rejected coordinate is dropped, never relocated.** The school goes to the
+unmapped triage report instead. A marker 600 km from the school it names is not
+partial information — it is wrong information wearing the same confidence as
+everything else on the map, and a reader has no way to tell. "We do not know
+where this is" is the true statement.
+
+A rejected **register** geotag is additionally listed by name at the end of the
+run (`print_rejected_geotags`). It is not a geocoding failure: it means RSPO and
+the OKE file place the school in different voivodeships, and one of those two
+authoritative sources is wrong. That is a data-quality question worth chasing,
+not something to bury in an unmapped count.
+
+`scripts/validate_export.py` check Q is the standing gate on the published side:
+every `lat`/`lon` in `schools-index.json` must fall inside its own **powiat**
+polygon. It carries a `KNOWN_MISPLACED_RSPO` grandfather list, which is expected
+to shrink and never to grow — see the comment there.
+
 ### Nominatim fallback: 3 attempts, no centroid fallback
 
-Used only where RSPO has no usable geotag. The geocoder tries in order and
-accepts the first result that falls inside **Poland's** bounding box
-(`lon 14.0–24.3`, `lat 48.9–55.0`, `POLAND_VIEWBOX`):
+Used only where RSPO has no usable geotag, or where its geotag failed the gate.
+All three attempts are `bounded=1` to the school's own voivodeship's bounding
+box, and the geocoder accepts the first result that falls inside that
+voivodeship's **polygon**:
 
 1. **Structured query** — `street=<clean street>`, `city=<miejscowosc>`,
    `country=Polska`, `countrycodes=pl`.
-2. **Free-text with viewbox** — `q="<clean street>, <miejscowosc>, Polska"`,
-   `viewbox=POLAND_VIEWBOX`, `bounded=1`.
+2. **Free-text** — `q="<clean street>, <miejscowosc>, Polska"`.
 3. **Free-text with original prefixed street** — same as (2) but keeping the
    original `ul. X` form (some streets disambiguate better with the prefix).
 
-**No voivodeship name goes into the query.** The school may be in any of the
-sixteen, and asserting one it is not in degrades Nominatim's text ranking rather
-than helping it; `countrycodes=pl` plus the viewbox do the restricting.
+**No voivodeship name goes into the query.** The region is expressed as a
+viewbox, never as words: asserting one in free text degrades Nominatim's text
+ranking rather than helping it. This rule survives the gate above — the gate
+constrains and filters, it does not rewrite the query text.
 
 "Clean street" = the original `ulica_nr` with leading `ul./Ul./al./Al./pl./Pl./os./Os.`
-stripped. Results outside the Poland bbox are rejected even when returned — the
+stripped. Results outside the voivodeship are rejected even when returned — the
 viewbox is a soft bias, not a hard filter.
 
 **The cache key strips the same prefix.** `normalize_address` (used to decide
@@ -613,11 +644,14 @@ silently planted 773 of 1,720 schools on their town's centroid (351 alone landed
 on Pałac Kultury in Warsaw). On the current data **3 of 12,889 schools** have no
 coordinates.
 
-### Bbox-validation rule (applies to existing cache too)
+### The gate does not retro-fit the cache
 
-A row with `latitude/longitude` outside the Poland bbox is treated as invalid. If
-you spot any in `school_coords.csv` (e.g. a stale entry from an older geocoder),
-zero its lat/lon and re-run the script — the rule will hold on the rewrite.
+The gate runs when a coordinate is **written**, so a row already in
+`school_coords.csv` is never re-tested: `plan_geocoding` keeps any cached row
+whose address is unchanged. Stale rows from an older geocoder therefore survive
+until they are re-fetched. Zero their lat/lon and re-run, or re-run with
+`--force`, and the gate will hold on the rewrite. Check Q in
+`validate_export.py` is what tells you which rows need it.
 
 Run the script after adding new schools, then re-run the notebook's export
 cells so the fresh coordinates land in `schools-index.json`.
@@ -627,11 +661,18 @@ cells so the fresh coordinates land in `schools-index.json`.
 After every run (including `--report-only`, which skips geocoding), the
 script writes / refreshes:
 
-- **`data/school_coords_unmapped.csv`** — one row per school the geocoder
-  could not pin to a street, with `rspo, miejscowosc, ulica_nr` and a
-  ready-made `google_maps_search` URL. The file is the manual-triage list:
+- **`data/school_coords_unmapped.csv`** — one row per school with no
+  coordinates on file, with `rspo, miejscowosc, ulica_nr` and a ready-made
+  `google_maps_search` URL. Its rows come from the **school population**, not
+  from the cache: a school the cache has no row for at all has nothing for a
+  cache-driven filter to catch, so it used to fall out of the triage list as
+  well as off the map. The file is the manual-triage list:
   open the URL, find the school, paste the coords into `school_coords.csv`
   by hand. If everything mapped, the file has only a header.
+- **Rejected-geotag list** to stdout, after a geocoding run (not
+  `--report-only`, which has no run to report). Names every school whose RSPO
+  geotag was dropped for falling outside its own voivodeship. See the gate
+  above — these are worth investigating, not filtering.
 - **Shared-coord warning** to stdout. Lists any group of `SHARED_COORD_WARN_THRESHOLD`
   (default 3) or more schools sitting on the same `(lat, lon)`. With the
   no-centroid-fallback rule, this should never happen except for genuine
