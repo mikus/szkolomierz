@@ -109,9 +109,23 @@
   function initMap() {
     map = L.map('map', { zoomControl: true, preferCanvas: true, minZoom: 5 })
       .setView(POLAND_CENTRE, POLAND_ZOOM);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors © <a href="https://carto.com/attributions">CARTO</a>',
-      subdomains: 'abcd',
+    // Basemap: OSMF standard tiles. This was CARTO Positron until CARTO ended
+    // free unauthenticated access and began serving tiles with "API KEY
+    // REQUIRED" painted into the pixels — as HTTP 200, with a valid PNG, so
+    // Leaflet's tileerror never fired and nothing in the app noticed.
+    //
+    // OSMF fails the same silent way when it blocks you: a 6,987-byte "403
+    // Access blocked" image, again as HTTP 200. Blocking is triggered by a
+    // missing Referer, so do NOT add a `no-referrer` meta tag or a
+    // Referrer-Policy header to this site, and do not proxy these tiles —
+    // either would serve every visitor the block image while the network tab
+    // showed nothing but 200s. Any tile monitoring must assert on byte size,
+    // not on status code.
+    //
+    // No {s}: OSMF asks that the other subdomains not be used. No {r}: the
+    // @2x retina variant returns HTTP 400 — it does not exist.
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors · granice/boundaries: PRG © <a href="https://www.gov.pl/web/gugik">GUGiK</a>',
       maxZoom: 19,
     }).addTo(map);
   }

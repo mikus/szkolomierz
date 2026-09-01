@@ -171,6 +171,12 @@ body.page-help { display: block; height: auto; }
 .page-map main { flex: 1; display: flex; min-height: 0; }
 #map { flex: 1; min-width: 0; height: 100%; }
 
+/* The basemap is full-colour OSM Carto, and its forest green sits close enough
+   to the class-A "#1a9850" to read as data under a semi-transparent choropleth.
+   Desaturating the tile pane keeps the colour ramp the only saturated thing on
+   the map. Labels stay legible; this is not grayscale(1). */
+.leaflet-tile-pane { filter: saturate(25%); }
+
 #panel {
   width: 320px;
   background: var(--bg-muted);
