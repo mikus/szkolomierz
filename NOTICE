@@ -1,0 +1,120 @@
+NOTICE
+======
+
+Read this alongside LICENSE. The MIT licence there does not cover everything in
+this repository, and this file says what it does and does not reach.
+
+
+1. Upstream code
+----------------
+
+This project is a fork of
+
+    https://github.com/herbakamil/compare-primary-schools-mazowieckie
+
+which carries no licence file. Under copyright law the absence of a licence is
+not a grant of anything: those portions remain the copyright of their author,
+all rights reserved.
+
+What a public repository does grant is set out in GitHub's Terms of Service,
+under "License Grant to Other Users":
+
+    By setting your repositories to be viewed publicly, you agree to allow
+    others to view and "fork" your repositories (this means that others may
+    make their own copies within the Service in repositories they control).
+
+That is the whole of it — viewing, and forking within GitHub. It is not a
+licence to use, modify or redistribute the work elsewhere.
+
+The two authorships are interleaved inside the same files rather than separated
+by directory. Measured with `git blame` over the current tree, of 18,624 lines
+of code (excluding data):
+
+    upstream author   9,795 lines   53%
+    this fork         8,829 lines   47%
+
+    src/                    100% this fork
+    tests/                  100% this fork
+    scripts/                 68% this fork
+    docs/ (JavaScript)       46% this fork
+    docs/ (HTML and CSS)     27% this fork
+    notebooks/ (main)        35% this fork
+
+So the MIT grant in LICENSE is made by the maintainer of this fork over the
+maintainer's own contributions. It cannot and does not grant rights over the
+upstream author's portions, because a licence can only be granted by the
+copyright holder.
+
+The practical consequence, stated plainly: until the upstream author licenses
+their work, anyone wanting to use this project beyond viewing and forking it on
+GitHub should treat the combined work as unlicensed and seek permission. This is
+being pursued, and this file will be updated if and when it is resolved.
+
+
+2. Data
+-------
+
+Most of this repository by size is not code and is not the maintainer's work.
+Approximately 658 MB of the tree is data, against roughly 16 MB of code:
+
+    data/egzamin-osmoklasisty/   exam result spreadsheets published by CIE
+                                 (Centrum Informatyczne Edukacji), committed
+                                 verbatim and unmodified, so that every
+                                 published number can be traced to its source
+    docs/geo/                    PRG administrative boundary polygons,
+                                 produced by GUGiK, obtained through CIE's
+                                 asset bundle at mapa.wyniki.edu.pl
+    docs/data/, output/          values computed from the CIE data by the
+                                 pipeline in this repository
+
+The MIT licence covers the pipeline that computes those outputs. It does not
+purport to license the source data, which belongs to its publishers.
+
+PRG boundary polygons. Produced by GUGiK and, under the Prawo geodezyjne i
+kartograficzne, supplied free of charge with NO LICENCE ISSUED for them at all
+(Art. 40a ust. 2 pkt 1 lit. a; Art. 40c ust. 5). One condition attaches:
+Art. 40c ust. 3 requires the source to be stated in published works, which this
+project does on its help page and in the map's attribution control.
+
+    Note that dane.gov.pl labels this dataset "CC BY 4.0". Treat that as
+    corroboration that the data is open, not as a licence grant: the statute
+    provides that no licence is issued, so no CC BY licence exists to rely on.
+    The same record elsewhere calls it "Other (Public Domain)", which is a
+    further reason to rest on the statute rather than on the portal's label.
+
+CIE exam spreadsheets. Public sector information, re-usable for any purpose.
+CIE published no re-use conditions on the channel these files were taken from,
+and the applicable statutory default where a body states none is unconditional
+and free of charge.
+
+    This is a reading of the statute, not a written permission obtained from
+    the publisher, and it should be treated as such. Two things in particular
+    remain open: the rule deeming silence to mean unconditional re-use is
+    written for the Biuletyn Informacji Publicznej and the national data
+    portal, and mapa.wyniki.edu.pl is neither; and the sui generis database
+    right is a separate right from copyright, which nothing here resolves.
+
+    The files are committed byte-identical to what was downloaded, and
+    data/egzamin-osmoklasisty/SOURCES.csv records the exact URL and retrieval
+    date of each one. They would be removed on request from the publisher.
+
+Sources are credited on the project's help page, under "Dane i zakres" and
+"Inne zrodla i kod". If you intend to reuse the data itself rather than the
+code, check the publishers' current terms directly rather than relying on this
+file.
+
+
+3. Third-party components loaded at run time
+--------------------------------------------
+
+None of the following is redistributed in this repository; the pages fetch each
+from its own host when a visitor opens them.
+
+    Leaflet 1.9.4 and Leaflet.markercluster 1.5.3, from unpkg.com, each under
+    its own licence.
+
+    Basemap tiles from the OpenStreetMap Foundation. Map data is (c)
+    OpenStreetMap contributors, available under the Open Database License.
+
+Because these are fetched rather than shipped, the MIT licence here says nothing
+about them, and a fork that vendored them would need to carry their licences too.

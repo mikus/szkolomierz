@@ -241,3 +241,19 @@ voivodeship would put all sixteen voivodeships at ~0 by construction and flatten
 the national view at exactly the zoom where contrast is the point.
 
 For methodological and technical details, see `CLAUDE.md`.
+
+## Licence
+
+The code is MIT — see `LICENSE`.
+
+**Read `NOTICE` before relying on that**, because the MIT grant does not reach
+everything here. This project is a fork of an upstream repository that carries no
+licence, and the two authorships are interleaved within the same files: roughly
+53% of the current code originates upstream and remains its author's copyright.
+A licence can only be granted by the copyright holder, so LICENSE covers this
+fork's own contributions and no more.
+
+Separately, most of the repository by size is data rather than code — CIE's exam
+spreadsheets, GUGiK's PRG boundary polygons, and values computed from them. Those
+belong to their publishers and are governed by their terms, not by LICENSE.
+`NOTICE` sets out both points.
