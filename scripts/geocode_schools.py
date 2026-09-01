@@ -92,7 +92,7 @@ STREET_PREFIXES = ('ul.', 'Ul.', 'UL.', 'al.', 'Al.', 'AL.', 'pl.', 'Pl.', 'os.'
 # --contact flag), and slotted into this template. See README "Geocoding".
 CONTACT_ENV_VAR = 'NOMINATIM_CONTACT'
 USER_AGENT_TEMPLATE = (
-    'compare-primary-schools-mazowieckie/1.0 (school quality map; contact: {contact})'
+    'szkolomierz/1.0 (school quality map; contact: {contact})'
 )
 
 CSV_COLUMNS = ['rspo', 'miejscowosc', 'ulica_nr', 'latitude', 'longitude']
@@ -193,7 +193,7 @@ RSPO_DELAY_SECONDS = 0.15  # measured ~0.09s/request; this leaves headroom
 def _rspo_geotag(rspo: int) -> tuple[float, float] | None:
     """One RSPO detail lookup. Returns None on any failure - the caller falls
     back to the address geocoder, so a miss must never abort the run."""
-    request = Request(rspo_detail_url(rspo), headers={'User-Agent': 'compare-primary-schools/1.0'})
+    request = Request(rspo_detail_url(rspo), headers={'User-Agent': 'szkolomierz/1.0'})
     try:
         with urlopen(request, timeout=20) as response:
             return geotag_from_payload(json.loads(response.read().decode('utf-8')))

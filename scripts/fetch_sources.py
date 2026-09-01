@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
 from school_quality.sources import MANIFEST_URL, resolve_school_files
 
-USER_AGENT = 'compare-primary-schools/1.0 (+https://github.com/herbakamil)'
+USER_AGENT = 'szkolomierz/1.0 (+https://github.com/mikus/szkolomierz)'
 
 
 def fetch(url: str) -> bytes:

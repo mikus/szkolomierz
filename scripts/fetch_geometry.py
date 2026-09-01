@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.request import Request, urlopen
 
 BASE = 'https://mapa.wyniki.edu.pl/MapaEgzaminow/assets/geo/2025'
-USER_AGENT = 'compare-primary-schools/1.0 (+https://github.com/herbakamil)'
+USER_AGENT = 'szkolomierz/1.0 (+https://github.com/mikus/szkolomierz)'
 
 
 def fetch(url: str) -> dict:

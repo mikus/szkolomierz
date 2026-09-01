@@ -14,10 +14,16 @@ school-quality map.
 
 **Critical scope fact:** the data covers **all of Poland** — 16 voivodeships,
 380 powiats, 2,479 gminas and 12,889 schools over 2021–2026. The system used to
-cover a single voivodeship, from OKE Warszawa files — which is where the
-repository's name comes from, and renaming it is deliberately out of scope. That
-data scope is gone, and so is the standing rule that went with it ("always use
-*voivodeship* rather than *national*"), which this section replaces.
+cover a single voivodeship, from OKE Warszawa files. That data scope is gone, and
+so is the standing rule that went with it ("always use *voivodeship* rather than
+*national*"), which this section replaces.
+
+The repository was called `compare-primary-schools-mazowieckie` for that original
+scope and is now **`szkolomierz`** (`github.com/mikus/szkolomierz`). The new name
+deliberately names neither the school stage nor the exam, because the pipeline is
+parameterised over both — a second exam (matura) is a data addition, not a rename.
+Do not reintroduce `mazowieckie`, `primary` or `osmoklasisty` into names that
+outlive one dataset.
 
 ### Reference levels — the vocabulary that replaced that rule
 
@@ -54,7 +60,7 @@ Two further rules follow, and both are load-bearing:
 ## Repository layout
 
 ```
-compare-primary-schools-mazowieckie/
+szkolomierz/
 ├── notebooks/
 │   ├── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
 │   └── …-2021-2025.ipynb, …-old-approach-…   # superseded; kept as historical records

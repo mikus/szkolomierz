@@ -786,7 +786,7 @@ hiding most schools.
 ## 11. Repository placement
 
 ```
-compare-primary-schools-mazowieckie/
+szkolomierz/
 ├── docs/                       # GitHub Pages serves this
 │   ├── index.html              # the map page
 │   ├── ranking.html            # the ranking page

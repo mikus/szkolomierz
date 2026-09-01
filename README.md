@@ -1,4 +1,4 @@
-# compare-primary-schools-mazowieckie
+# Szkołomierz
 
 Analysis of 8th-grade exam (egzamin ósmoklasisty) results for primary schools in
 Poland (CIE data), producing the data for an interactive school-quality map.
@@ -8,8 +8,11 @@ Poland (CIE data), producing the data for an interactive school-quality map.
 > **reference level**: the country, its voivodeship, its powiat or its gmina. All
 > four are exported and the map's "reference point" control picks between them.
 >
-> The repository keeps the name it was given for its original single-voivodeship
-> scope; renaming it is deliberately out of scope.
+> The name says *what* it measures, not *which exam*: the pipeline is
+> exam-agnostic by design, so adding a second one (matura) needs no rename. The
+> earlier name, `compare-primary-schools-mazowieckie`, pinned both the school
+> stage and a single voivodeship, and was wrong on the second count from the day
+> the data went national.
 
 ## Getting started (uv)
 
