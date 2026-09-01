@@ -250,10 +250,15 @@ differ from the offline script:
 - **Bias results to Poland.** Pass `countrycodes=pl` so "Kraków" doesn't lose to
   a Kraków in another country, and a `viewbox` covering **Poland**
   (`14.0,55.0,24.3,48.9` as `left,top,right,bottom` — `POLAND_VIEWBOX` in
-  `app.js`, the same extent `scripts/geocode_schools.py` uses) with `bounded=0`
-  so the box prefers but does not require results inside it. **Do not bias to one
-  voivodeship**: the map covers all sixteen, and a viewbox around one of them
-  means a parent in Kraków typing a street name gets a Warsaw result preferred.
+  `app.js`, the same extent `src/school_quality/rspo.py` uses as its coarse
+  Poland gate) with `bounded=0` so the box prefers but does not require results
+  inside it. **Do not bias to one voivodeship**: the map covers all sixteen, and
+  a viewbox around one of them means a parent in Kraków typing a street name gets
+  a Warsaw result preferred. This is the opposite of the rule in
+  `scripts/geocode_schools.py`, and deliberately so: that script is resolving a
+  school whose voivodeship the exam data already names, so it can and does bound
+  each lookup to that one region. Here the input is free text and no region is
+  known.
 - This is a **deliberate** choice to use the public Nominatim API, made here with
   knowledge of its policy — not a default to reach for automatically. If the app's
   search traffic ever grows beyond light/moderate, switch to a self-hosted

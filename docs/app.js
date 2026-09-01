@@ -71,9 +71,12 @@ const COLOURS = {
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
 // Poland's bounding box as a Nominatim viewbox: left,top,right,bottom
-// (lon/lat). Same extent scripts/geocode_schools.py uses for the offline
-// geocoder, so the two agree on where Poland is. Passed with bounded=0, so it
-// prefers rather than requires a result inside it.
+// (lon/lat). Same extent as the coarse Poland gate in
+// src/school_quality/rspo.py, so the two agree on where Poland is. The offline
+// school geocoder is bounded to one VOIVODESHIP rather than to this box — it
+// knows which school it is resolving and can be strict. This box serves a
+// free-text address the user typed, which could be anywhere in the country, so
+// it is passed with bounded=0: it prefers rather than requires a result inside.
 const POLAND_VIEWBOX = '14.0,55.0,24.3,48.9';
 
 // -----------------------------------------------------------------------------
@@ -315,6 +318,10 @@ async function loadRegions(level) {
       for (let i = 0; i < teryt.length; i++) names.set(teryt[i], name[i]);
       NAME_CACHE.set(level, names);
       return payload;
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      regionCache.delete(level);
+      throw e;
     }));
   }
   return regionCache.get(level);
@@ -337,6 +344,10 @@ async function loadShard(powiat, metric) {
     shardCache.set(key, fetch('data/powiat/' + powiat + '-' + metric + '.json').then((r) => {
       if (!r.ok) throw new Error(`${powiat}-${metric}.json: HTTP ${r.status}`);
       return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      shardCache.delete(key);
+      throw e;
     }));
   }
   return shardCache.get(key);
@@ -364,8 +375,11 @@ async function loadGeometryFor(level, focused) {
       // natural retry. Without this, one transient blip leaves that region
       // permanently unrendered for the rest of the session, silently. The
       // caller still sees the error; only the cache entry goes.
-      // loadRegions and loadShard deliberately keep their cached rejections:
-      // they fire rarely and on deliberate action, not on every gesture.
+      // loadRegions and loadShard do the same, and must: they are reached from
+      // the very same handler (renderLevel awaits loadRegions; renderSchools ->
+      // buildSchools awaits loadShard and loadRegions('gmina')), so a rejection
+      // held there would leave every powiat in the country without markers, and
+      // the panel reading "0 z 0 szkół" as though that were the data.
       geoCache.delete(path);
       throw e;
     }));
@@ -581,6 +595,10 @@ const I18N = {
     // themselves rather than borrowing copy about data they never ask for.
     regionsLoading: 'Ładowanie zestawienia regionów…',
     regionsFailed: 'Nie udało się wczytać zestawienia regionów — odśwież stronę.',
+    // Replaces the school count when anything behind the map fails to load.
+    // Without it the panel keeps saying "0 z 0 szkół", which reads as a fact
+    // about the region rather than as a failure to fetch it.
+    renderFailed: 'Nie udało się wczytać danych mapy — przesuń mapę, aby spróbować ponownie.',
     chartYearsCaption: 'Wynik w poszczególnych latach',
     helpPopupChart: 'Wykres pokazuje wynik policzony osobno dla każdego roku — to nie jest wynik zbiorczy za wszystkie lata ani wersja LOO. Wynik zbiorczy masz w tabeli powyżej.',
     helpMetric: 'Średnia to zwykły wynik procentowy — tyle procent punktów zdobyli przeciętnie uczniowie tej szkoły. Wynik znormalizowany to odległość od średniej województwa z tego samego roku: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej niej, ujemne poniżej. Kliknij, aby przeczytać o wszystkich metrykach.',
@@ -722,6 +740,7 @@ const I18N = {
     historyFailed: 'Could not load the year-by-year data — try refreshing.',
     regionsLoading: 'Loading the region ranking…',
     regionsFailed: 'Could not load the region ranking — try refreshing.',
+    renderFailed: 'Could not load the map data — pan the map to try again.',
     chartYearsCaption: 'Score in each year',
     helpPopupChart: 'The chart plots the score computed from each year on its own — not the multi-year score, and not the LOO version. The multi-year score is in the table above.',
     helpMetric: 'Mean is the plain percentage score — the share of points this school\'s pupils scored on average. Normalised score is the distance from the voivodeship average of the same year: 0 is exactly average, positive values sit above it, negative below. Click to read about all the metrics.',

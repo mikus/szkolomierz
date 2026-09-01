@@ -37,8 +37,14 @@
   // school being searched for is usually in a powiat that is not loaded yet, so
   // opening cannot happen in the same turn as the request.
   let pendingSchool = null;
-  let historyData = null;         // metric-keyed cache, filled in the background
-  let historyError = false;       // last background fetch failed
+  // The popup's year-by-year numbers, reshaped from the shard buildSchools
+  // fetches: `{ [metric]: { schools: { rspo: { subject: {loo, single_year,
+  // last_k} } } } }`. Holds one powiat — the one whose markers are on the map,
+  // which is the only one whose popups can be open — and is replaced wholesale
+  // on every rebuild rather than accumulated. Keyed by metric so that a switch
+  // the new shard has not caught up with reads as absent rather than as the old
+  // metric's numbers.
+  let historyData = null;
 
   // ---------------------------------------------------------------------------
   // Initial state resolution: URL > localStorage > default (§9)
@@ -253,8 +259,11 @@
       await buildSchools(powiat, key);
     } finally {
       // Cleared even when the shard fetch throws, so panning away and back can
-      // retry; renderedSchoolsKey stays unset in that case.
-      renderingSchoolsKey = null;
+      // retry; renderedSchoolsKey stays unset in that case. Guarded on the key
+      // because a later gesture may have staked its own claim while this build
+      // was in flight — clearing that one would both lose the staleness guard
+      // above and let a third gesture start a duplicate build.
+      if (renderingSchoolsKey === key) renderingSchoolsKey = null;
     }
   }
 
@@ -269,6 +278,15 @@
       // find-a-school typeahead. Cached, so it costs one fetch a session.
       loadRegions('gmina'),
     ]);
+    // The shard is the app's largest fetch (median 0.56 MB, up to 8.5 MB), so
+    // zooming back out before it lands is an ordinary gesture, not a race worth
+    // ignoring: without this guard the late resolution tore down the choropleth
+    // renderLevel had since painted and dropped the abandoned powiat's markers
+    // over the country view, breadcrumb and all, until the next pan.
+    // `renderingSchoolsKey` is the claim renderSchools staked before the await;
+    // renderLevel's region branch clears it and a later renderSchools overwrites
+    // it, so anything but our own key means this build no longer owns the map.
+    if (renderingSchoolsKey !== key) return;
     const level = baselineLevel;
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
@@ -306,6 +324,14 @@
         scores,
       };
     }).filter(Boolean);
+
+    // The popup's sparkline, its year-by-year table and the LOO-range
+    // volatility warning all read this. Same shard, reshaped to drop the level
+    // rung — exactly what ranking.js does for its own detail panel. Assigned
+    // before the markers exist so a popup can never open ahead of its history.
+    historyData = { [state.metric]: { schools: Object.fromEntries(
+      Object.entries(shard.schools).map(([rspo, byLevel]) => [rspo, byLevel[level] || {}]),
+    ) } };
 
     if (regionLayer) { map.removeLayer(regionLayer); regionLayer = null; }
     // buildClusterGroup is not a factory: it assigns clusterGroup and adds
@@ -619,6 +645,10 @@
       updateFilterSummary(0);
     }
     renderedSchoolsKey = null;
+    // …and the same for a build that has not landed yet. Without this the shard
+    // would resolve into a viewport that has moved on and repaint the powiat the
+    // user just left on top of the choropleth painted below.
+    renderingSchoolsKey = null;
     // Zoomed back out to regions: whatever school was being navigated to is no
     // longer what the user is looking at, and leaving it armed would pop a
     // popup open the next time any powiat renders.
@@ -768,9 +798,11 @@
   function renderHistorySection(school) {
     if (school.n_years < 2) return '';
     const hist = historyData?.[state.metric]?.schools?.[String(school.rspo)];
-    // The per-metric file is fetched in the background from page load, so it is
-    // only missing while that fetch is still in flight.
-    if (!hist) return `<p class="muted small">${t(historyError ? 'historyFailed' : 'historyLoading')}</p>`;
+    // History arrives with the markers now, so a school that has a marker has
+    // its history: the only gap is between switching metric and the new
+    // metric's shard landing. There is no separate failure state to report —
+    // a shard that fails to load leaves no markers, hence no popup.
+    if (!hist) return `<p class="muted small">${t('historyLoading')}</p>`;
     return renderHistoryTableAndSparkline(school, hist);
   }
 
@@ -889,11 +921,10 @@
     // the map silently keeps showing the metric the user just switched away
     // from. renderSchools' key includes state.metric, so it refetches.
     renderLevel();
-    // History (sparkline + table) comes from the per-metric file, so switching
-    // metric needs the new metric's file. Reopen right away with whatever is
-    // cached; the background fetch reopens again once the new file lands.
+    // History (sparkline + table) rides along with the new metric's shard, which
+    // the renderLevel above refetches. Reopen right away so the rest of the
+    // popup follows the metric the user just picked.
     if (state.selectedSchool != null) reopenSelectedPopup();
-    loadHistoryInBackground();
   }
 
   function onSubjectChange(newSubject) {
@@ -1114,19 +1145,6 @@
     input.addEventListener('blur', () => setTimeout(close, 120));
   }
 
-  // ---------------------------------------------------------------------------
-  // Per-metric history file
-  //
-  // Fetched for whatever metric is selected — always, in the background, never
-  // behind a button. A popup that offered to load its own chart read as a bug,
-  // not as a choice.
-
-  async function ensureHistoryLoaded() {
-    // No-op until Task 14: history now lives in the per-powiat shards, and
-    // loadShard needs a powiat that nothing computes until Task 14's focus
-    // resolution lands. Not an oversight — the popup shows "loading" instead.
-  }
-
   // The legend has to follow the gradient toggle, not describe one fixed scheme.
   // With the gradient on, A and C are ramps and the map shows far more than the
   // three colours the legend lists — a reviewer counted five and read it as a
@@ -1154,24 +1172,6 @@
       state.popupTablesOpen = !state.popupTablesOpen;
       reopenSelectedPopup();
     });
-  }
-
-  // Never awaited by a handler: the map stays interactive for the whole
-  // download, and a failure leaves the base map working. Refreshes the open
-  // popup so a chart the user is already looking at fills itself in.
-  function loadHistoryInBackground() {
-    if (historyData?.[state.metric]) return;
-    historyError = false;
-    ensureHistoryLoaded()
-      .then(() => {
-        if (state.selectedSchool != null) reopenSelectedPopup();
-      })
-      .catch(e => {
-        // Say so rather than leaving "Ładowanie…" in the popup forever.
-        console.error('history load failed', e);
-        historyError = true;
-        if (state.selectedSchool != null) reopenSelectedPopup();
-      });
   }
 
   // ---------------------------------------------------------------------------
@@ -1337,6 +1337,17 @@
     focusSchool(state.selectedSchool);
   }
 
+  // Nothing awaits renderLevel, so a failed shard, region file or geometry file
+  // would otherwise float away as an unhandled rejection and the map would
+  // simply stop updating. Say so in the one line the panel already has: leaving
+  // "0 z 0 szkół" there states a fact about the region instead of a failure to
+  // load it. The loaders drop their failed entries, so the next pan retries, and
+  // the next successful render overwrites this text.
+  function reportRenderFailure(e) {
+    console.error('map render failed', e);
+    document.getElementById('filter-summary').textContent = t('renderFailed');
+  }
+
   // ---------------------------------------------------------------------------
   // Bootstrap
 
@@ -1357,10 +1368,10 @@
     wireControls();
     syncURL();          // canonicalise the URL (e.g. add resolved threshold)
     openInitialPopup(); // if ?school=… was in the URL
-    loadHistoryInBackground();  // popups' year-by-year charts, no button to press
 
-    map.on('zoomend moveend', () => { renderLevel(); });
-    renderLevel();   // the opening view: the events above only fire on interaction
+    map.on('zoomend moveend', () => { renderLevel().catch(reportRenderFailure); });
+    // The opening view: the events above only fire on interaction.
+    renderLevel().catch(reportRenderFailure);
   }
 
   main();
