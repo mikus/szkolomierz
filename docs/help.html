@@ -90,6 +90,15 @@
           <li><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować, a wiersz,
             żeby rozwinąć szczegóły szkoły: wykresy dla wszystkich trzech przedmiotów
             i tabele liczbowe pod przyciskiem.</li>
+          <li><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
+            uszeregować całe województwa, powiaty albo gminy; wiersz pokazuje wtedy wynik
+            regionu, liczbę jego szkół i liczbę uczniów. Regiony mają tylko wynik za
+            wszystkie lata, więc widok danych i filtr typu szkoły są wtedy nieaktywne.
+            Zobacz <a href="#regions">Skąd bierze się kolor regionu</a>.</li>
+          <li><strong>Obszar</strong> — trzy listy: województwo, a dalej opcjonalnie powiat
+            i gmina. Wybór zawęża zestawienie do tego obszaru; zostawienie powiatu i gminy
+            pustych obejmuje całe województwo. Zobacz
+            <a href="#ranking">Miejsce i percentyl w rankingu</a>.</li>
           <li><strong>Przedmiot</strong> — „Najsłabszy przedmiot" pokazuje najniższy z trzech
             wyników, czyli odpowiada na pytanie „czy szkoła gdzieś nie wysiada?". Przełącz na
             polski, matematykę lub angielski, żeby zobaczyć pojedynczy przedmiot.</li>
@@ -118,6 +127,15 @@
           <li><strong>Ranking</strong> — click a column header to sort, and a row to expand the
             school's details: charts for all three subjects, with the numeric tables behind a
             button.</li>
+          <li><strong>Ranking level</strong> — the table need not be about schools. You can rank
+            whole voivodeships, counties or municipalities; a row then shows the region's score,
+            how many schools it holds and how many pupils. Regions carry only the all-years
+            score, so the view selector and the school-type filter are inactive there. See
+            <a href="#regions">How a region gets its colour</a>.</li>
+          <li><strong>Area</strong> — three lists: voivodeship, then optionally county and
+            municipality. A choice narrows the table to that area; leaving county and
+            municipality empty covers the whole voivodeship. See
+            <a href="#ranking">Rank and percentile in the ranking</a>.</li>
           <li><strong>Subject</strong> — "Weakest subject" shows the lowest of the three scores,
             answering "does this school fall down anywhere?". Switch to Polish, Maths or English
             to see a single subject.</li>
@@ -462,6 +480,17 @@
         <p>Skala kolorów jest osobna dla każdego poziomu. Wyniki regionów są z natury mniej
           rozstrzelone niż wyniki pojedynczych szkół — uśrednianie zbija skrajności — więc
           gdyby kolorować je skalą szkolną, mapa regionów byłaby niemal cała żółta.</p>
+        <h3>Zestawienia regionów</h3>
+        <p>Te same wyniki zbiorcze można oglądać jako listę, a nie tylko jako kolor na mapie:
+          w zakładce <strong>Ranking</strong> pole „Poziom rankingu" przełącza tabelę na
+          województwa, powiaty albo gminy. Wiersz pokazuje wtedy wynik regionu, jego klasę,
+          liczbę szkół i liczbę uczniów.</p>
+        <p>Dwie różnice względem zestawienia szkół są celowe. Po pierwsze, <strong>regiony
+          bez wyniku i tak są w tabeli</strong>, z podaną przyczyną — tabela wylicza całą
+          populację danego poziomu, więc pominięcie 66 gmin sugerowałoby, że one nie
+          istnieją. Po drugie, <strong>regiony mają tylko wynik za wszystkie lata</strong>:
+          widoków rocznych ani „bez jednego roku" dla nich nie liczymy, więc widok danych
+          i filtr typu szkoły są przy tych poziomach nieaktywne.</p>
         <h3>Dlaczego niektóre regiony są szare</h3>
         <p>Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
           ręczyć", a powody są trzy — i mapa oraz ranking nazywają je osobno, bo to trzy
@@ -498,6 +527,17 @@
           inherently less spread out than individual schools' — averaging pulls in the
           extremes — so colouring them on the school scale would leave the region map
           almost entirely yellow.</p>
+        <h3>Region tables</h3>
+        <p>The same grouped scores can be read as a list rather than only as a colour on the
+          map: on the <strong>Ranking</strong> tab, "Ranking level" switches the table to
+          voivodeships, counties or municipalities. A row then shows the region's score, its
+          class, how many schools it holds and how many pupils.</p>
+        <p>Two differences from the school table are deliberate. First, <strong>regions with
+          no score still appear</strong>, carrying their reason — the table enumerates that
+          level's whole population, so omitting 66 municipalities would suggest they do not
+          exist. Second, <strong>regions carry only the all-years score</strong>: we compute
+          no single-year or leave-one-year-out views for them, which is why the view selector
+          and the school-type filter are inactive at those levels.</p>
         <h3>Why some regions are grey</h3>
         <p>Grey does not mean "weak". It means "we have no number here we would stand
           behind", and there are three reasons — named separately on the map and in the
@@ -549,7 +589,7 @@
     <section id="ranking">
       <div data-lang-block="pl">
         <h2>Miejsce i percentyl w rankingu</h2>
-        <p>Te dwie kolumny liczone są na <strong>różnych populacjach</strong>, i to nie jest
+        <p>Te kolumny liczone są na <strong>różnych populacjach</strong>, i to nie jest
           niedopatrzenie — dlatego nagłówki mówią, na jakiej.</p>
         <ul>
           <li><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
@@ -562,17 +602,28 @@
             jest mniej niż 8: w tak małej grupie percentyl udaje precyzję, której nie ma
             (przy trzech jednostkach są tylko wartości 0, 50 i 100). Dziś dotyczy to 1 042
             z 2 479 gmin.</li>
+          <li><strong>Po zawężeniu do obszaru dochodzi druga kolumna miejsca</strong> —
+            „Miejsce w województwie", „w powiecie" albo „w gminie", zależnie od tego, jak
+            głęboko sięga wybór. Liczy się ją tylko wśród wierszy tego obszaru. Stoi obok
+            krajowej celowo: dwie liczby w jednym wierszu mają wtedy różne mianowniki
+            i pomylenie ich zmienia sens. Filtr nazwy ani typu szkoły jej nie przesuwa —
+            tak samo jak nie przesuwa miejsca w kraju.</li>
         </ul>
-        <p><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — tylko
-          miejsce w kraju. Ranking szkół pokazujemy zawsze w obrębie jednego wybranego
-          powiatu (ogólnopolska lista wszystkich szkół to plik, którego nikt nie chce
-          pobierać na telefonie), ale numery miejsc pozostają krajowe — dlatego w takiej
-          liście nie idą po kolei. Percentyl przy szkole w dymku na mapie też jest krajowy:
-          mówi, ile procent szkół w Polsce ma wynik nie lepszy niż ta.</p>
+        <p>Kolumna obszaru znika, gdy nic by nie wnosiła: przy zestawieniu powiatów
+          zawężonym do jednego powiatu zostaje jeden wiersz, a jego „miejsce" byłoby
+          zawsze pierwsze. Taki wybór nadal działa — to podgląd jednej jednostki wraz z jej
+          miejscem w kraju — ale drugiej kolumny już nie dostaje.</p>
+        <p><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — jest
+          miejsce w kraju, a po wybraniu obszaru także miejsce w nim. Ranking szkół
+          pokazujemy zawsze w obrębie <strong>wybranego obszaru — województwa, powiatu albo
+          gminy</strong> (ogólnopolska lista wszystkich szkół to plik, którego nikt nie chce
+          pobierać na telefonie), ale numery w kolumnie krajowej pozostają krajowe —
+          dlatego w takiej liście nie idą po kolei. Percentyl przy szkole w dymku na mapie
+          też jest krajowy: mówi, ile procent szkół w Polsce ma wynik nie lepszy niż ta.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Rank and percentile in the ranking</h2>
-        <p>These two columns are computed over <strong>different populations</strong>, and
+        <p>These columns are computed over <strong>different populations</strong>, and
           that is not an oversight — which is why the headers say which.</p>
         <ul>
           <li><strong>Rank is national</strong> at every level: among all voivodeships, all
@@ -585,13 +636,26 @@
             where there are fewer than 8 siblings: in a group that small a percentile fakes
             a precision it does not have (with three units the only possible values are 0,
             50 and 100). Today that applies to 1,042 of 2,479 municipalities.</li>
+          <li><strong>Narrowing to an area adds a second rank column</strong> — "Rank in
+            voivodeship", "in county" or "in municipality", depending how deep the choice
+            goes. It is computed among the rows of that area alone. It sits beside the
+            national one deliberately: two numbers in one row then have different
+            denominators, and confusing them changes what they mean. Neither the name
+            search nor the school-type filter moves it — just as neither moves the national
+            rank.</li>
         </ul>
-        <p><strong>At school level the table has no percentile column at all</strong> — only
-          the national rank. The school ranking is always shown within one chosen county (a
-          national list of every school is a file nobody wants to download on a phone), but
-          the rank numbers stay national, which is why they do not run consecutively in such
-          a list. The percentile in a school's map popup is national too: it says what
-          share of schools in Poland score no better than this one.</p>
+        <p>The area column disappears where it would add nothing: ranking counties narrowed
+          to a single county leaves one row, whose "rank" would always be first. That choice
+          still works — it is a look at one unit together with its national standing — but it
+          gets no second column.</p>
+        <p><strong>At school level the table has no percentile column at all</strong> — there
+          is the national rank, and the rank within the area once one is chosen. The school
+          ranking is always shown within the <strong>chosen area — a voivodeship, a county or
+          a municipality</strong> (a national list of every school is a file nobody wants to
+          download on a phone), but the numbers in the national column stay national, which
+          is why they do not run consecutively in such a list. The percentile in a school's
+          map popup is national too: it says what share of schools in Poland score no better
+          than this one.</p>
       </div>
     </section>
 

@@ -365,6 +365,27 @@ async function loadShard(powiat, metric) {
   return shardCache.get(key);
 }
 
+// Every shard under one selection, fetched concurrently. A voivodeship-wide
+// school ranking is up to 42 files and ~3.4 MB on the primary metric, so
+// `onProgress(done, total)` fires as each lands and the caller can show a count
+// instead of an unexplained pause. Individually cached by loadShard, so
+// narrowing a selection after a wide one refetches nothing.
+//
+// Promise.all, deliberately, not allSettled: if one shard fails the result is a
+// ranking missing a county with no way for a reader to tell. This page's whole
+// premise is that a partial list must not be shown as a whole one, so the
+// failure has to propagate and become the error message.
+async function loadShards(powiats, metric, onProgress) {
+  let done = 0;
+  const total = powiats.length;
+  if (onProgress) onProgress(0, total);
+  return Promise.all(powiats.map((p) => loadShard(p, metric).then((payload) => {
+    done += 1;
+    if (onProgress) onProgress(done, total);
+    return payload;
+  })));
+}
+
 // Each geometry file is named for the region in view but contains its CHILDREN,
 // so `level` here is the parent's level, not the level being drawn. There is no
 // gmina branch because there is no geometry below gmina — at that level the map
@@ -518,10 +539,16 @@ const I18N = {
     labelRankLevel: 'Poziom rankingu',
     levelSchool: 'Szkoła',
     helpRankLevel: 'Województwa, powiaty i gminy są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły tylko w obrębie jednego powiatu: ogólnopolski ranking szkół wymagałby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
-    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc wybór powiatu, widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
-    labelRegion: 'Wybrany powiat',
-    regionPlaceholder: '— wybierz powiat —',
-    rankingPickRegion: 'Wybierz powiat, aby zobaczyć ranking jego szkół. Szkoły są rankingowane w obrębie jednego powiatu — pokazanie części listy jako całości byłoby mylące, więc dopóki powiat nie jest wybrany, ranking się nie pojawia.',
+    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
+    labelVoivodeship: 'Województwo',
+    labelPowiatOptional: 'Powiat (opcjonalnie)',
+    labelGminaOptional: 'Gmina (opcjonalnie)',
+    voivPlaceholder: '— wybierz województwo —',
+    powiatPlaceholderAll: '— całe województwo —',
+    gminaPlaceholderAll: '— cały powiat —',
+    selectDeeperThanLevel: 'Głębszy wybór niż poziom rankingu nie zawęziłby listy, tylko ją opróżnił.',
+    shardsLoading: (done, total) => `Wczytywanie danych szkół… ${done}/${total} powiatów`,
+    rankingPickRegion: 'Wybierz województwo, aby zobaczyć ranking jego szkół — opcjonalnie zawęź go do powiatu lub gminy. Szkoły są rankingowane w obrębie wybranego obszaru; pokazanie części listy jako całości byłoby mylące, więc dopóki obszar nie jest wybrany, ranking się nie pojawia.',
     lastKRow: (k) => `ostatnie ${k}`,
     rankingView: 'Widok danych',
     rankingViewParam: 'Parametr widoku',
@@ -549,6 +576,13 @@ const I18N = {
     helpRankNational: (n, ref) => (n == null
       ? `Miejsce wśród wszystkich szkół w Polsce, policzone przy punkcie odniesienia „${ref}". W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.`
       : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
+    // Named by the LEVEL of the selection, not by its name: "Miejsce w" takes the
+    // locative, and no template can decline 2,479 gmina names correctly. The
+    // actual region is named in the help text, where a colon sidesteps the case.
+    colRankInVoivodeship: 'Miejsce w województwie',
+    colRankInPowiat: 'Miejsce w powiecie',
+    colRankInGmina: 'Miejsce w gminie',
+    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Filtry nazwy i typu szkoły nie zmieniają tego miejsca.`,
     colPctInCountry: 'Percentyl w kraju',
     colPctInVoivodeship: 'Percentyl w województwie',
     colPctInPowiat: 'Percentyl w powiecie',
@@ -693,10 +727,16 @@ const I18N = {
     labelRankLevel: 'Ranking level',
     levelSchool: 'School',
     helpRankLevel: 'Voivodeships, counties and municipalities rank across the whole country — their files already cover all of Poland. Schools rank within one county only: a national school ranking would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
-    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the county picker, the view selector and the school-type filter apply to the school level alone.',
-    labelRegion: 'Selected county',
-    regionPlaceholder: '— pick a county —',
-    rankingPickRegion: 'Pick a county to rank its schools. Schools are ranked within a single county — showing part of the list as if it were the whole would mislead, so no ranking appears until a county is chosen.',
+    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the school-type filter apply to the school level alone.',
+    labelVoivodeship: 'Voivodeship',
+    labelPowiatOptional: 'County (optional)',
+    labelGminaOptional: 'Municipality (optional)',
+    voivPlaceholder: '— pick a voivodeship —',
+    powiatPlaceholderAll: '— whole voivodeship —',
+    gminaPlaceholderAll: '— whole county —',
+    selectDeeperThanLevel: 'Selecting deeper than the ranking level would not narrow the list, only empty it.',
+    shardsLoading: (done, total) => `Loading school data… ${done}/${total} counties`,
+    rankingPickRegion: 'Pick a voivodeship to rank its schools — optionally narrow to a county or municipality. Schools are ranked within the selected area; showing part of the list as if it were the whole would mislead, so no ranking appears until an area is chosen.',
     lastKRow: (k) => `last ${k}`,
     rankingView: 'View',
     rankingViewParam: 'View parameter',
@@ -715,6 +755,10 @@ const I18N = {
     helpRankNational: (n, ref) => (n == null
       ? `Rank among every school in Poland, computed against the "${ref}" reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.`
       : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
+    colRankInVoivodeship: 'Rank in voivodeship',
+    colRankInPowiat: 'Rank in county',
+    colRankInGmina: 'Rank in municipality',
+    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. The name and school-type filters do not change this rank.`,
     colPctInCountry: 'Percentile in Poland',
     colPctInVoivodeship: 'Percentile in voivodeship',
     colPctInPowiat: 'Percentile in county',

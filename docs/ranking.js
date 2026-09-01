@@ -1,16 +1,30 @@
 // Ranking page: a sortable/filterable table of whatever the level control picks
 // — voivodeships, powiats, gminas or schools — by (metric, subject, view).
 //
+// An optional AREA FILTER (state.region) narrows the table to one voivodeship,
+// powiat or gmina. It is a TERYT prefix — 2, 4 or 6 digits — and because those
+// codes nest, the whole cascade is one `teryt.startsWith(prefix)` test and one
+// piece of state; the three selects are a view of that single string, so they
+// cannot disagree with each other.
+//
 // The four levels are deliberately NOT symmetric:
 //   voivodeship / powiat / gmina  rank NATIONALLY, straight from
 //     regions-{level}.json. Those files are 2.4 / 44 / 254 KB gzipped and
-//     already whole-country, so the twenty best gminas in Poland cost nothing.
-//   school                        ranks WITHIN ONE POWIAT, from that powiat's
-//     shard (docs/data/powiat/{teryt4}-{metric}.json). A national school ranking
-//     would need every school's scores at every reference level in one file,
-//     ~5 MB gzipped — exactly the payload the per-powiat sharding exists to
-//     avoid. So with no powiat chosen the page shows a prompt rather than
-//     quietly ranking one powiat's worth and calling it a ranking.
+//     already whole-country, so the twenty best gminas in Poland cost nothing,
+//     and narrowing to an area costs nothing either — it filters rows already
+//     in memory and fetches not one byte.
+//   school                        ranks WITHIN THE SELECTED AREA, from the
+//     shard of every powiat it covers (docs/data/powiat/{teryt4}-{metric}.json).
+//     One powiat is one file; a whole voivodeship is up to 42 of them and
+//     ~3.4 MB gzipped on the primary metric. A NATIONAL school ranking would be
+//     380 files and ~25 MB — exactly the payload the per-powiat sharding exists
+//     to avoid — so with no area chosen the page shows a prompt rather than
+//     quietly ranking one area's worth and calling it a ranking.
+//
+// Where an area is selected the table carries TWO rank columns. The published
+// rank is national and stays that way in its own column; the second is computed
+// here over the selected rows. Two denominators, each named in its own header —
+// never one number that quietly changes meaning when a filter moves.
 
 (function () {
   const RANK_LEVELS = ['voivodeship', 'powiat', 'gmina', 'school'];
@@ -32,10 +46,29 @@
     gmina: 'rowsShownGmina',
     school: 'rowsShown',
   };
+  // TERYT prefix length per selection depth, and the inverse. 6 not 7: the 7th
+  // digit is the gmina TYPE, which 191-208 schools change between years, so it
+  // is not part of a gmina's identity (see teryt.py).
+  const SELECT_DIGITS = { voivodeship: 2, powiat: 4, gmina: 6 };
+  const SELECT_LEVEL_BY_DIGITS = { 2: 'voivodeship', 4: 'powiat', 6: 'gmina' };
+  // How deep the area filter may go at each ranking level. Selecting deeper than
+  // the rows being ranked cannot narrow them — a 4-digit powiat TERYT never
+  // starts with a 6-digit gmina prefix — it can only empty the table.
+  const MAX_SELECT_DIGITS = { voivodeship: 2, powiat: 4, gmina: 6, school: 6 };
+  const RANK_IN_COLUMN = {
+    voivodeship: 'colRankInVoivodeship',
+    powiat: 'colRankInPowiat',
+    gmina: 'colRankInGmina',
+  };
+  // Depth of the thing in a row, for comparison against the selection's depth.
+  // Schools are 8 because they sit below every region level: any area selection
+  // is strictly shallower than a school, so their local rank always means
+  // something. Selecting AT the ranked level leaves one row ranked 1 of 1.
+  const RANKED_DIGITS = { voivodeship: 2, powiat: 4, gmina: 6, school: 8 };
 
   const state = {
     level: 'school',              // one of RANK_LEVELS
-    region: null,                 // 4-digit powiat TERYT; school level only
+    region: null,                 // TERYT prefix: 2, 4 or 6 digits, or null for all
     metric: DEFAULTS.metric,
     subject: DEFAULTS.subject,
     view: 'base',                 // 'base' | 'last_k' | 'single_year' | 'loo'
@@ -63,6 +96,9 @@
   // need no second fetch. { schools: { rspo: { subject: {views} } } }.
   let shardHistory = null;
   let populationError = false;
+  // {done, total} while a multi-shard area is downloading, else null. A single
+  // powiat is one file and lands fast enough that a counter would only flicker.
+  let shardProgress = null;
   // What is actually in memory, as a populationKey(). Guards two things at once:
   // a response that lost the race (regions-gmina.json is 0.77 MB and can land
   // after a 6.9 KB voivodeship file requested later), and rendering the previous
@@ -92,11 +128,16 @@
     return 'school';
   }
 
+  // 2, 4 or 6 digits — voivodeship, powiat or gmina. Anything else (including the
+  // 7-digit form with the gmina type on the end) is not a selection this page
+  // can act on, so it is dropped rather than silently truncated to something the
+  // user did not ask for.
   function resolveRegion() {
+    const valid = (v) => /^\d{2}$|^\d{4}$|^\d{6}$/.test(v || '');
     const url = getURLParams().get('region');
-    if (/^\d{4}$/.test(url || '')) return url;
+    if (valid(url)) return url;
     const stored = readPrefs().rank_region;
-    return /^\d{4}$/.test(stored || '') ? stored : null;
+    return valid(stored) ? stored : null;
   }
 
   function resolveInitialState() {
@@ -129,7 +170,9 @@
   function syncURL() {
     setURLParams({
       level:      state.level !== 'school' ? state.level : null,
-      region:     state.level === 'school' ? state.region : null,
+      // Now meaningful at every level, not just school: at a region level it
+      // filters rows of a file already in memory.
+      region:     state.region,
       metric:     state.metric  !== DEFAULTS.metric  ? state.metric  : null,
       subject:    state.subject !== DEFAULTS.subject ? state.subject : null,
       view:       state.view !== 'base' ? state.view : null,
@@ -266,6 +309,7 @@
 
     return {
       rspo: school.rspo,
+      teryt: school.teryt,      // what the area filter prefix-matches against
       school,
       name: school.name,
       street: school.ulica_nr,
@@ -345,6 +389,7 @@
       // must not say "the selected reference point".
       { key: 'rank',       label: t('colRankNational'), num: true,  width: '6rem',
         help: 'helpRankNational', helpArgs: [null, levelLabel(baselineLevel)] },
+      ...selectionRankColumn(),
       { key: 'name',       label: t('colName'),        num: false },
       { key: 'town',       label: t('colTown'),        num: false },
       { key: 'street',     label: t('colStreet'),      num: false },
@@ -363,6 +408,17 @@
     return t('level' + level[0].toUpperCase() + level.slice(1));
   }
 
+  // The selection-rank column, or nothing at all when no area is selected — so an
+  // unfiltered table looks exactly as it did before this control existed, rather
+  // than carrying a column of numbers identical to the one beside it.
+  function selectionRankColumn() {
+    if (!selectionRankMeaningful()) return [];
+    return [{
+      key: 'rankInSel', label: t(RANK_IN_COLUMN[selectionLevel()]), num: true, width: '7rem',
+      help: 'helpRankInSelection', helpArgs: [selectionName()],
+    }];
+  }
+
   // Exactly what the region files carry — no street/town/public/n_years, and no
   // LOO or single-year folds (regions ship the `base` view alone).
   function regionColumns() {
@@ -375,6 +431,7 @@
     const cols = [
       { key: 'rank', label: t('colRankNational'), num: true, width: '6rem',
         help: 'helpRankNational', helpArgs: [nRanked] },
+      ...selectionRankColumn(),
       { key: 'name', label: levelLabel(state.level), num: false },
     ];
     if (parentLevel) cols.push({ key: 'parent', label: levelLabel(parentLevel), num: false });
@@ -579,6 +636,13 @@
     </td></tr>`;
   }
 
+  // Same predicate as selectionRankColumn(), deliberately: the two must agree or
+  // every cell after this one shifts a column left of its header.
+  function selectionRankCellHTML(r) {
+    if (!selectionRankMeaningful()) return '';
+    return `<td class="num">${r.rankInSel ?? '—'}</td>`;
+  }
+
   function classCellHTML(r) {
     return r.classLetter
       ? `<span class="class-badge" style="background:${r.classColour};color:${r.classTextColour}">${r.classLetter}</span>`
@@ -593,6 +657,7 @@
     const selected = (r.rspo === state.selectedSchool);
     const mainRow = `<tr data-rspo="${r.rspo}"${selected ? ' class="highlight"' : ''}>
         <td class="num">${r.rank ?? '—'}</td>
+        ${selectionRankCellHTML(r)}
         <td>${escapeHTML(r.name)}${offMap}</td>
         <td>${escapeHTML(r.town || '')}</td>
         <td>${escapeHTML(r.street || '')}</td>
@@ -620,6 +685,7 @@
       ? ` <span class="muted small">${escapeHTML(t(r.reasonKey))}</span>` : '';
     return `<tr data-region="${r.key}">
         <td class="num">${r.rank ?? '—'}</td>
+        ${selectionRankCellHTML(r)}
         <td>${escapeHTML(r.name)}${reason}</td>
         ${hasParent ? `<td>${escapeHTML(r.parent || '')}</td>` : ''}
         <td class="num">${r.n_schools}</td>
@@ -708,22 +774,67 @@
     renderAll();
   }
 
-  // Every row the current level ranks, before filtering. Regions are mapped from
-  // the columnar payload by index rather than materialised up front, so a metric
-  // or subject change re-reads the same loaded file instead of refetching it.
-  function allRows() {
-    if (!populationLoaded()) return [];
-    if (state.level === 'school') return schoolRows.map(buildSchoolRow);
-    return regionData.regions.teryt.map((_, i) => buildRegionRow(i));
+  function selectionLevel() {
+    return state.region ? SELECT_LEVEL_BY_DIGITS[state.region.length] : null;
   }
 
-  // The denominator for "N of M". The level's whole population — for schools the
-  // SELECTED POWIAT's school count, never the 12,889 nationally: claiming the
-  // larger number is precisely the partial-ranking-as-a-whole this level control
-  // exists to prevent.
-  function populationSize() {
-    if (!populationLoaded()) return 0;
-    return state.level === 'school' ? schoolRows.length : regionData.regions.teryt.length;
+  function selectionName() {
+    const level = selectionLevel();
+    return level ? nameOf(level, state.region) : '';
+  }
+
+  // A local rank says something only when the area holds more than one row of the
+  // ranked level. Selecting a powiat while ranking powiats is a legitimate
+  // lookup — it shows that one powiat's national standing — but its local rank
+  // would read 1 for the single row, so the column is dropped rather than filled
+  // with a constant.
+  function selectionRankMeaningful() {
+    const level = selectionLevel();
+    return !!level && SELECT_DIGITS[level] < RANKED_DIGITS[state.level];
+  }
+
+  // Region rows carry their TERYT as `key`, school rows as `teryt`. Both are the
+  // full code of the thing in the row, so one prefix test serves both.
+  function rowTeryt(r) {
+    return state.level === 'school' ? r.teryt : r.key;
+  }
+
+  // Rank within the selected area. Ties share the lowest rank, matching
+  // rankdata(-x, 'min') in aggregate.py, so both rank columns break ties the same
+  // way. A row with no score gets null: it holds no national rank either, and
+  // inventing a local position for it would contradict that.
+  function assignSelectionRank(rows) {
+    const scored = rows.filter(r => r.score != null).sort((a, b) => b.score - a.score);
+    for (let i = 0; i < scored.length;) {
+      let j = i;
+      while (j + 1 < scored.length && scored[j + 1].score === scored[i].score) j += 1;
+      for (let k = i; k <= j; k += 1) scored[k].rankInSel = i + 1;
+      i = j + 1;
+    }
+    for (const r of rows) if (r.score == null) r.rankInSel = null;
+  }
+
+  // Every row the current level ranks inside the selected area, before the name
+  // and school-type filters. Regions are mapped from the columnar payload by
+  // index rather than materialised up front, so a metric or subject change
+  // re-reads the same loaded file instead of refetching it.
+  //
+  // This is deliberately the population BOTH the selection rank and the "N of M"
+  // denominator use. Typing in the search box must not renumber a rank — the
+  // national rank in the next column does not move when a filter does, and two
+  // adjacent rank columns disagreeing about whether filters count would be
+  // indefensible. And M is the selected area's size, never the 12,889 nationally:
+  // claiming the larger number is precisely the partial-ranking-as-a-whole that
+  // the level control and the pick-an-area prompt exist to prevent.
+  function selectionRows() {
+    if (!populationLoaded()) return [];
+    const rows = state.level === 'school'
+      ? schoolRows.map(buildSchoolRow)
+      : regionData.regions.teryt.map((_, i) => buildRegionRow(i));
+    if (!state.region) return rows;
+    const inArea = rows.filter(r => rowTeryt(r).startsWith(state.region));
+    assignSelectionRank(inArea);
+    return inArea;
   }
 
   // What stands in for the table when there is nothing honest to rank yet.
@@ -737,7 +848,12 @@
     if (state.level === 'school' && !state.region) return t('rankingPickRegion');
     const schools = state.level === 'school';
     if (populationError) return t(schools ? 'historyFailed' : 'regionsFailed');
-    if (!populationLoaded()) return t(schools ? 'historyLoading' : 'regionsLoading');
+    if (!populationLoaded()) {
+      // Name the real cost while it is being paid: a whole voivodeship is up to
+      // 42 files, and an unexplained pause that long reads as a broken page.
+      if (schools && shardProgress) return t('shardsLoading', shardProgress.done, shardProgress.total);
+      return t(schools ? 'historyLoading' : 'regionsLoading');
+    }
     return '';
   }
 
@@ -759,8 +875,9 @@
       return;
     }
 
-    const filtered = sortRows(filterRows(allRows()));
-    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, populationSize());
+    const inArea = selectionRows();
+    const filtered = sortRows(filterRows(inArea));
+    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, inArea.length);
     renderTable(filtered);
     if (state.level === 'school' && state.selectedSchool != null) {
       const tr = document.querySelector(`tr[data-rspo="${state.selectedSchool}"]`);
@@ -811,7 +928,8 @@
   //
   // One fetch per level change, metric change (school level only — the region
   // files carry every metric) or region change. Every loader in app.js caches
-  // its promise, so revisiting a level or powiat costs nothing.
+  // its promise, so revisiting a level or an area costs nothing, and narrowing
+  // from a voivodeship to one of its powiats refetches nothing at all.
   //
   // At school level the shard doubles as the history file: it already carries
   // base/loo/single_year/last_k per subject, which is what the rank-range
@@ -819,7 +937,15 @@
   // download the way there was when those lived in whole-country per-metric
   // files.
 
-  async function fetchPopulation(level, region, metric) {
+  // Which powiat shards cover a selection. A powiat or gmina prefix names
+  // exactly one (a gmina lies inside one powiat, so its first four digits are
+  // the file); a voivodeship prefix names every powiat under it — up to 42.
+  function powiatsFor(region, powiatRegions) {
+    if (region.length >= 4) return [region.slice(0, 4)];
+    return powiatRegions.regions.teryt.filter(t => t.startsWith(region));
+  }
+
+  async function fetchPopulation(level, region, metric, onProgress) {
     if (REGION_LEVELS.includes(level)) {
       const parentLevel = PARENT_LEVEL[level];
       // The parent file is fetched only for its names (the "parent" column) —
@@ -831,23 +957,31 @@
       return { regions, schools: [], history: null };
     }
     if (!region) return { regions: null, schools: [], history: null };
-    const [shard, index] = await Promise.all([
-      loadShard(region, metric),
+    // Awaited before the fan-out rather than alongside it: which shards to ask
+    // for is derived from this file. 118 KB, and cached for the session.
+    const powiatRegions = await loadRegions('powiat');
+    const powiats = powiatsFor(region, powiatRegions);
+    const [shards, index] = await Promise.all([
+      loadShards(powiats, metric, onProgress),
       loadIndex(),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve the gmina column and makes the name search match on it.
       // Same deal as map.js's buildSchools: one 0.77 MB fetch a session, and
       // only once a powiat has been deliberately chosen.
       loadRegions('gmina'),
-      loadRegions('powiat'),
     ]);
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
     // Not `baselineLevel` directly: a mean/median shard carries one level, not
     // four copies of it, so the file is what says which block to read (§2d).
     // `refLevel`, not `level`: this function's `level` is the ranking level.
-    const refLevel = shardLevel(shard);
-    const schools = Object.entries(shard.schools).map(([rspo, byLevel]) => {
+    // Every shard of one metric carries the same level, so the first answers for
+    // all of them.
+    const refLevel = shardLevel(shards[0]);
+    // The shards partition the country by powiat, so no rspo can appear in two
+    // of them and concatenating them cannot collide.
+    const entries = shards.flatMap(s => Object.entries(s.schools));
+    const schools = entries.map(([rspo, byLevel]) => {
       const i = pos.get(rspo);
       if (i == null) return null;
       const byMetric = byLevel[refLevel] || {};
@@ -861,6 +995,8 @@
       }
       return {
         rspo: Number(rspo),
+        // The school's own TERYT, which the area filter prefix-matches against.
+        teryt: col.teryt[i],
         name: col.name[i],
         miejscowosc: col.miejscowosc[i],
         ulica_nr: col.ulica_nr[i],
@@ -874,7 +1010,7 @@
       };
     }).filter(Boolean);
     const history = { schools: Object.fromEntries(
-      Object.entries(shard.schools).map(([rspo, byLevel]) => [rspo, byLevel[refLevel] || {}])
+      entries.map(([rspo, byLevel]) => [rspo, byLevel[refLevel] || {}])
     ) };
     return { regions: null, schools, history };
   }
@@ -887,8 +1023,17 @@
     const key = populationKey();
     const { level, region, metric } = state;
     populationError = false;
+    shardProgress = null;
     if (loadedKey !== key) renderAll();   // show the loading state at once
-    fetchPopulation(level, region, metric).then((got) => {
+    // Only repaints the blocked page's one line of text, so running it per shard
+    // is cheap. Guarded on the key: a superseded request must not write its
+    // progress over the message of the one that replaced it.
+    const onProgress = (done, total) => {
+      if (key !== populationKey() || total < 2) return;
+      shardProgress = { done, total };
+      renderAll();
+    };
+    fetchPopulation(level, region, metric, onProgress).then((got) => {
       if (key !== populationKey()) return;
       regionData = got.regions;
       schoolRows = got.schools;
@@ -918,66 +1063,124 @@
     }
   }
 
-  // 380 powiats in <optgroup>s by voivodeship. Filled lazily — only once school
-  // level is actually in play — because at a region level the two files behind
-  // it may not be needed at all.
-  let regionSelectFilled = false;
+  // The three area selects are a VIEW of the single state.region prefix, never
+  // their own state. Each sync reads that one string and shows what it implies,
+  // so they cannot drift apart from each other or from the table.
 
-  async function fillRegionSelect() {
-    const sel = document.getElementById('region-select');
-    const [voiv, pow] = await Promise.all([loadRegions('voivodeship'), loadRegions('powiat')]);
+  function regionOption(value, label, i18nKey) {
+    const opt = document.createElement('option');
+    opt.value = value;
+    opt.textContent = label;
+    // Carries data-i18n like its static twin in the HTML, so applyI18N
+    // retranslates it on a language switch and no hand-written patch is needed.
+    if (i18nKey) opt.setAttribute('data-i18n', i18nKey);
+    return opt;
+  }
+
+  // `regions` of null fills the placeholder alone — which is what a select whose
+  // parent is unchosen should show, rather than all 2,479 gminas in Poland.
+  function fillRegionOptions(sel, placeholderKey, regions, prefix) {
     sel.innerHTML = '';
-    const placeholder = document.createElement('option');
-    placeholder.value = '';
-    placeholder.textContent = t('regionPlaceholder');
-    // Carries data-i18n like its static twin in the HTML, so applyI18N retranslates
-    // it on a language switch and no hand-written patch is needed.
-    placeholder.setAttribute('data-i18n', 'regionPlaceholder');
-    sel.appendChild(placeholder);
-    const groups = new Map();
-    const v = voiv.regions, p = pow.regions;
-    for (let i = 0; i < v.teryt.length; i++) {
-      const group = document.createElement('optgroup');
-      group.label = v.name[i];
-      groups.set(v.teryt[i], group);
-      sel.appendChild(group);
+    sel.appendChild(regionOption('', t(placeholderKey), placeholderKey));
+    if (!regions) return;
+    const r = regions.regions;
+    const rows = [];
+    for (let i = 0; i < r.teryt.length; i++) {
+      if (prefix && !r.teryt[i].startsWith(prefix)) continue;
+      rows.push([r.teryt[i], r.name[i]]);
     }
-    for (let i = 0; i < p.teryt.length; i++) {
-      const group = groups.get(p.parent[i]);
-      if (!group) continue;
-      const opt = document.createElement('option');
-      opt.value = p.teryt[i];
-      opt.textContent = p.name[i];
-      group.appendChild(opt);
-    }
-    regionSelectFilled = true;
-    sel.value = state.region || '';
-    // A URL or stored TERYT that names no real powiat leaves the select on the
-    // placeholder; drop it from state too, so the prompt appears instead of the
-    // page silently ranking nothing.
-    if (sel.value !== (state.region || '')) {
-      state.region = null;
-      writePref('rank_region', null);
+    // The files are ordered by TERYT; a person reading a dropdown wants names.
+    rows.sort((a, b) => a[1].localeCompare(b[1], 'pl'));
+    for (const [teryt, name] of rows) sel.appendChild(regionOption(teryt, name));
+  }
+
+  let regionSyncToken = 0;
+
+  async function syncRegionSelects() {
+    const token = ++regionSyncToken;
+    const voivSel   = document.getElementById('voiv-select');
+    const powiatSel = document.getElementById('powiat-select');
+    const gminaSel  = document.getElementById('gmina-select');
+
+    const maxDigits = MAX_SELECT_DIGITS[state.level];
+    const sel    = state.region || '';
+    const voiv   = sel.slice(0, 2);
+    const powiat = sel.length >= 4 ? sel.slice(0, 4) : '';
+    const gmina  = sel.length >= 6 ? sel : '';
+
+    const [voivRegions, powiatRegions] = await Promise.all([
+      loadRegions('voivodeship'), loadRegions('powiat'),
+    ]);
+    if (token !== regionSyncToken) return;   // a later sync already repainted
+
+    fillRegionOptions(voivSel, 'voivPlaceholder', voivRegions, null);
+    voivSel.value = voiv;
+
+    fillRegionOptions(powiatSel, 'powiatPlaceholderAll', voiv ? powiatRegions : null, voiv);
+    powiatSel.value = powiat;
+    powiatSel.disabled = !voiv || maxDigits < 4;
+
+    // regions-gmina.json is 0.77 MB, so it is fetched only when a powiat is
+    // actually chosen AND the ranking level is deep enough for a gmina to
+    // narrow anything.
+    const wantGminas = !!powiat && maxDigits >= 6;
+    const gminaRegions = wantGminas ? await loadRegions('gmina') : null;
+    if (token !== regionSyncToken) return;
+    fillRegionOptions(gminaSel, 'gminaPlaceholderAll', gminaRegions, powiat);
+    gminaSel.value = gmina;
+    gminaSel.disabled = !wantGminas;
+
+    // A URL or stored prefix naming a region that does not exist leaves its
+    // select on the placeholder. Trim the selection back to the deepest part
+    // that did resolve, so the page filters by something real or by nothing —
+    // never by a code no region has.
+    const resolved = gminaSel.value || powiatSel.value || voivSel.value || '';
+    if (resolved !== sel) {
+      state.region = resolved || null;
+      writePref('rank_region', state.region);
       syncURL();
     }
   }
 
-  // Level and region only mean something together; everything below them is a
-  // school-level affordance. Disabled with a reason rather than hidden — the map
-  // handles its own inapplicable baseline selector the same way.
+  // The one place the area filter changes; everything else reads it.
+  function setRegion(prefix) {
+    state.region = prefix || null;
+    writePref('rank_region', state.region);
+    state.selectedSchool = null;   // that school need not be in the new area
+    // Sorting by a column that no longer exists would silently order by nothing —
+    // the same trap the level control guards against. Checked after the
+    // assignment above, since the column list depends on it.
+    if (!currentColumnKeys().includes(state.sortKey)) {
+      state.sortKey = 'rank';
+      state.sortDir = 'asc';
+    }
+    syncRegionSelects().catch(e => console.error('region lists unavailable', e));
+    syncURL();
+    refreshPopulation();
+  }
+
+  // Disabled with a reason rather than hidden — the map handles its own
+  // inapplicable baseline selector the same way. Two different reasons can apply
+  // here, so the note carries whichever do: the view and school-type filters are
+  // school-level affordances, and an area select deeper than the ranking level
+  // could not narrow the rows, only empty them.
   function syncControlAvailability() {
     const schools = state.level === 'school';
-    document.getElementById('region-select').disabled = !schools;
     document.getElementById('view-select').disabled = !schools;
     for (const r of document.querySelectorAll('input[name="public"]')) r.disabled = !schools;
-    document.getElementById('level-note').textContent = schools ? '' : t('levelRegionNote');
+    const parts = [];
+    if (!schools) parts.push(t('levelRegionNote'));
+    if (MAX_SELECT_DIGITS[state.level] < 6) parts.push(t('selectDeeperThanLevel'));
+    document.getElementById('level-note').textContent = parts.join(' ');
     // The click hint is NOT set here: it depends on whether rows are on screen,
-    // which changes on region selection and on load too. renderAll owns it.
+    // which changes on area selection and on load too. renderAll owns it.
   }
 
   function wireControls() {
     const levelSel   = document.getElementById('level-select');
-    const regionSel  = document.getElementById('region-select');
+    const voivSel    = document.getElementById('voiv-select');
+    const powiatSel  = document.getElementById('powiat-select');
+    const gminaSel   = document.getElementById('gmina-select');
     const metricSel  = document.getElementById('metric-select');
     const subjectSel = document.getElementById('subject-select');
     const viewSel    = document.getElementById('view-select');
@@ -998,22 +1201,28 @@
         state.sortKey = 'rank';
         state.sortDir = 'asc';
       }
-      if (state.level === 'school' && !regionSelectFilled) {
-        fillRegionSelect().catch(e => console.error('region list unavailable', e));
+      // A selection deeper than the new level cannot narrow its rows, only empty
+      // them, so it is trimmed back to the deepest level that still means
+      // something rather than dropped outright.
+      const maxDigits = MAX_SELECT_DIGITS[state.level];
+      if (state.region && state.region.length > maxDigits) {
+        state.region = state.region.slice(0, maxDigits);
+        writePref('rank_region', state.region);
       }
+      syncRegionSelects().catch(e => console.error('region lists unavailable', e));
       syncControlAvailability();
       updateViewParamField();
       syncURL();
       refreshPopulation();
     });
 
-    regionSel.addEventListener('change', () => {
-      state.region = regionSel.value || null;
-      writePref('rank_region', state.region);
-      state.selectedSchool = null;   // that school is not in the new powiat
-      syncURL();
-      refreshPopulation();
-    });
+    // Clearing a select falls back to its parent rather than to nothing: a
+    // powiat set to "whole voivodeship" means the voivodeship, not all of Poland.
+    // Changing the voivodeship sets a 2-digit prefix, which by construction drops
+    // whatever powiat and gmina were under the old one.
+    voivSel.addEventListener('change',   () => setRegion(voivSel.value));
+    powiatSel.addEventListener('change', () => setRegion(powiatSel.value || voivSel.value));
+    gminaSel.addEventListener('change',  () => setRegion(gminaSel.value || powiatSel.value));
 
     const advancedCB = document.getElementById('advanced-metrics-toggle');
     advancedCB.checked = state.advancedMetrics;
@@ -1139,9 +1348,10 @@
 
     wireControls();
     syncControlAvailability();
-    if (state.level === 'school') {
-      fillRegionSelect().catch(e => console.error('region list unavailable', e));
-    }
+    // Awaited, unlike the population below it: this is what corrects a bogus
+    // ?region= before anything is fetched for it, and the two files behind it are
+    // 6.9 KB + 118 KB and needed at every level anyway.
+    await syncRegionSelects().catch(e => console.error('region lists unavailable', e));
     fillDataYears();
     updateViewParamField();
 

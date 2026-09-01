@@ -672,16 +672,20 @@ table.ranking-table tr.detail-row > td {
     row-gap: 0.45rem;
     align-items: start;
   }
-  /* Level and county lead: they decide what the table ranks at all, so they must
-     not auto-flow to the bottom past the explicitly placed fields below. */
+  /* Level and the area cascade lead: they decide what the table ranks at all, so
+     they must not auto-flow to the bottom past the explicitly placed fields
+     below. The cascade reads left-to-right then down, in the order it is filled
+     in — voivodeship beside the level it qualifies, then powiat and gmina. */
   .ranking-controls .field--level    { grid-column: 1; grid-row: 1; }
-  .ranking-controls .field--region   { grid-column: 2; grid-row: 1; }
-  .ranking-controls .field--metric   { grid-column: 1; grid-row: 2; }
-  .ranking-controls .field--subject  { grid-column: 2; grid-row: 2; }
-  .ranking-controls .field--view     { grid-column: 1; grid-row: 3; }
-  .ranking-controls .field--search   { grid-column: 1; grid-row: 4; }
-  .ranking-controls .radio-group     { grid-column: 2; grid-row: 3 / span 2; }
-  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 5; }
+  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 1; }
+  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 2; }
+  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 2; }
+  .ranking-controls .field--metric   { grid-column: 1; grid-row: 3; }
+  .ranking-controls .field--subject  { grid-column: 2; grid-row: 3; }
+  .ranking-controls .field--view     { grid-column: 1; grid-row: 4; }
+  .ranking-controls .field--search   { grid-column: 1; grid-row: 5; }
+  .ranking-controls .radio-group     { grid-column: 2; grid-row: 4 / span 2; }
+  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 6; }
   /* Grid columns are half the viewport, so the desktop min-widths would overflow. */
   .ranking-controls .field,
   .ranking-controls .field input[type="text"] { min-width: 0; }
