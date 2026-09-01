@@ -190,7 +190,7 @@ the JSON, so a normal reload can show you the previous run's numbers.
 For the map (JSON, written to `docs/data/` so GitHub Pages serves them directly):
 
 - `docs/data/schools-index.json` — one entry per school: identity, address,
-  coordinates, `n_years`. Loaded when the map opens (~2.4 MB raw).
+  coordinates, `n_years`. Loaded when the map opens (~1.8 MB raw).
 - `docs/data/scale.json` — the colour-scale anchors (σ, centre, p1/p99) and the
   value-filter slider ranges, keyed by reference level, metric and subject.
 - `docs/data/regions-{level}.json` × 3 — one row per voivodeship / powiat / gmina:
@@ -198,8 +198,11 @@ For the map (JSON, written to `docs/data/` so GitHub Pages serves them directly)
   the choropleth colours. Row identity comes from the polygons, so a region with
   no scored school is a real row with `n_schools = 0`.
 - `docs/data/powiat/{teryt4}-{metric}.json` × 4 × 380 — the per-school views
-  (base, leave-one-out, single-year, last-k) at all four reference levels,
-  fetched one powiat at a time. Median 0.53 MB, largest 8.2 MB (Warszawa).
+  (base, leave-one-out, single-year, last-k) at every reference level the
+  metric has — all four for the difference metrics, and just the primary one
+  for `mean`/`median`, which do not vary by level (`metadata.levels` says
+  which). Fetched one powiat at a time. Median 0.14 MB, largest 4.3 MB
+  (Warszawa).
 - `docs/geo/` — the PRG boundary polygons (`kraj.json`, `woj/`, `pow/`) the map
   draws, committed rather than fetched at run time.
 

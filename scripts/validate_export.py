@@ -21,12 +21,14 @@ A school's difference-based score exists at four REFERENCE LEVELS (national,
 voivodeship, powiat, gmina) — the population whose per-year mean it is measured
 against. `mean` and `median` are raw 0-100 aggregates with no reference
 population at all (spec §4.2), so they are computed once, at the primary level,
-and the shards carry those same numbers under all four level keys. Recomputing
-a national reference and comparing it to a voivodeship-referenced cell is the
-mistake this file is shaped to avoid.
+and their shards carry that one level rather than four copies of it — the shape
+`shard_levels` states and check D asserts. Recomputing a national reference and
+comparing it to a voivodeship-referenced cell is the mistake this file is shaped
+to avoid.
 
-The shards total about a gigabyte, so every check that reads them STREAMS one
-file at a time and keeps only counters — none builds a whole-export map.
+The shards total several hundred megabytes, so every check that reads them
+STREAMS one file at a time and keeps only counters — none builds a whole-export
+map.
 
 Checks
   A. Subject raw values:  JSON single_year of metric 'mean'/'median' == the
@@ -36,11 +38,13 @@ Checks
      composite_min. A null-score cell must have no recomputed counterpart.
   C. Completeness:        the set of (level, metric, subject, view, param,
      school) cells in the JSON equals the recomputed set (nothing dropped or
-     invented), counting the four level copies of mean/median separately.
+     invented), over the levels each metric's shards actually carry.
   D. Index <-> shards:    every school in schools-index.json resolves to the
      shard its `powiat` names and appears there, and every shard school appears
      in the index. The two files are the only cross-references left once
-     identity moved out of the shards.
+     identity moved out of the shards. Also the shard's own shape: a difference
+     metric carries all four reference levels, a raw metric exactly one, and
+     `metadata.levels` matches the keys every school in the file really has.
   E. Ranks / percentiles: per view population, the stored rank/pct match
      rankdata over the recomputed scores (min-rank ties, average-rank
      percentile), up to a near-tie tolerance.
@@ -193,10 +197,22 @@ def source_level(metric: Metric, level: Level) -> Level:
     """Which reference level a metric's score is actually computed at.
 
     `mean` and `median` have no reference population, so the export computes them
-    once at the primary level and repeats them under all four level keys. Asking
-    the recomputation for ('national', 'mean', ...) would find nothing.
+    once at the primary level. Asking the recomputation for ('national', 'mean',
+    ...) would find nothing.
     """
     return PRIMARY_REFERENCE_LEVEL if metric not in WEIGHTED_METRICS else level
+
+
+def shard_levels(metric: Metric) -> list[Level]:
+    """Which level keys a metric's shards must carry (spec §5.4).
+
+    Derived from the metric, not read from the file: `metadata.levels` is the
+    export's claim about itself, and a claim checked against itself is no check.
+    A difference metric genuinely differs by level, so all four are published; a
+    raw metric would publish one block four times over, so it publishes the
+    primary level alone and names it. Check D holds the file to this.
+    """
+    return list(REFERENCE_LEVELS) if metric in REFERENCED_METRICS else [PRIMARY_REFERENCE_LEVEL]
 
 
 # ── xlsx reading (independent re-implementation of the notebook loader) ───────
@@ -668,7 +684,7 @@ def compute_region_level(
 def load_json_exports(docs_data: Path) -> tuple[dict, dict, dict[Level, dict]]:
     """Load the three small served files. Returns (scale, index_columns, regions).
 
-    The powiat shards are NOT loaded here: they total about a gigabyte, and every
+    The powiat shards are NOT loaded here: they total about 334 MB, and every
     check that needs them streams instead (see iter_json_views).
     """
     def read(path: Path) -> dict:
@@ -848,7 +864,8 @@ def values_disagree(published, recomputed, tol: float) -> bool:
 def check_subjects_vs_xlsx(rows, docs_data: Path, rep: Report):
     """A — the single-year scores of the 'mean'/'median' metrics must equal the
     mean/median read straight from the xlsx (ties the JSON to the raw source).
-    Checked at all four level keys, which for these two metrics hold copies."""
+    These two carry one level key each (shard_levels), so every cell is read
+    once rather than four times over."""
     rep.section('A. Subject raw values vs xlsx (single_year of mean/median)')
     rspo_year_to_row = {(row['rspo'], row['year']): row for row in rows}
     stats_by_metric = defaultdict(lambda: [0, 0.0])  # metric -> [checked, max_diff]
@@ -935,7 +952,7 @@ def check_aggregates(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: 
 def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Report):
     """C — the JSON and the recomputation must contain exactly the same score
     cells. Counted per view key rather than as two sets of tuples: the export has
-    ~11.5M cells and materialising both sides would need gigabytes."""
+    ~6.9M cells and materialising both sides would need gigabytes."""
     rep.section('C. Completeness: JSON cell set == recomputed cell set')
     matched: Counter = Counter()
     problems: list[str] = []
@@ -956,8 +973,10 @@ def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep
 
     total = 0
     recompute_only = 0
-    for level in REFERENCE_LEVELS:
-        for metric in EXPORT_METRICS:
+    # Only the levels the metric's shards carry: expecting a `mean` cell under
+    # 'national' would report every school as missing from a file that is right.
+    for metric in EXPORT_METRICS:
+        for level in shard_levels(metric):
             for subject in ALL_SUBJECTS:
                 for key, scores in view_key_to_rspo_scores.items():
                     if key[:3] != (source_level(metric, level), metric, subject):
@@ -985,7 +1004,10 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
     fetch. Identity no longer lives in the shards, so this join is the sole
     cross-reference between the two files: a school in the index whose shard has
     no such row is a dead deep link, and a shard row with no index entry is a
-    school with no name."""
+    school with no name.
+
+    Also the shard's own shape (spec §5.4): which reference levels it carries,
+    and whether `metadata.levels` tells the truth about them."""
     rep.section('D. schools-index.json <-> the powiat shards')
     index_by_powiat: dict[Teryt, set[Rspo]] = defaultdict(set)
     for rspo, powiat in zip(index['rspo'], index['powiat']):
@@ -1006,6 +1028,24 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
         if metadata.get('metric') != metric or metadata.get('powiat') != powiat:
             problems.append(f'{powiat}-{metric}.json: metadata says '
                             f'{metadata.get("powiat")!r}/{metadata.get("metric")!r}')
+        # The shape, not only the population. A raw metric that slipped back to
+        # four identical level blocks would publish every score correctly and
+        # cost four times the bytes; a difference metric a level short would
+        # blank the map for whoever had that reference point chosen. And since
+        # metadata.levels is what the frontend resolves the level from, it has
+        # to name exactly the keys the schools below it really have.
+        expected_levels = shard_levels(metric)
+        checked += 1 + len(shard_rspos)
+        if metadata.get('levels') != expected_levels:
+            problems.append(f'{powiat}-{metric}.json: metadata.levels is '
+                            f'{metadata.get("levels")!r}, expected {expected_levels}')
+        mis_levelled = [rspo for rspo, school in payload['schools'].items()
+                        if list(school) != expected_levels]
+        if mis_levelled:
+            problems.append(
+                f'{powiat}-{metric}.json: {len(mis_levelled)} schools whose level keys '
+                f'are not {expected_levels} (e.g. {mis_levelled[:3]})'
+            )
         expected = index_by_powiat.get(powiat, set())
         if shard_rspos != expected:
             problems.append(
@@ -1019,7 +1059,8 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
         rep.fail(f'{len(problems)} index/shard disagreements', problems)
     else:
         rep.ok(f'{len(index["rspo"]):,} schools resolve to their shard in all '
-               f'{len(EXPORT_METRICS)} metric files ({checked:,} shard rows)')
+               f'{len(EXPORT_METRICS)} metric files, each carrying the reference '
+               f'levels metadata.levels names ({checked:,} shard comparisons)')
 
 
 def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Report):
@@ -1066,7 +1107,11 @@ def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Repor
     pop_fail = 0
     for level in REFERENCE_LEVELS:
         for key, scores in view_key_to_rspo_scores.items():
-            if key[0] != source_level(key[1], level):
+            # `level not in shard_levels` is not "nothing to check": it is the
+            # export deliberately not repeating a raw metric under a level it
+            # does not vary by. Counting it would demand a population that the
+            # file is right to omit.
+            if level not in shard_levels(key[1]) or key[0] != source_level(key[1], level):
                 continue
             json_key = (level, key[1], key[2], key[3], key[4])
             if seen[json_key] != len(scores):
@@ -1215,8 +1260,12 @@ def check_class_spread(scale, docs_data: Path, rep: Report):
             counts[(level, metric, subject)]['B'] += 1
 
     empty = []
-    for level in REFERENCE_LEVELS:
-        for metric in EXPORT_METRICS:
+    # scale.json keeps anchors at all four levels for every metric — the app
+    # reads school[baselineLevel][metric] whatever the metric is — but a raw
+    # metric's scores are published at one level only, so those are the groups
+    # there are base scores to bucket.
+    for metric in EXPORT_METRICS:
+        for level in shard_levels(metric):
             for subject in ALL_SUBJECTS:
                 anchors = scale['school'].get(level, {}).get(metric, {}).get(subject)
                 if not anchors or not anchors['sigma']:

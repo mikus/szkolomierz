@@ -170,6 +170,18 @@ function scoreExtent(metric, subject) {
   return { p1, p99 };
 }
 
+// Which block of a shard holds the scores for the current reference point. A
+// shard names the levels it carries (metadata.levels, §2d): all four for the
+// difference metrics, and for mean/median just the one level they are computed
+// at — raw 0–100 aggregates have no reference population, so four identical
+// copies were most of a gigabyte of duplication. Resolving the level from the
+// file keeps the nesting depth uniform (school[level][subject][view] still works
+// everywhere) without any page hardcoding which metrics vary by level.
+function shardLevel(shard) {
+  const levels = shard.metadata.levels;
+  return levels.includes(baselineLevel) ? baselineLevel : levels[0];
+}
+
 // Per-subject line colours, shared by the map popup sparkline and the ranking
 // detail charts so a subject reads the same everywhere.
 const SUBJECT_COLOURS = {
@@ -284,8 +296,8 @@ function subjectLegendHTML(subjects) {
 // regionCache and shardCache hold the PROMISE, not the resolved payload, for the
 // same reason geoCache does: zoomend and moveend both fire in one interaction, so
 // the same key can be requested twice before the first fetch lands. Caching the
-// resolved value would let both requests through — 1.68 MB for a powiat shard,
-// 1.59 MB for regions-gmina.json.
+// resolved value would let both requests through — up to 4.3 MB for a powiat
+// shard, 0.77 MB for regions-gmina.json.
 let indexData = null, scaleData = null;
 const regionCache = new Map();   // level       -> Promise<payload>
 const shardCache  = new Map();   // "1425|mean" -> Promise<payload>

@@ -47,11 +47,11 @@ to `docs/` (where `index.html` lives), so the app fetches them as `data/...` and
 
 **Five artifacts**, and the split is the whole loading strategy (§8): identity,
 colour anchors and region aggregates are small and load eagerly; the per-school
-detail is ~1 GB in total and is fetched one powiat at a time.
+detail is ~334 MB in total and is fetched one powiat at a time.
 
 ### 2a. `data/schools-index.json` — loaded immediately on page open
 
-~2.3 MB raw. **Identity only, no scores.** Stored as **parallel arrays**, not an
+~1.8 MB raw. **Identity only, no scores.** Stored as **parallel arrays**, not an
 array of objects — index `i` is one school in every array:
 
 ```json
@@ -84,7 +84,7 @@ Key points:
 
 ### 2b. `data/scale.json` — loaded immediately on page open
 
-~10 KB. Everything needed to turn a score into a colour, for every combination
+~6.6 KB. Everything needed to turn a score into a colour, for every combination
 the UI can select:
 
 ```json
@@ -115,13 +115,16 @@ the UI can select:
   would sort a median of 27 schools and colour the same school differently
   depending which shard loaded first.
 - `mean` and `median` have no reference population, so their numbers are
-  identical under all four level keys. That is deliberate, not duplication to
-  "fix".
+  identical under all four level keys **of this file**. That is deliberate, not
+  duplication to "fix": the app reads `school[baselineLevel][metric]` whatever
+  the metric is, and four copies of a 6.6 KB file cost nothing. In the shards,
+  where the same duplication cost most of a gigabyte, they are not repeated
+  (§2d).
 
 ### 2c. `data/regions-{level}.json` × 3 — the choropleth, loaded per level on demand
 
-`regions-voivodeship.json` (~13 KB), `regions-powiat.json` (~230 KB),
-`regions-gmina.json` (~1.5 MB). Parallel arrays again, one entry per region:
+`regions-voivodeship.json` (~6.9 KB), `regions-powiat.json` (~118 KB),
+`regions-gmina.json` (~0.77 MB). Parallel arrays again, one entry per region:
 
 ```json
 {
@@ -164,13 +167,14 @@ Key points:
 
 ### 2d. `data/powiat/{teryt4}-{metric}.json` — one powiat's schools, on demand
 
-4 metrics × 380 powiats = 1,520 files, ~1.04 GB in total: median 0.53 MB, p90
-1.2 MB, largest 8.2 MB (Warszawa, `1465`). **Never load more than the one you
-need** — this size is precisely why the data is sharded.
+4 metrics × 380 powiats = 1,520 files, ~334 MB in total: median 0.14 MB, p90
+0.45 MB, largest 4.3 MB (Warszawa, `1465`, a difference metric). **Never load
+more than the one you need** — this size is precisely why the data is sharded.
 
 ```json
 {
-  "metadata": { "metric": "unit_norm_diff_mean", "powiat": "1425" },
+  "metadata": { "metric": "unit_norm_diff_mean", "powiat": "1425",
+                "levels": ["national", "voivodeship", "powiat", "gmina"] },
   "schools": {
     "2880": {
       "national":    { "polski": {...}, "matematyka": {...}, "angielski": {...},
@@ -189,6 +193,25 @@ need** — this size is precisely why the data is sharded.
 
 - Keyed `schools[rspo][level][subject][view]` — **reference level before
   subject**.
+- **`metadata.levels` says which levels the file carries, and it is not always
+  all four.** `mean` and `median` are raw 0–100 aggregates with no reference
+  population, so their four blocks held four copies of one thing — checked over
+  all 25,778 school entries of those shards, byte-identical in every one. A
+  `mean` or `median` shard now carries `["voivodeship"]` alone; the two
+  difference metrics keep all four. Resolve the level **from the file**, never
+  from `baselineLevel` alone:
+
+  ```js
+  const lvl = shard.metadata.levels.includes(baselineLevel)
+    ? baselineLevel : shard.metadata.levels[0];
+  ```
+
+  That is `shardLevel(shard)` in `app.js`, and the two shard readers
+  (`buildSchools` in `map.js`, `fetchPopulation` in `ranking.js`) both go
+  through it. The nesting depth is unchanged — `school[lvl][subject][view]`
+  still works everywhere — so no page has to know which metrics vary by level,
+  and a reference point the user picked while on a raw metric resolves to the
+  one block there is instead of reading `undefined`.
 - Ranks and percentiles inside are **national**, over every school in Poland
   present in that view. The shard is a delivery unit, not a population: never
   present a shard's contents as "the ranking".
@@ -297,15 +320,17 @@ Four subjects, also a toggle: `polski`, `matematyka`, `angielski`, and
 
 A difference-based score is a distance from the per-year mean of **some**
 population, and which population is a user-visible choice: `national`,
-`voivodeship`, `powiat` or `gmina`. All four are exported for every school
-(§2d), and the map's **"Punkt odniesienia" / "Reference point"** selector picks
-between them, defaulting to `voivodeship`.
+`voivodeship`, `powiat` or `gmina`. All four are exported for every school, for
+the metrics the choice can actually move (§2d), and the map's **"Punkt
+odniesienia" / "Reference point"** selector picks between them, defaulting to
+`voivodeship`.
 
 Three rules the UI must honour, none of them optional:
 
 1. **`mean` and `median` do not vary with it.** They are raw 0–100 scores with no
-   reference population. Say so next to the disabled-looking control rather than
-   letting a user conclude the app ignored their click.
+   reference population — which is why their shard carries one level rather than
+   four copies of it (§2d). Say so next to the disabled-looking control rather
+   than letting a user conclude the app ignored their click.
 2. **It applies to the school view only.** Above school zoom the ladder decides
    (§5) — a region is always compared with its parent — so the control is
    disabled there, with a note saying why.
@@ -438,7 +463,8 @@ single "too small" is wrong for most of them:
   - Subject: Polish / Maths / English / composite_min → recolours markers.
   - Metric: mean / median / diff_mean / unit_norm_diff_mean → recolours markers.
   - Reference point: national / voivodeship / powiat / gmina → recolours markers
-    and reloads nothing (all four levels are already in the loaded shard).
+    and reloads nothing (the loaded shard already carries every level its metric
+    has — see `metadata.levels`, §2d).
     Disabled above the school rung, and for `mean`/`median`, with a note saying
     why in each case (§4).
   - Metric and subject changes recolour from the loaded shard and repaint the
@@ -525,7 +551,7 @@ page must say so rather than leaving the user to discover it by clicking.
 
 ### 6a. Region levels (voivodeship / powiat / gmina)
 
-Whole-country, straight from `regions-{level}.json` (§2c) — 2.8 / 49 / 284 KB
+Whole-country, straight from `regions-{level}.json` (§2c) — 2.4 / 44 / 254 KB
 gzipped, so the twenty best gminas in Poland cost nothing.
 
 Columns: **national rank**, name, parent name, `n_schools`, `n_students`, score,
@@ -623,11 +649,11 @@ The data has real uncertainty and the UI must not overstate precision.
 
 ## 8. Data loading strategy
 
-The export totals ~1.1 GB. **Nothing may load "all the data"** — every fetch is
+The export totals ~385 MB. **Nothing may load "all the data"** — every fetch is
 scoped to what the current viewport or selection needs.
 
-- **On page load:** `data/schools-index.json` (~2.3 MB raw) and `data/scale.json`
-  (~10 KB). Together they give identity, search, the `?school=` deep link and
+- **On page load:** `data/schools-index.json` (~1.8 MB raw) and `data/scale.json`
+  (~6.6 KB). Together they give identity, search, the `?school=` deep link and
   every colour anchor.
 - **Per region level, on demand:** `data/regions-{level}.json` when the map (or
   the ranking's level control) first reaches that level. Cached for the session.
@@ -636,7 +662,7 @@ scoped to what the current viewport or selection needs.
   the whole `geo/` tree.
 - **Per (powiat, metric), on demand:** `data/powiat/{teryt4}-{metric}.json`, once
   the viewport resolves to a powiat or the user picks one in the ranking. This is
-  the big one — median 0.53 MB, up to 8.2 MB — so fetch exactly the one needed
+  the big one — median 0.14 MB, up to 4.3 MB — so fetch exactly the one needed
   and cache it.
 
 **Cache the promise, not the resolved value.** `zoomend` and `moveend` both fire
@@ -822,4 +848,4 @@ place; each page's own logic lives in its own file.
 13. Mobile layout pass.
 
 Build incrementally; steps 1–4 already give a working national choropleth that
-drills down to real schools, on ~2.3 MB plus one shard.
+drills down to real schools, on ~1.8 MB plus one shard.

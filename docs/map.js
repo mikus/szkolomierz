@@ -278,7 +278,7 @@
       // find-a-school typeahead. Cached, so it costs one fetch a session.
       loadRegions('gmina'),
     ]);
-    // The shard is the app's largest fetch (median 0.56 MB, up to 8.5 MB), so
+    // The shard is the app's largest fetch (median 0.14 MB, up to 4.3 MB), so
     // zooming back out before it lands is an ordinary gesture, not a race worth
     // ignoring: without this guard the late resolution tore down the choropleth
     // renderLevel had since painted and dropped the abandoned powiat's markers
@@ -287,7 +287,9 @@
     // renderLevel's region branch clears it and a later renderSchools overwrites
     // it, so anything but our own key means this build no longer owns the map.
     if (renderingSchoolsKey !== key) return;
-    const level = baselineLevel;
+    // Not `baselineLevel` directly: a mean/median shard carries one level, not
+    // four copies of it, so the file is what says which block to read (§2d).
+    const level = shardLevel(shard);
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
 
@@ -1009,7 +1011,7 @@
         town:  c.miejscowosc[i] || '',
         // The index carries a TERYT, not a gmina name. Resolved at render time
         // (15 rows at most) rather than here, so page open does not have to pull
-        // the 1.6 MB regions-gmina.json just to label a dropdown.
+        // the 0.77 MB regions-gmina.json just to label a dropdown.
         gminaKey: c.teryt[i].slice(0, 6),
         onMap: c.on_map[i],
         hay:   normalizeText(c.name[i] + ' ' + (c.miejscowosc[i] || '')),

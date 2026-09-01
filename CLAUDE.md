@@ -33,7 +33,9 @@ were the truth. Write `reference` / `reference_level`, and name the level
 wherever a number could be mistaken for one at another level. `mean` and
 `median` are the exception that proves the rule: they are raw 0–100 aggregates
 with **no** reference population, so they are computed once, at
-`PRIMARY_REFERENCE_LEVEL`, and do not vary by level at all.
+`PRIMARY_REFERENCE_LEVEL`, and do not vary by level at all — which is why their
+shards carry that one level rather than four copies of it (see `metadata.levels`
+under Output files).
 
 Two further rules follow, and both are load-bearing:
 
@@ -217,9 +219,10 @@ neutralises exam-difficulty drift — the Maths reference jumped ~14 pp between
 2021 and 2022.
 
 **All four levels are computed for every school**, and the export carries all
-four. `PRIMARY_REFERENCE_LEVEL = 'voivodeship'` is the level the analysis half of
-the notebook and the xlsx exports use; it is also what `mean` and `median` are
-computed at, since they have no reference population and so exist only once.
+four wherever the level makes a difference. `PRIMARY_REFERENCE_LEVEL =
+'voivodeship'` is the level the analysis half of the notebook and the xlsx
+exports use; it is also what `mean` and `median` are computed at, since they have
+no reference population and so exist only once — and are published only once.
 
 ### Aggregation across years
 
@@ -330,7 +333,9 @@ live on different scales (`mean`/`median` are 0–100; `diff_mean` and
 - **`mean` and `median`** (raw 0–100 scale): centre = the mean of school scores
   for that subject (≈ 50–64 by subject), σ = std across schools. Centring at 0
   would make no sense — no school scores 0%. These do not vary by reference
-  level; the same numbers are stored under all four keys.
+  level; `scale.json` still stores the same numbers under all four keys, because
+  the frontend reads `school[baselineLevel][metric]` for every metric and the
+  file is 6.6 KB. The shards do not repeat them — see Output files.
 - **`diff_mean` and `unit_norm_diff_mean`** (difference scales): centre = 0 for
   the three subjects (already centred by construction), σ = std across schools.
 - **`composite_min`** (any metric): centre = the empirical *mean* of composite_min
@@ -463,20 +468,26 @@ students the composite value came from).
 
 ### Output files
 
-- **`docs/data/schools-index.json`** (~2.3 MB raw) — identity only, and the one
+Every JSON file below is written **compact** — `json.dumps(..., separators=
+COMPACT_JSON)`, no `indent`. Pretty-printing spent nearly half of the shard
+payload on indentation and newlines, which on its own put `docs/` over GitHub
+Pages' 1 GB published-site limit. The sizes quoted here are the compact ones, and
+`docs/` totals ~385 MB.
+
+- **`docs/data/schools-index.json`** (~1.8 MB raw) — identity only, and the one
   file every page loads. **Parallel arrays**, not an array of objects: `rspo`,
   `name`, `teryt`, `powiat`, `miejscowosc`, `ulica_nr`, `is_public`, `n_years`,
   `lat`, `lon`, `on_map` — all 12,889 entries long, index `i` being one school.
   `lat`/`lon` come from the coordinate cache (`null` if missing; 3 schools today).
   It carries **no scores**: those live in the shards, so switching metric or
   reference level does not re-download identity.
-- **`docs/data/scale.json`** (~10 KB) — everything needed to turn a score into a
+- **`docs/data/scale.json`** (~6.6 KB) — everything needed to turn a score into a
   colour. `school[level][metric][subject] = {sigma, sigma_centre, p1, p99}` for
   the four reference levels, plus `metadata.slider_ranges[level][metric] =
   {min, max, p1, p99, step}` and `metadata.default_metric` / `metrics` /
   `subjects` / `years_in_data`.
-- **`docs/data/regions-{level}.json`** × 3 (voivodeship ~13 KB, powiat ~230 KB,
-  gmina ~1.5 MB) — what the choropleth draws. Parallel arrays again: `teryt`,
+- **`docs/data/regions-{level}.json`** × 3 (voivodeship ~6.9 KB, powiat ~118 KB,
+  gmina ~0.77 MB) — what the choropleth draws. Parallel arrays again: `teryt`,
   `name`, `parent`, `lat`, `lon`, `n_schools`, `n_students`, plus
   `score[metric][subject]`, `rank[metric][subject]`, `pct[metric][subject]` and
   the rank denominator `n_ranked[metric][subject]`. **Row identity comes from the
@@ -487,14 +498,21 @@ students the composite value came from).
   `sigma` / `sigma_centre` and the two thresholds (`min_reference_n`,
   `min_percentile_n`).
 - **`docs/data/powiat/{teryt4}-{metric}.json`** (4 metrics × 380 powiats = 1,520
-  files, ~1.04 GB total; median 0.53 MB, p90 1.2 MB, largest 8.2 MB for Warszawa)
+  files, ~334 MB total; median 0.14 MB, p90 0.45 MB, largest 4.3 MB for Warszawa)
   — every *view* for the schools of one powiat, keyed
   `schools[rspo][level][subject][view]`. `base` is a flat `{score, rank, pct}`;
   `loo` / `single_year` / `last_k` are `{param: {score, rank, pct}}` with
   integer-string keys (`"2021"`, `"2"`). Ranks and percentiles inside are
   **national**, not powiat-scoped — the shard is a delivery unit, not a
-  population. Fetched one powiat at a time, which is the whole reason for the
-  split: a single national file at four reference levels is the gigabyte above.
+  population. **`metadata.levels` names the reference levels the file carries**,
+  and that is not always all four: `mean` and `median` have no reference
+  population, so their four blocks were identical — checked over all 25,778
+  school entries of those shards — and they now carry `PRIMARY_REFERENCE_LEVEL`
+  alone, at a quarter of the size (36 MB per metric against 132 MB for a
+  difference metric). Read the level out of the file (`shardLevel` in
+  `docs/app.js`) rather than hardcoding which metrics vary by it; the nesting
+  depth is the same either way. Fetched one powiat at a time, which is the whole
+  reason for the split: a single national file would be the 334 MB above.
 - **`docs/geo/`** (~48 MB) — the PRG boundary polygons keyed by
   `properties.JPT_KOD_JE` (= TERYT). Written by `scripts/fetch_geometry.py`, not
   by the notebook, and committed.
@@ -706,7 +724,9 @@ What this notebook guarantees the frontend can rely on (the export contract):
   where a suppression rule withheld it, and the frontend must say **which** rule
   — no schools, only child, or too small a reference — not a single "too small".
 - `powiat/{teryt4}-{metric}.json` carries, per school/level/subject, the `base`,
-  `loo`, `single_year` and `last_k` views (see the Export section above).
+  `loo`, `single_year` and `last_k` views (see the Export section above), at the
+  reference levels `metadata.levels` names — all four for the difference metrics,
+  `PRIMARY_REFERENCE_LEVEL` alone for `mean`/`median`.
 - These fields exist specifically to support the frontend's needs (metric,
   subject, reference-level and zoom-level switching; value filtering;
   public/private filtering; per-level colouring; uncertainty ranges). If you

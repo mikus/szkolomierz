@@ -3,7 +3,7 @@
 //
 // The four levels are deliberately NOT symmetric:
 //   voivodeship / powiat / gmina  rank NATIONALLY, straight from
-//     regions-{level}.json. Those files are 2.8 / 49 / 284 KB gzipped and
+//     regions-{level}.json. Those files are 2.4 / 44 / 254 KB gzipped and
 //     already whole-country, so the twenty best gminas in Poland cost nothing.
 //   school                        ranks WITHIN ONE POWIAT, from that powiat's
 //     shard (docs/data/powiat/{teryt4}-{metric}.json). A national school ranking
@@ -64,8 +64,8 @@
   let shardHistory = null;
   let populationError = false;
   // What is actually in memory, as a populationKey(). Guards two things at once:
-  // a response that lost the race (regions-gmina.json is 1.59 MB and can land
-  // after a 13 KB voivodeship file requested later), and rendering the previous
+  // a response that lost the race (regions-gmina.json is 0.77 MB and can land
+  // after a 6.9 KB voivodeship file requested later), and rendering the previous
   // level's rows under the new level's column headers while the switch is in
   // flight. Anything that is not the current key counts as "not loaded".
   let loadedKey = null;
@@ -823,7 +823,7 @@
     if (REGION_LEVELS.includes(level)) {
       const parentLevel = PARENT_LEVEL[level];
       // The parent file is fetched only for its names (the "parent" column) —
-      // 13 KB for voivodeship, 242 KB for powiat, both cached for the session.
+      // 6.9 KB for voivodeship, 118 KB for powiat, both cached for the session.
       const [regions] = await Promise.all([
         loadRegions(level),
         parentLevel ? loadRegions(parentLevel) : Promise.resolve(null),
@@ -836,17 +836,21 @@
       loadIndex(),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve the gmina column and makes the name search match on it.
-      // Same deal as map.js's buildSchools: one 1.59 MB fetch a session, and
+      // Same deal as map.js's buildSchools: one 0.77 MB fetch a session, and
       // only once a powiat has been deliberately chosen.
       loadRegions('gmina'),
       loadRegions('powiat'),
     ]);
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
+    // Not `baselineLevel` directly: a mean/median shard carries one level, not
+    // four copies of it, so the file is what says which block to read (§2d).
+    // `refLevel`, not `level`: this function's `level` is the ranking level.
+    const refLevel = shardLevel(shard);
     const schools = Object.entries(shard.schools).map(([rspo, byLevel]) => {
       const i = pos.get(rspo);
       if (i == null) return null;
-      const byMetric = byLevel[baselineLevel] || {};
+      const byMetric = byLevel[refLevel] || {};
       // The shape buildSchoolRow expects: school.scores[metric][subject].score.
       // `views.base` is legitimately absent for some cells (suppression is per
       // view), and assigning `undefined` here is correct — the row then shows
@@ -870,7 +874,7 @@
       };
     }).filter(Boolean);
     const history = { schools: Object.fromEntries(
-      Object.entries(shard.schools).map(([rspo, byLevel]) => [rspo, byLevel[baselineLevel] || {}])
+      Object.entries(shard.schools).map(([rspo, byLevel]) => [rspo, byLevel[refLevel] || {}])
     ) };
     return { regions: null, schools, history };
   }
