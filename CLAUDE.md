@@ -498,14 +498,24 @@ students the composite value came from).
 - **`docs/geo/`** (~48 MB) — the PRG boundary polygons keyed by
   `properties.JPT_KOD_JE` (= TERYT). Written by `scripts/fetch_geometry.py`, not
   by the notebook, and committed.
-- **`output/schools-{metric}.xlsx`** × 4 (~6.5 MB each) — long format for analysts, one
-  row per (school, subject, view), in two sheets:
+- **`output/schools-{metric}.xlsx`** × 4 (58.0 / 61.2 / 63.2 / 63.4 MB; `output/`
+  totals 247 MB) — long format for analysts, **754,388 data rows each**, one row
+  per (school, subject, view), in two sheets:
   - **`data`** sheet columns: `rspo, school_name, miejscowosc, ulica_nr, powiat,
     gmina, typ_gminy, is_public, n_years, metric, subject, view_kind, view_param,
     score, rank_overall, pct_overall, n_in_view, n_students`.
   - **`legend`** sheet: a human-readable description of the metric, the
     across-years aggregation method, and every column / view_kind / subject — so
     someone validating a school's number knows exactly how it was computed.
+
+  These files grew roughly tenfold with the national swap — the long frame went
+  from tens of thousands of rows to 754,388 — which is why the export **stays at
+  `PRIMARY_REFERENCE_LEVEL` only**. Emitting all four reference levels would take
+  one metric's frame to ~2.9M rows, nearly three times Excel's ceiling. At
+  754,388 the sheet already sits at 72% of Excel's 1,048,575-row limit, and the
+  frame grows with the year axis, so `build_long_frame_for_metric` asserts against
+  that ceiling (spec §5.8): it fails loudly rather than truncating silently. When
+  it eventually fires, split the export per voivodeship — do not drop views.
 - **`output/rejected_addresses.csv`** — every address update the pipeline declined
   as a shortened form: `rspo, school_name, year, kept_miejscowosc, kept_ulica_nr,
   declined_miejscowosc, declined_ulica_nr, dropped_words`. The rejection reason is
