@@ -70,8 +70,11 @@ const COLOURS = {
 };
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
-// Mazowieckie viewbox: left,top,right,bottom (lon/lat).
-const MAZ_VIEWBOX = '19.2,53.6,23.2,51.0';
+// Poland's bounding box as a Nominatim viewbox: left,top,right,bottom
+// (lon/lat). Same extent scripts/geocode_schools.py uses for the offline
+// geocoder, so the two agree on where Poland is. Passed with bounded=0, so it
+// prefers rather than requires a result inside it.
+const POLAND_VIEWBOX = '14.0,55.0,24.3,48.9';
 
 // -----------------------------------------------------------------------------
 // Colour / class mapping
@@ -418,7 +421,7 @@ function resolvePref(name, allowed) {
 
 const I18N = {
   pl: {
-    appTitle: 'Mapa szkół podstawowych — Mazowieckie',
+    appTitle: 'Mapa szkół podstawowych',
     navMap: 'Mapa',
     navRanking: 'Ranking',
     navHelp: 'Pomoc',
@@ -481,7 +484,7 @@ const I18N = {
     popupComposite: 'Najsłabszy z 3',
     warnShortHistory: 'Krótka historia (< 3 lata) — wyniki mniej pewne.',
     warnVolatile: 'Duże wahania roczne — wynik zależy od wyboru lat.',
-    rankingTitle: 'Ranking szkół — Mazowieckie',
+    rankingTitle: 'Ranking szkół podstawowych',
     rankingNameSearch: 'Szukaj po nazwie lub lokalizacji',
     rankingSearchPlaceholder: 'np. STO, Vizja, Słupica',
     // The ranking page's level control. Deliberately asymmetric, and the help
@@ -594,7 +597,7 @@ const I18N = {
     langEN: 'EN',
   },
   en: {
-    appTitle: 'Primary schools map — Mazowieckie',
+    appTitle: 'Primary schools map',
     navMap: 'Map',
     navRanking: 'Ranking',
     navHelp: 'Help',
@@ -654,7 +657,7 @@ const I18N = {
     popupComposite: 'Weakest of 3',
     warnShortHistory: 'Short history (< 3 years) — less certain.',
     warnVolatile: 'High year-to-year volatility — score depends on which years are included.',
-    rankingTitle: 'School ranking — Mazowieckie',
+    rankingTitle: 'School ranking',
     rankingNameSearch: 'Search by name or location',
     rankingSearchPlaceholder: 'e.g. STO, Vizja, Słupica',
     labelRankLevel: 'Ranking level',

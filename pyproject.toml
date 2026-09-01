@@ -1,7 +1,7 @@
 [project]
 name = "compare-primary-schools-mazowieckie"
 version = "0.1.0"
-description = "Analysis of 8th-grade exam results for primary schools in the Mazowieckie voivodeship."
+description = "Analysis of 8th-grade exam results for primary schools in Poland."
 requires-python = ">=3.11"
 dependencies = [
     "jupyterlab",

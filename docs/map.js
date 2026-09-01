@@ -355,9 +355,9 @@
   // Wielkopolskie are large enough that their whole bounding box only fits at
   // zoom 7 in a 960px viewport — one rung under the voivodeship threshold of 8 —
   // so the map redrew the COUNTRY choropleth and the breadcrumb reset to
-  // "Polska". Clicking a region put you back where you started, and Mazowieckie
-  // is the entire shipped system. Measured at 960x679: 2 of 16 voivodeships and
-  // 1 of Mazowieckie's 42 powiats; a narrower viewport makes it worse.
+  // "Polska". Clicking a region put you back where you started. Measured at
+  // 960x679: 2 of 16 voivodeships and 1 of Mazowieckie's 42 powiats; a narrower
+  // viewport makes it worse.
   //
   // The target zoom is computed with getBoundsZoom BEFORE moving, not read back
   // from getZoom() afterwards: an animated fitBounds has not applied the new
@@ -919,7 +919,7 @@
     url.searchParams.set('q', query);
     url.searchParams.set('format', 'json');
     url.searchParams.set('countrycodes', 'pl');
-    url.searchParams.set('viewbox', MAZ_VIEWBOX);
+    url.searchParams.set('viewbox', POLAND_VIEWBOX);
     url.searchParams.set('bounded', '0');
     url.searchParams.set('limit', '1');
     const res = await fetch(url.toString(), { headers: { 'Accept-Language': 'pl' } });

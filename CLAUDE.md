@@ -9,17 +9,43 @@ formats. For a human-facing overview, see `README.md`.
 ## What this project does
 
 Analyses results of the Polish 8th-grade exam (**egzamin ósmoklasisty**) published
-by the **Warsaw OKE district** and produces data for an external school-quality map.
+by **CIE** at `mapa.wyniki.edu.pl` and produces data for an external
+school-quality map.
 
-**Critical scope fact:** the OKE Warszawa data covers **only the Mazowieckie
-voivodeship** (1,663–1,720 schools depending on year), *not* all of Poland.
-Always use **"voivodeship"** rather than "national" in code, comments, variable
-names, chart labels, and markdown. For example: `voivodeship_mean`, not
-`national_mean`; "Voivodeship median per year", not "National median per year".
+**Critical scope fact:** the data covers **all of Poland** — 16 voivodeships,
+380 powiats, 2,479 gminas and 12,889 schools over 2021–2026. The system used to
+cover a single voivodeship, from OKE Warszawa files — which is where the
+repository's name comes from, and renaming it is deliberately out of scope. That
+data scope is gone, and so is the standing rule that went with it ("always use
+*voivodeship* rather than *national*"), which this section replaces.
 
-If the data is ever extended to other OKE districts, the metric is still
-well-defined per voivodeship, but the reference-computing functions should be
-made parametric over the grouping level.
+### Reference levels — the vocabulary that replaced that rule
+
+A school's difference-based score is its distance from the per-year mean of some
+population. **Which population is a parameter, not a constant**, and it has a
+name: the **reference level**, one of `national`, `voivodeship`, `powiat`,
+`gmina` (`REFERENCE_LEVELS` in `src/school_quality/levels.py`). All four are
+computed and exported; the map's "reference point" control picks between them,
+defaulting to `voivodeship` (`DEFAULTS.baseline` in `docs/app.js`).
+
+So do **not** write `voivodeship_mean` or `national_mean` as though one of them
+were the truth. Write `reference` / `reference_level`, and name the level
+wherever a number could be mistaken for one at another level. `mean` and
+`median` are the exception that proves the rule: they are raw 0–100 aggregates
+with **no** reference population, so they are computed once, at
+`PRIMARY_REFERENCE_LEVEL`, and do not vary by level at all.
+
+Two further rules follow, and both are load-bearing:
+
+- **A region is scored against the level above it** (`src/school_quality/zoom.py`):
+  a voivodeship nationally, a powiat within its voivodeship, a gmina within its
+  powiat. Scoring a level against itself puts every region at ~0 by construction
+  and flattens the view at exactly the zoom where contrast is the point.
+- **Small populations are withheld, not shown** (`suppression.py`,
+  `aggregate.py`): a score needs a reference population of at least
+  `MIN_REFERENCE_N = 5` schools *and* a parent with more than one child; a
+  percentile needs `MIN_PERCENTILE_N = 8` siblings. The two gate different
+  populations and must not be conflated — see `aggregate.py`'s module docstring.
 
 ---
 
@@ -28,34 +54,51 @@ made parametric over the grouping level.
 ```
 compare-primary-schools-mazowieckie/
 ├── notebooks/
-│   └── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
+│   ├── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
+│   └── …-2021-2025.ipynb, …-old-approach-…   # superseded; kept as historical records
+├── src/school_quality/                       # pure functions the notebook imports
+│   ├── address.py  aggregate.py  levels.py   #   (src/ is on the path, not installed)
+│   ├── rspo.py     sources.py    suppression.py
+│   └── teryt.py    zoom.py
+├── tests/                                    # pytest over src/ — fast, no I/O
 ├── scripts/
-│   ├── fetch_sources.py                        # download the pinned CIE source files
-│   ├── geocode_schools.py                      # geocode addresses → data/school_coords.csv
-│   └── validate_export.py                      # check the JSON exports against the source xlsx
-├── data/                                       # INPUT (read-only source data)
-│   ├── egzamin-osmoklasisty/                   # CIE xlsx files, scoped to Mazowieckie, one per year
-│   │   ├── 2021 - E8_2021_szkoly_07.xlsx
+│   ├── fetch_sources.py                      # download the pinned CIE source files
+│   ├── fetch_geometry.py                     # download the PRG polygons → docs/geo/
+│   ├── geocode_schools.py                    # RSPO, then Nominatim → data/school_coords.csv
+│   └── validate_export.py                    # check the published JSON against the source xlsx
+├── data/                                     # INPUT (read-only source data)
+│   ├── egzamin-osmoklasisty/                 # CIE xlsx files, national, one per year
+│   │   ├── 2021 - E8_2021_szkoly_09.xlsx
 │   │   ├── 2022 - E8_2022_szkoly_09.xlsx
 │   │   ├── ...
-│   │   └── SOURCES.csv                          # provenance of each xlsx (see below)
-│   └── school_coords.csv                       # geocoding cache (rspo, address, lat, lon)
-├── output/                                     # OUTPUT for analysts (xlsx)
+│   │   └── SOURCES.csv                       # provenance of each xlsx (see below)
+│   ├── school_coords.csv                     # coordinate cache (rspo, address, lat, lon)
+│   └── school_coords_unmapped.csv            # manual-triage list, rewritten every run
+├── output/                                   # OUTPUT for analysts (xlsx)
 │   └── schools-{metric}.xlsx   × 4
-├── docs/                                       # the map app (GitHub Pages serves this)
-│   ├── index.html, app.js, style.css           # the frontend (see MAP_APP_BRIEF.md)
-│   └── data/                                   # JSON consumed by the app (notebook writes here)
-│       ├── schools-base.json
-│       └── schools-{metric}.json   × 4
+├── docs/                                     # the map app (GitHub Pages serves this)
+│   ├── index.html, ranking.html, help.html   # the frontend (see MAP_APP_BRIEF.md)
+│   ├── app.js, map.js, ranking.js, help.js, style.css
+│   ├── data/                                 # JSON consumed by the app (notebook writes here)
+│   │   ├── schools-index.json
+│   │   ├── scale.json
+│   │   ├── regions-{level}.json   × 3
+│   │   └── powiat/{teryt4}-{metric}.json   × 4 × 380
+│   └── geo/                                  # PRG boundary polygons (fetch_geometry.py)
+│       ├── kraj.json
+│       ├── woj/{ww}.json     × 16
+│       └── pow/{wwpp}.json   × 380
 ├── README.md
 ├── CLAUDE.md
-└── MAP_APP_BRIEF.md                            # build spec for the map app (frontend)
+└── MAP_APP_BRIEF.md                          # build spec for the map app (frontend)
 ```
 
 The notebook writes the **JSON** files (for the map) into `docs/data/` and the
 **xlsx** files (for analysts) into `output/`. This avoids a copy step: the data
 the app serves is generated straight into the directory GitHub Pages publishes.
-`school_coords.csv` (geocoding cache) stays in `data/`.
+`school_coords.csv` (coordinate cache) stays in `data/`. `docs/geo/` is written
+by `fetch_geometry.py`, not by the notebook — boundaries change a few times a
+decade, so they are fetched deliberately and committed.
 
 `data/` and `output/` are both singular mass nouns (input data / output data),
 paralleling each other. `notebooks/` and `scripts/` are plural (countable files).
@@ -64,7 +107,7 @@ paralleling each other. `notebooks/` and `scripts/` are plural (countable files)
 
 ## Source data format
 
-Each OKE xlsx has a sheet named `SAS` with a two-level header. After loading and
+Each CIE xlsx has a sheet named `SAS` with a two-level header. After loading and
 normalising (lowercase, strip Polish diacritics, collapse whitespace), the
 relevant columns are:
 
@@ -73,8 +116,15 @@ relevant columns are:
 - `nazwa szkoly` — school name
 - `czy publiczna` — public/private flag
 - `powiat - nazwa`, `gmina - nazwa`, `typ gminy` — administrative geography
-- `miejscowosc`, `ulica nr` — address (used for geocoding)
-- `wojewodztwo - nazwa` — always "Mazowieckie" (sanity-check this)
+- `miejscowosc`, `ulica nr` — address (the geocoder's fallback route)
+- `wojewodztwo - nazwa` — **sixteen** values; the loader asserts `nunique() == 16`
+  rather than a single expected name
+- `kod teryt gminy` — the 7-character TERYT key, normalised by
+  `school_quality.teryt.normalise_teryt`. This is what joins schools to regions
+  and to the boundary polygons; slice `[:2]` / `[:4]` / `[:6]` for voivodeship /
+  powiat / gmina. Keep it a `str` — a leading zero lost to an int cast silently
+  moves a school to another voivodeship
+- `id oke`, `rodzaj placowki` — carried through the loader
 
 **Per-subject columns** (level-0 group is the subject name):
 - `liczba zdajacych` — number of students who sat the exam
@@ -89,9 +139,10 @@ languages (`francuski`, `hiszpanski`, `niemiecki`, `rosyjski`, `wloski`).
 
 `ulica nr` degraded in the 2026 file: it drops the `ul.` marker and the leading
 words of the street name — `ul. 3 Maja 27` → `Maja 27`, `ul. Adama Mickiewicza
-126/128` → `Mickiewicza 126/128`. Of 1,625 schools present in both 2025 and 2026,
-850 are unchanged, 566 lost only the prefix, 196 lost leading words (10 of those
-lost a *number*, which makes the address wrong), and 13 genuinely moved.
+126/128` → `Mickiewicza 126/128`. Measured nationally, of **12,116** schools
+present in both 2025 and 2026: 6,895 unchanged, 3,933 lost only the street-type
+prefix, 1,228 lost leading words with the house number still matching, 1 lost a
+*number* as well (which makes the address wrong), and 59 changed for real.
 
 So **never assume the newest year has the best address.** The notebook picks one
 address per school by walking its years oldest → newest and keeping a current
@@ -122,9 +173,14 @@ Note: the loader only ingests files whose name **starts with the year**
 The notebook builds a flat `df` with one row per (school, year) and these columns:
 
 - `rspo`, `year`, `school_name`, `is_public`
-- `gmina`, `powiat`, `typ_gminy`, `miejscowosc`, `ulica_nr`
+- `wojewodztwo`, `gmina`, `powiat`, `typ_gminy`, `miejscowosc`, `ulica_nr`
+- `teryt` (7-char `str`), `id_oke`, `rodzaj_placowki`
 - Per subject `s`: `n_{s}`, `mean_{s}`, `median_{s}`
   (e.g. `n_polski`, `mean_matematyka`, `median_angielski`)
+
+`add_level_keys` (`levels.py`) derives `teryt_wojewodztwo` / `teryt_powiat` /
+`teryt_gmina` from `teryt`; those are the group keys every reference level is
+computed over.
 
 Only **3 core subjects** are usable for quality scoring: `polski`, `matematyka`,
 `angielski`. The minor languages are taken by too few students per school to be
@@ -141,20 +197,29 @@ a constant fold population).
 ### Per-year, per-subject normalised score
 
 ```
-diff_mean_year(school, subject, year) =
-    school_mean(subject, year) − voivodeship_mean(subject, year)
+diff_mean_year(school, subject, year, level) =
+    school_mean(subject, year) − reference_mean(subject, year, level)
 
 unit_norm_diff_mean_year =
-    diff_mean_year / (100 − voivodeship_mean)   if diff_mean_year ≥ 0
-    diff_mean_year / voivodeship_mean           if diff_mean_year < 0
+    diff_mean_year / (100 − reference_mean)   if diff_mean_year ≥ 0
+    diff_mean_year / reference_mean           if diff_mean_year < 0
 ```
 
-Range [−1, +1]: 0 = at the voivodeship mean, +1 = at the ceiling (100%),
+Range [−1, +1]: 0 = at the reference mean, +1 = at the ceiling (100%),
 −1 = at the floor (0%). In practice values rarely exceed ±0.5.
 
-`voivodeship_mean(subject, year)` = mean of all schools' `mean_{subject}` in that
-year (a per-year reference that neutralises exam-difficulty drift — e.g. the
-Maths voivodeship mean jumped ~14 pp between 2021 and 2022).
+`reference_mean(subject, year, level)` = mean of all schools' `mean_{subject}` in
+that year, within the school's region **at that reference level** — computed by
+`levels.attach_reference`, which broadcasts with a merge rather than
+`Series.map` (against a MultiIndex-keyed Series `.map()` returns all-NaN without
+raising, silently zeroing every downstream metric). Grouping by year is what
+neutralises exam-difficulty drift — the Maths reference jumped ~14 pp between
+2021 and 2022.
+
+**All four levels are computed for every school**, and the export carries all
+four. `PRIMARY_REFERENCE_LEVEL = 'voivodeship'` is the level the analysis half of
+the notebook and the xlsx exports use; it is also what `mean` and `median` are
+computed at, since they have no reference population and so exist only once.
 
 ### Aggregation across years
 
@@ -176,10 +241,23 @@ Chosen by **leave-one-out (LOO) jackknife stability** testing: for each school
 with ≥ 2 years, compute the score with each year left out; the metric whose LOO
 estimates are closest together (lowest LOO standard deviation, normalised by the
 metric's overall spread) is the most stable. Tested 8 per-year metrics × 5
-aggregation methods. `unit_norm_diff_mean` + weighted-mean-by-n wins across all
-subjects and school sizes ≥ 10 students, and the result holds on the larger
-2022-onward population (1,297 schools, including small schools that started
-reporting after 2021).
+aggregation methods, on the 2022-onward population as well (9,095 schools,
+including the small ones that only started reporting after 2021).
+
+**Read the size-bin tables before repeating a summary of them.** They are
+rendered by `render_min_highlighted_table(..., axis=1)`, so the highlighted cell
+is the per-row minimum — one winner per (subject, aggregation) row, 25 rows per
+subject. On the national data `diff_mean` and `unit_norm_diff_mean` still win
+throughout the **1–9, 10–19, 20–49 and 50–99** bins. In the **100+ bin they no
+longer do**: the percentile-based `pct_mean` takes 9 of that bin's 15 rows — all
+five in Maths, four in English — and `diff_mean` survives only in Polish.
+
+The primary metric is unchanged, and deliberately so: `pct_mean` is a within-year
+percentile rank, which discards *how far* a school sits from its reference — the
+very quantity the colour scale, the ±0.33σ band and the region aggregates are
+built on. Revisiting that trade would be a data decision needing its own spec
+section, not a silent swap. What must **not** survive is the older claim that the
+difference metrics win at every school size; the tables contradict it.
 
 `diff_mean` and `unit_norm_diff_mean` correlate at Spearman 1.000 — identical
 rankings, different scales. `diff_median` (median-based) is consistently *worse*
@@ -212,7 +290,8 @@ redundant; the min captures the bottleneck subject.
 ## Colour scale (for the map)
 
 **3 classes** by distance from the centre, boundary ±0.33σ, computed **per
-(metric, subject)**:
+(reference level, metric, subject)** for schools and **per (region level, metric,
+subject)** for regions:
 
 | Class | Condition | Flat colour |
 |-------|-----------|-------------|
@@ -231,22 +310,27 @@ The ±0.33σ band is wider than the multi-year base score's own year-to-year noi
 old 5-class scheme (extra ±1.5σ "saturated" cutoffs) was dropped — ±1.5σ was
 arbitrary and median-angielski left class A empty (centre + 1.5σ > 100).
 
-A **gradient toggle** (map "Ustawienia", default off; ranking class column always
-gradient) renders a continuous colour instead of 3 flat ones: B stays flat
+A **gradient toggle** (map "Ustawienia", default **on**; ranking class column
+always gradient) renders a continuous colour instead of 3 flat ones: B stays flat
 yellow (muddy middle, §7), A ramps yellow→green and C ramps yellow→red out to the
 **1st / 99th percentile** of the actual score distribution (robust to outliers,
-so one extreme school can't stretch the scale). p1/p99 are computed **client-side**
-from the ~1.7k base scores per (metric, subject) — not exported (cheap: a sort of
-~1.7k numbers, cached per metric/subject). Only `sigma`/`sigma_centre` come from
-the JSON metadata; the ±0.33σ boundary and gradient anchors derive from those.
+so one extreme school can't stretch the scale).
+
+**p1/p99 are exported, not computed in the browser.** They used to be derived
+client-side by sorting every loaded school's score, which was fine when one file
+held every school. With per-powiat shards that would sort a median of 27 schools
+and colour the same school differently depending on which shard happened to load
+first. They now come from `scale.json` alongside `sigma`/`sigma_centre`
+(`scaleFor` in `docs/app.js`), computed nationally per reference level.
 
 σ and centre are computed **per metric and per subject**, because the metrics
 live on different scales (`mean`/`median` are 0–100; `diff_mean` and
 `unit_norm_diff_mean` are difference scales). The rules:
 
 - **`mean` and `median`** (raw 0–100 scale): centre = the mean of school scores
-  for that subject (the voivodeship average, ≈ 54–69 depending on subject), σ =
-  std across schools. Centring at 0 would make no sense — no school scores 0%.
+  for that subject (≈ 50–64 by subject), σ = std across schools. Centring at 0
+  would make no sense — no school scores 0%. These do not vary by reference
+  level; the same numbers are stored under all four keys.
 - **`diff_mean` and `unit_norm_diff_mean`** (difference scales): centre = 0 for
   the three subjects (already centred by construction), σ = std across schools.
 - **`composite_min`** (any metric): centre = the empirical *mean* of composite_min
@@ -254,12 +338,18 @@ live on different scales (`mean`/`median` are 0–100; `diff_mean` and
   draws is systematically below each draw), so centring on its own mean gives a
   usable map instead of one where almost everything is red.
 
-All of these (`sigma[metric][subject]`, `sigma_centre[metric][subject]`) are
-written into `schools-base.json` → `metadata`, so the frontend can colour the
-map for **any** selected metric, not just the primary one.
+All of these live in **`docs/data/scale.json`** under
+`school[level][metric][subject] = {sigma, sigma_centre, p1, p99}`, so the
+frontend can colour the map for any metric, subject *and* reference level. The
+region files carry their own `metadata.sigma` / `metadata.sigma_centre`, computed
+over that level's region scores — region aggregates are far less spread out than
+individual schools, so colouring them on the school scale would leave the
+choropleth almost uniformly yellow.
 
-Indicative `unit_norm_diff_mean` σ (recomputed each run):
-polski ≈ 0.192, matematyka ≈ 0.284, angielski ≈ 0.361, composite_min ≈ 0.245.
+Indicative school-level `unit_norm_diff_mean` σ at the **national** reference
+level (recomputed each run): polski ≈ 0.172, matematyka ≈ 0.240,
+angielski ≈ 0.279, composite_min ≈ 0.207. They shrink as the reference narrows —
+at the powiat level, ≈ 0.147 / 0.205 / 0.233 / 0.175.
 
 All four metrics × four subjects are exported, so the user can toggle both the
 metric and the subject that colours the map.
@@ -267,7 +357,7 @@ metric and the subject that colours the map.
 ### Primary metric vs the app's default — deliberately different
 
 `unit_norm_diff_mean` is the **primary metric**: the one the LOO stability test
-picked, and the one `metadata.default_metric` names in `schools-base.json`.
+picked, and the one `metadata.default_metric` names in `scale.json`.
 
 The **app opens on `mean`** (subject `composite_min`). That is a UI decision, not
 a statistical one. `unit_norm_diff_mean` renders as an unlabelled decimal near
@@ -295,7 +385,7 @@ Both stay fully present in the JSON and xlsx exports.
 - **2. Why only 3 subjects** — student-count distributions justify dropping minor languages
 - **3. Choosing the best per-year metric** — the LOO stability analysis:
   - why the median jumps more than the mean (difficulty shifts)
-  - within-school year-to-year swing vs voivodeship swing
+  - within-school year-to-year swing vs the reference level's own swing
   - candidate metrics + aggregation methods (joint LOO test, 8 × 5)
   - rank-swing analysis + the density-effect explanation
 - **4. Final metric definition** — formulas, why, colour scale; subsection
@@ -303,7 +393,9 @@ Both stay fully present in the JSON and xlsx exports.
 - **5. How school level and rank changes** — base vs LOO vs single-year views;
   lollipop charts for two samples (12 schools = 4 top/4 mid/4 bottom; 15 schools
   = 3 each at P10/30/50/70/90); population-wide scatter of range and min/max
-- **6. Export data to external map** — computes alternative views, writes JSON + xlsx
+- **6. Export data to external map** — computes alternative views at all four
+  reference levels, then writes `schools-index.json`, `scale.json`,
+  `regions-{level}.json` × 3, the per-powiat shards, and the analyst xlsx
 
 ### Address selection (`select_address`, Section 6)
 
@@ -324,12 +416,15 @@ Comparison details that matter:
 - **The last token (house number) must match.** Without it `Krynoliny 9` would
   count as a shortened form of `Krynoliny 9/11`, and `Szkolna 1` of `Szkolna 12`.
 - **`al. Aleja …` / `pl. Plac …` / `os. Osiedle …` collapse to the full word.**
-  The abbreviation carries nothing the next word doesn't; OKE cleaned this up
-  between 2024 and 2026, so collapsing keeps one spelling across years. A lone
+  The abbreviation carries nothing the next word doesn't; the publisher cleaned
+  this up between 2024 and 2026, so collapsing keeps one spelling across years. A lone
   `ul.` is kept — it is the only street-type marker present.
 
-On the 2021–2026 data this declines 745 updates and lets the geocoder touch
-**49 schools instead of 790**.
+On the 2021–2026 national data this declines **5,135 updates across 5,129
+schools** (the notebook prints both, and `output/rejected_addresses.csv` lists
+them). Since Task 3 the primary coordinate route is the RSPO register keyed by
+school id, which the address column cannot degrade at all; address quality now
+matters only for the Nominatim fallback.
 
 ### Helper: `render_min_highlighted_table(df, caption, value_fmt='{:.3f}', axis=1)`
 
@@ -368,20 +463,41 @@ students the composite value came from).
 
 ### Output files
 
-- **`docs/data/schools-base.json`** (~3.8 MB raw, ~0.4 MB gzipped — GitHub Pages
-  serves gzip) — loaded on map open. Per school: metadata (name, address —
-  `miejscowosc`, `ulica_nr`, `gmina`, `powiat` — is_public,
-  n_years, lat/lon) plus **base score/rank/pct for ALL four metrics × four
-  subjects** under `scores[metric][subject]`. This lets the frontend switch
-  metric and filter by value **without** downloading the big per-metric files.
-  `lat`/`lon` come from the geocoding cache (`null` if missing). `metadata` holds:
-  `default_metric`, `metrics`, `subjects`, `years_in_data`, `sigma[metric][subject]`,
-  `sigma_centre[metric][subject]`, and `slider_ranges[metric]` (see below).
-- **`docs/data/schools-{metric}.json`** × 4 (~7 MB each, ~0.8 MB gzipped) — all *views* for
-  all schools, loaded on demand only when the user opens a school's year-by-year
-  history (the map and value-filtering work from base alone). `base` is a flat
-  `{score, rank, pct}`; other views are `{param: {score, rank, pct}}` with
-  integer-string param keys (`"2021"`, `"2"`).
+- **`docs/data/schools-index.json`** (~2.3 MB raw) — identity only, and the one
+  file every page loads. **Parallel arrays**, not an array of objects: `rspo`,
+  `name`, `teryt`, `powiat`, `miejscowosc`, `ulica_nr`, `is_public`, `n_years`,
+  `lat`, `lon`, `on_map` — all 12,889 entries long, index `i` being one school.
+  `lat`/`lon` come from the coordinate cache (`null` if missing; 3 schools today).
+  It carries **no scores**: those live in the shards, so switching metric or
+  reference level does not re-download identity.
+- **`docs/data/scale.json`** (~10 KB) — everything needed to turn a score into a
+  colour. `school[level][metric][subject] = {sigma, sigma_centre, p1, p99}` for
+  the four reference levels, plus `metadata.slider_ranges[level][metric] =
+  {min, max, p1, p99, step}` and `metadata.default_metric` / `metrics` /
+  `subjects` / `years_in_data`.
+- **`docs/data/regions-{level}.json`** × 3 (voivodeship ~13 KB, powiat ~230 KB,
+  gmina ~1.5 MB) — what the choropleth draws. Parallel arrays again: `teryt`,
+  `name`, `parent`, `lat`, `lon`, `n_schools`, `n_students`, plus
+  `score[metric][subject]`, `rank[metric][subject]`, `pct[metric][subject]` and
+  the rank denominator `n_ranked[metric][subject]`. **Row identity comes from the
+  polygons, not from the schools** — a gmina the register knows but no scored
+  school sits in is a real row with `n_schools = 0` and a neutral fill, not a
+  hole in the map. `score` is `null` where the suppression gate withheld it;
+  `rank` is national, `pct` is among siblings. `metadata` carries this level's own
+  `sigma` / `sigma_centre` and the two thresholds (`min_reference_n`,
+  `min_percentile_n`).
+- **`docs/data/powiat/{teryt4}-{metric}.json`** (4 metrics × 380 powiats = 1,520
+  files, ~1.04 GB total; median 0.53 MB, p90 1.2 MB, largest 8.2 MB for Warszawa)
+  — every *view* for the schools of one powiat, keyed
+  `schools[rspo][level][subject][view]`. `base` is a flat `{score, rank, pct}`;
+  `loo` / `single_year` / `last_k` are `{param: {score, rank, pct}}` with
+  integer-string keys (`"2021"`, `"2"`). Ranks and percentiles inside are
+  **national**, not powiat-scoped — the shard is a delivery unit, not a
+  population. Fetched one powiat at a time, which is the whole reason for the
+  split: a single national file at four reference levels is the gigabyte above.
+- **`docs/geo/`** (~48 MB) — the PRG boundary polygons keyed by
+  `properties.JPT_KOD_JE` (= TERYT). Written by `scripts/fetch_geometry.py`, not
+  by the notebook, and committed.
 - **`output/schools-{metric}.xlsx`** × 4 (~6.5 MB each) — long format for analysts, one
   row per (school, subject, view), in two sheets:
   - **`data`** sheet columns: `rspo, school_name, miejscowosc, ulica_nr, powiat,
@@ -399,12 +515,14 @@ students the composite value came from).
 
 ### Slider ranges (value filter config)
 
-`metadata.slider_ranges[metric] = {min, max, p1, p99, step}` gives the frontend
-the range for the map's "show schools with score above X" filter, per metric
-(the scale differs: `mean` is 0–100, `unit_norm_diff_mean` is ≈ −0.85…+0.64).
-`p1`/`p99` are robust default slider ends; `min`/`max` are hard limits. The
-config is computed at export time (data and config generated together, so they
-can't drift) rather than recomputed in the browser.
+`scale.json` → `metadata.slider_ranges[level][metric] = {min, max, p1, p99, step}`
+gives the frontend the range for the map's "show schools with score above X"
+filter, per **reference level** and metric (the scale differs both ways: `mean`
+is 0–100 at every level, `unit_norm_diff_mean` is ≈ −0.90…+0.81 nationally and
+≈ −0.90…+0.78 at gmina level). `p1`/`p99` are robust default slider ends;
+`min`/`max` are hard limits. The config is computed at export time — data and
+config generated together, so they can't drift — rather than recomputed in the
+browser over whatever shard happens to be loaded.
 
 Naming: **English** for technical fields, **Polish** for geographic fields
 (miejscowosc, ulica_nr, powiat, gmina, typ_gminy).
@@ -426,33 +544,48 @@ real generation time when a file is actually written.
 
 ## Geocoding (`scripts/geocode_schools.py`)
 
-Coordinates are **not** in the OKE data, so they are geocoded separately:
+Coordinates are **not** in the exam data, so they are resolved separately.
 
-- **Input**: `docs/data/schools-base.json` (rspo + address).
+**RSPO first, Nominatim only as a fallback.** RSPO is the Polish school register;
+its institution record carries a geotag, so a school's coordinates can be looked
+up by its **school id** rather than by its address text. That matters beyond
+speed: the address column degraded in 2026 (above), and an id-keyed lookup is
+immune to it. Only a school with no usable RSPO geotag falls through to address
+geocoding. The pure half — URL construction and payload parsing — is
+`src/school_quality/rspo.py`, so it is testable without a network.
+
+- **Input**: `docs/data/schools-index.json` (rspo + address).
 - **Cache**: `data/school_coords.csv` with columns
   `rspo, miejscowosc, ulica_nr, latitude, longitude`.
 - **Logic**: if an rspo is in the cache and its address is unchanged, keep the
-  cached row **in its original CSV position**; if the address changed, re-geocode
+  cached row **in its original CSV position**; if the address changed, re-resolve
   in place; new schools are **appended at the end**.
-- **Geocoder**: Nominatim (OpenStreetMap), 1.1 s between requests, with a
-  Mazowieckie-biased multi-strategy lookup (see below).
-- **Flags**: `--limit N` (cap new requests, for testing), `--force` (ignore cache).
+- **Contact**: `NOMINATIM_CONTACT` (or `--contact`) is needed **only for the
+  fallback**. Without it the script warns, skips Nominatim, and still runs every
+  RSPO lookup.
+- **Flags**: `--limit N` (cap new requests, for testing), `--force` (ignore
+  cache), `--report-only` (regenerate the reports, geocode nothing).
 
-### Lookup strategy (3 attempts, no centroid fallback)
+### Nominatim fallback: 3 attempts, no centroid fallback
 
-For each school the geocoder tries in order, and accepts the first result that
-falls inside the Mazowieckie bounding box (`lon 19.2–23.2`, `lat 51.0–53.6`):
+Used only where RSPO has no usable geotag. The geocoder tries in order and
+accepts the first result that falls inside **Poland's** bounding box
+(`lon 14.0–24.3`, `lat 48.9–55.0`, `POLAND_VIEWBOX`):
 
 1. **Structured query** — `street=<clean street>`, `city=<miejscowosc>`,
-   `state=województwo mazowieckie`, `country=Polska`, `countrycodes=pl`.
-2. **Free-text with viewbox** — `q="<clean street>, <miejscowosc>, województwo
-   mazowieckie, Polska"`, `viewbox=` Mazowsza, `bounded=1`.
+   `country=Polska`, `countrycodes=pl`.
+2. **Free-text with viewbox** — `q="<clean street>, <miejscowosc>, Polska"`,
+   `viewbox=POLAND_VIEWBOX`, `bounded=1`.
 3. **Free-text with original prefixed street** — same as (2) but keeping the
    original `ul. X` form (some streets disambiguate better with the prefix).
 
+**No voivodeship name goes into the query.** The school may be in any of the
+sixteen, and asserting one it is not in degrades Nominatim's text ranking rather
+than helping it; `countrycodes=pl` plus the viewbox do the restricting.
+
 "Clean street" = the original `ulica_nr` with leading `ul./Ul./al./Al./pl./Pl./os./Os.`
-stripped. Results that land outside the Mazowieckie bbox are rejected even if
-returned (Nominatim's `state=` is sometimes a soft preference).
+stripped. Results outside the Poland bbox are rejected even when returned — the
+viewbox is a soft bias, not a hard filter.
 
 **The cache key strips the same prefix.** `normalize_address` (used to decide
 whether a cached row is still valid) applies `_strip_street_prefix`, so
@@ -462,22 +595,22 @@ cannot change — which is exactly what the 2026 file would have triggered for ~
 schools. Keep these two normalisations in step: whatever the query ignores, the
 cache key must ignore too.
 
-**No town-only fallback.** If all three strategies fail, the geocoder writes an
-empty `latitude,longitude` row for that school. Such schools stay off the map
-(per the brief) but remain in the ranking. This is intentional — the previous
-version fell back to `"<town>, Polska"` and silently planted 773 of 1,720
-schools on their town's centroid (351 schools alone landed on Pałac Kultury
-in Warsaw).
+**No town-only fallback.** If RSPO has nothing and all three Nominatim
+strategies fail, the geocoder writes an empty `latitude,longitude` row for that
+school. Such schools stay off the map (per the brief) but remain in the ranking.
+This is intentional — an older version fell back to `"<town>, Polska"` and
+silently planted 773 of 1,720 schools on their town's centroid (351 alone landed
+on Pałac Kultury in Warsaw). On the current data **3 of 12,889 schools** have no
+coordinates.
 
 ### Bbox-validation rule (applies to existing cache too)
 
-A row with `latitude/longitude` outside the Mazowieckie bbox is treated as
-invalid. If you spot any in `school_coords.csv` (e.g. due to a stale entry from
-an older geocoder), zero its lat/lon and re-run the script — the rule will hold
-on the rewrite.
+A row with `latitude/longitude` outside the Poland bbox is treated as invalid. If
+you spot any in `school_coords.csv` (e.g. a stale entry from an older geocoder),
+zero its lat/lon and re-run the script — the rule will hold on the rewrite.
 
 Run the script after adding new schools, then re-run the notebook's export
-cells so the fresh coordinates land in `schools-base.json`.
+cells so the fresh coordinates land in `schools-index.json`.
 
 ### Post-run reports (always emitted)
 
@@ -510,18 +643,23 @@ duplicate its UX decisions here.
 
 What this notebook guarantees the frontend can rely on (the export contract):
 
-- `schools-base.json` carries, per school: `rspo`, `name`, `is_public`
-  ("Tak"/"Nie"), `n_years`, `miejscowosc`, `ulica_nr`, `gmina`, `powiat`,
-  `lat`/`lon` (nullable),
-  and `scores[metric][subject] = {score, rank, pct}` for all 4 metrics × 4
-  subjects. `metadata` carries `sigma[metric][subject]`,
-  `sigma_centre[metric][subject]`, and `slider_ranges[metric]`.
-- `schools-{metric}.json` carries, per school/subject, the `base`, `loo`,
-  `single_year`, and `last_k` views (see the Export section above).
-- These fields exist specifically to support the frontend's needs (metric/subject
-  toggles, value filtering, public/private filtering, per-metric colouring,
-  uncertainty ranges). If you change the export, keep them — or update
-  `MAP_APP_BRIEF.md` in lockstep.
+- `schools-index.json` carries, as parallel arrays: `rspo`, `name`, `teryt`,
+  `powiat`, `miejscowosc`, `ulica_nr`, `is_public` ("Tak"/"Nie"), `n_years`,
+  `lat`/`lon` (nullable), `on_map`. Identity only — no scores.
+- `scale.json` carries `school[level][metric][subject] = {sigma, sigma_centre,
+  p1, p99}` and `metadata.slider_ranges[level][metric]`, for all four reference
+  levels.
+- `regions-{level}.json` × 3 carry the aggregate `score` / `rank` / `pct` /
+  `n_ranked` per (metric, subject), plus `parent`, `n_schools`, `n_students`,
+  `lat`/`lon` and this level's own `sigma` / `sigma_centre`. `score` is `null`
+  where a suppression rule withheld it, and the frontend must say **which** rule
+  — no schools, only child, or too small a reference — not a single "too small".
+- `powiat/{teryt4}-{metric}.json` carries, per school/level/subject, the `base`,
+  `loo`, `single_year` and `last_k` views (see the Export section above).
+- These fields exist specifically to support the frontend's needs (metric,
+  subject, reference-level and zoom-level switching; value filtering;
+  public/private filtering; per-level colouring; uncertainty ranges). If you
+  change the export, keep them — or update `MAP_APP_BRIEF.md` in lockstep.
 
 Two principles set here because they constrain the **data/metric**, not just the
 UI, and must survive any frontend rewrite:
