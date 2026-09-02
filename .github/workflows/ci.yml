@@ -1,0 +1,58 @@
+# The gates CLAUDE.md requires before every commit, enforced on every pull
+# request. Nothing here is new policy — it is the documented "Before committing"
+# section, run by a machine instead of by memory.
+#
+# ONE job on purpose. The gates are cheap (ruff 0.03s, pytest ~2s, the validator
+# ~96s) but the checkout is not: the working tree is ~674 MB, because docs/data
+# (389 MB) and output/ (247 MB) are committed deliberately — that is what makes
+# byte-for-byte regression checking possible. Splitting into parallel jobs would
+# pay that checkout twice to save a few seconds of compute.
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# A force-push to a PR should not leave the previous run grinding through
+# 21.6 million comparisons for a commit nobody is waiting on any more.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gates:
+    name: lint, tests, export validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      # Shallow by default, which is what a repository this size wants.
+      - uses: actions/checkout@v4
+
+      # The Python version comes from .python-version; uv installs it.
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      # --frozen fails if uv.lock has drifted from pyproject.toml, which is a
+      # gate in its own right: a dependency added without relocking works on the
+      # machine that added it and breaks every fresh clone.
+      - name: Install the locked environment
+        run: uv sync --frozen
+
+      - name: Lint
+        run: uv run ruff check .
+
+      - name: Unit tests
+        run: uv run pytest -q
+
+      # Runs on every PR rather than behind a paths filter. A path-filtered
+      # required check never reports on the PRs it skips, so it blocks them
+      # forever; 96 seconds is not worth that failure mode. This is also the only
+      # step that needs the large checkout — it re-reads the source xlsx and
+      # re-derives every published metric, rank and percentile independently of
+      # the pipeline, which is what makes it a check rather than a restatement.
+      - name: Validate the published export against source
+        run: uv run python scripts/validate_export.py

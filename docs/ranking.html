@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Ranking szkół podstawowych — Mazowieckie</title>
+  <title>Ranking szkół podstawowych</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-ranking">
   <header class="topnav">
-    <h1 data-i18n="rankingTitle">Ranking szkół — Mazowieckie</h1>
+    <h1 data-i18n="rankingTitle">Ranking szkół podstawowych</h1>
     <nav>
       <a href="index.html" data-i18n="navMap">Mapa</a>
       <a href="ranking.html" class="active" data-i18n="navRanking">Ranking</a>
@@ -19,6 +19,47 @@
 
   <main>
     <div class="ranking-controls">
+      <div class="field field--level">
+        <span>
+          <label for="level-select" data-i18n="labelRankLevel">Poziom rankingu</label><span
+            class="help-icon" tabindex="0" role="button" aria-label="?"
+            data-i18n-attr="data-help|helpRankLevel">i</span>
+        </span>
+        <select id="level-select"></select>
+      </div>
+
+      <!-- Cascading area filter: voivodeship, then optionally powiat, then gmina.
+           A select deeper than the ranking level is disabled (not hidden) with
+           #level-note saying why — selecting a gmina while ranking powiats would
+           not narrow the list, it would empty it. Same disabled-with-a-reason
+           pattern as the map's baseline-select / #baseline-note. That note lives
+           in .ranking-meta rather than here: this is a flex row of short fields,
+           and a sentence inside one of them stretches it across half the row.
+
+           One static option each, so a control still waiting on its data reads as
+           an empty picker rather than an empty box; the fill functions replace
+           them when the region files land. -->
+      <div class="field field--region field--voiv">
+        <label for="voiv-select" data-i18n="labelVoivodeship">Województwo</label>
+        <select id="voiv-select">
+          <option value="" data-i18n="voivPlaceholder">— wybierz województwo —</option>
+        </select>
+      </div>
+
+      <div class="field field--region field--powiat">
+        <label for="powiat-select" data-i18n="labelPowiatOptional">Powiat (opcjonalnie)</label>
+        <select id="powiat-select" disabled>
+          <option value="" data-i18n="powiatPlaceholderAll">— całe województwo —</option>
+        </select>
+      </div>
+
+      <div class="field field--region field--gmina">
+        <label for="gmina-select" data-i18n="labelGminaOptional">Gmina (opcjonalnie)</label>
+        <select id="gmina-select" disabled>
+          <option value="" data-i18n="gminaPlaceholderAll">— cały powiat —</option>
+        </select>
+      </div>
+
       <div class="field field--metric">
         <span>
           <label for="metric-select" data-i18n="labelMetric">Metryka</label><a
@@ -64,6 +105,14 @@
     <div class="ranking-meta">
       <p class="data-years" id="data-years"></p>
       <p id="ranking-info"></p>
+      <!-- Why the view / public controls are greyed out at a region level, and
+           why an area select deeper than the ranking level is. Empty (and
+           collapsed by .field-note:empty) at school level, where neither applies. -->
+      <p id="level-note" class="field-note"></p>
+      <!-- Stands in for the table when there is nothing honest to rank yet:
+           school level with no county picked, a population still loading, or a
+           failed fetch. Hidden by JS when the table has rows. -->
+      <p id="ranking-prompt"></p>
       <p class="small click-hint" data-i18n="clickHint">Kliknij wiersz, aby rozwinąć szczegóły szkoły.</p>
       <p class="muted small meta-links"><a href="help.html#stability" data-i18n="helpLink">Jak liczone są wyniki? → Pomoc</a></p>
 

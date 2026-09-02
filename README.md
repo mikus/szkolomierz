@@ -1,11 +1,18 @@
-# compare-primary-schools-mazowieckie
+# Szkołomierz
 
 Analysis of 8th-grade exam (egzamin ósmoklasisty) results for primary schools in
-the Mazowieckie voivodeship (Warsaw OKE district data), producing the data for an
-interactive school-quality map.
+Poland (CIE data), producing the data for an interactive school-quality map.
 
-> **Data scope:** the Warsaw OKE data covers **only the Mazowieckie voivodeship**,
-> not all of Poland. All references ("voivodeship mean") are within this voivodeship.
+> **Data scope:** the whole country — all 16 voivodeships, 380 powiats, 2,479
+> gminas and ~12.9k schools. A school's score is its distance from the mean of a
+> **reference level**: the country, its voivodeship, its powiat or its gmina. All
+> four are exported and the map's "reference point" control picks between them.
+>
+> The name says *what* it measures, not *which exam*: the pipeline is
+> exam-agnostic by design, so adding a second one (matura) needs no rename. The
+> earlier name, `compare-primary-schools-mazowieckie`, pinned both the school
+> stage and a single voivodeship, and was wrong on the second count from the day
+> the data went national.
 
 ## Getting started (uv)
 
@@ -25,20 +32,46 @@ other projects.
 
 ```
 notebooks/   analysis (how_to_measure_school_quality.ipynb)
-scripts/     geocode_schools.py  — geocode school addresses
+scripts/     fetch_sources.py    — download the pinned CIE source files
+             fetch_geometry.py   — download the PRG boundary polygons into docs/geo/
+             geocode_schools.py  — resolve coordinates (RSPO first, Nominatim as fallback)
              validate_export.py  — check the JSON exports against the source xlsx
-data/        input data (OKE xlsx files) + coordinate cache
+data/        input data (CIE xlsx files, national) + coordinate cache
 output/      xlsx files for analysts
 docs/        the map app (GitHub Pages); docs/data/ holds the JSON the app loads
+             and docs/geo/ the boundary polygons it draws
 ```
 
 ## How to regenerate the map data
 
 After a new year of results is published:
 
-1. **Drop the new xlsx** from OKE into `data/egzamin-osmoklasisty/`.
+1. **Fetch the new xlsx** from the CIE manifest into `data/egzamin-osmoklasisty/`:
 
-2. **Run the notebook** end to end:
+   ```bash
+   uv run python scripts/fetch_sources.py
+   ```
+
+   It resolves the pinned edition for each year in `EDITION_PINS`
+   (`src/school_quality/sources.py`) against the CIE manifest and downloads
+   whatever isn't already on disk. Existing files are left alone unless
+   `--force` is given.
+
+2. **Refresh the boundary polygons** — only when the TERYT vintage changes
+   (gminas are created and merged on 1 January, so which polygons exist depends
+   on the vintage). They are committed rather than fetched at run time:
+
+   ```bash
+   uv run python scripts/fetch_geometry.py
+   ```
+
+   This writes `docs/geo/kraj.json`, `docs/geo/woj/*.json` (16) and
+   `docs/geo/pow/*.json` (380). The notebook takes region identity from these
+   polygons, not from the schools, so a gmina with no scored school is still a
+   real row. Record the vintage in `SOURCES.csv` the way the exam editions are.
+   `--dry-run` lists what would be written.
+
+3. **Run the notebook** end to end:
 
    ```bash
    cd notebooks
@@ -55,12 +88,18 @@ After a new year of results is published:
    (so git shows no changes on a re-run with unchanged data). Set
    `FORCE_REGENERATE = True` in section 6 to force regeneration.
 
-3. **Geocode new school addresses** (coordinates are not in the OKE data):
+4. **Resolve coordinates for new schools** (they are not in the exam data):
+
+   Each school's coordinates are looked up in the **RSPO** register by its school
+   id, which needs no contact and is immune to the address column's 2026
+   degradation. Only a school with no usable RSPO geotag falls through to
+   Nominatim address geocoding.
 
    Nominatim requires a User-Agent that identifies the application **and** a way to
    contact whoever runs it — requests without a valid contact are rejected. The
    contact is **not** stored in this repo; you supply your own at runtime via the
-   `NOMINATIM_CONTACT` environment variable (an email or a URL):
+   `NOMINATIM_CONTACT` environment variable (an email or a URL). Without it the
+   script warns and skips the fallback; the RSPO lookups still run:
 
    ```bash
    # Inline, for a one-off run:
@@ -75,32 +114,41 @@ After a new year of results is published:
    env var. If neither is set, the script stops immediately with an explanatory
    error before making any request.
 
-   The script reads `docs/data/schools-base.json`, geocodes new or changed addresses
-   via OpenStreetMap (Nominatim), and writes the result to
-   `data/school_coords.csv`. Unchanged addresses keep their cached coordinates.
-   Geocoding is slow (~1 request/second), so run it only when new schools appear.
+   The script reads `docs/data/schools-index.json` and writes the result to
+   `data/school_coords.csv`. Schools already cached with an unchanged address keep
+   their coordinates. The Nominatim fallback is rate-limited to ~1 request/second,
+   so run this only when new schools appear. Every coordinate — from either route
+   — must fall inside the voivodeship the exam data assigns the school; one that
+   does not is dropped rather than written. Schools left without coordinates are
+   listed in `data/school_coords_unmapped.csv` for manual triage and stay off the
+   map but in the ranking — coordinates are never invented, and never guessed at
+   the wrong end of the country.
 
-4. **Re-run the export cells** (or the whole notebook) so the fresh coordinates
-   are merged into `schools-base.json`.
+5. **Re-run the export cells** (or the whole notebook) so the fresh coordinates
+   are merged into `schools-index.json`.
 
-5. **Validate the export** against the source data before committing:
+6. **Validate the export** against the source data before committing:
 
    ```bash
    uv run python scripts/validate_export.py
    ```
 
-   It independently re-reads the OKE xlsx and recomputes every metric, view
-   aggregate (base / single-year / leave-one-out / last-k), `composite_min`, and
-   rank/percentile, then checks the JSON the app serves
-   (`docs/data/schools-base.json` and `schools-{metric}.json`) against it. Exit
-   code 0 = everything matches; a non-zero exit with a per-check `FAIL` listing
-   means the export and the source disagree — investigate before publishing.
-   (Override the locations with `--data-dir` / `--docs-data`.)
+   It independently re-reads the source xlsx and recomputes every per-year metric
+   *at all four reference levels*, every view aggregate (base / single-year /
+   leave-one-out / last-k), `composite_min`, every rank and percentile, every
+   region aggregate and the colour-scale metadata, then checks the JSON the app
+   serves — `schools-index.json`, `scale.json`, `regions-{level}.json` and the
+   per-powiat shards — against it. It also checks the suppression gates, the
+   geometry/region key join, and that no NaN reached the JSON. It never imports
+   `src/school_quality`: that independence is what makes it a check rather than a
+   restatement. Exit code 0 = everything matches; a non-zero exit with a per-check
+   `FAIL` listing means the export and the source disagree — investigate before
+   publishing. (Override the locations with `--data-dir` / `--docs-data`.)
 
-6. **Preview the map locally** before committing (see below) — the JSON is only
+7. **Preview the map locally** before committing (see below) — the JSON is only
    as good as it looks on the map.
 
-7. **Commit** the generated files in `docs/data/` and `output/`, plus
+8. **Commit** the generated files in `docs/data/` and `output/`, plus
    `data/school_coords.csv`.
 
 ## Previewing the map locally
@@ -144,11 +192,22 @@ the JSON, so a normal reload can show you the previous run's numbers.
 
 For the map (JSON, written to `docs/data/` so GitHub Pages serves them directly):
 
-- `docs/data/schools-base.json` — metadata + every school's base score/rank/pct
-  for all metrics and subjects (loaded immediately when the map opens; ~0.4 MB
-  gzipped)
-- `docs/data/schools-{metric}.json` × 4 — all score views (base, leave-one-out,
-  single-year, last-k) for a given metric (loaded on demand; ~0.8 MB gzipped each)
+- `docs/data/schools-index.json` — one entry per school: identity, address,
+  coordinates, `n_years`. Loaded when the map opens (~1.8 MB raw).
+- `docs/data/scale.json` — the colour-scale anchors (σ, centre, p1/p99) and the
+  value-filter slider ranges, keyed by reference level, metric and subject.
+- `docs/data/regions-{level}.json` × 3 — one row per voivodeship / powiat / gmina:
+  the aggregate score, national rank, within-parent percentile and school counts
+  the choropleth colours. Row identity comes from the polygons, so a region with
+  no scored school is a real row with `n_schools = 0`.
+- `docs/data/powiat/{teryt4}-{metric}.json` × 4 × 380 — the per-school views
+  (base, leave-one-out, single-year, last-k) at every reference level the
+  metric has — all four for the difference metrics, and just the primary one
+  for `mean`/`median`, which do not vary by level (`metadata.levels` says
+  which). Fetched one powiat at a time. Median 0.14 MB, largest 4.3 MB
+  (Warszawa).
+- `docs/geo/` — the PRG boundary polygons (`kraj.json`, `woj/`, `pow/`) the map
+  draws, committed rather than fetched at run time.
 
 For analysts (Excel, in `output/`):
 
@@ -158,7 +217,7 @@ For analysts (Excel, in `output/`):
 - `output/rejected_schools.{xlsx,csv}` — (school, year) rows dropped for missing
   core-subject results, with which subjects were missing
 - `output/rejected_addresses.csv` — address updates the pipeline declined because
-  the newer file gave a shortened form of an address it already had (OKE's 2026
+  the newer file gave a shortened form of an address it already had (the 2026
   file drops `ul.` and the leading words of street names), with the words that
   would have been lost
 
@@ -167,12 +226,34 @@ Metrics: `mean`, `median`, `diff_mean`, `unit_norm_diff_mean` (default).
 ## The metric
 
 The primary metric is `unit_norm_diff_mean`: the difference between a school's
-mean and the voivodeship mean in a given year, normalised to the range [−1, +1],
-averaged across years weighted by the number of students. Chosen via leave-one-out
-stability testing among 8 metrics and 5 aggregation methods.
+mean and its **reference level's** mean in a given year, normalised to the range
+[−1, +1], averaged across years weighted by the number of students. Chosen via
+leave-one-out stability testing among 8 metrics and 5 aggregation methods.
 
 The map shows `composite_min` by default — the minimum of the three subject scores
 (Polish, Maths, English), answering "is the school weak in any subject?". The app
 lets you switch the view to a single subject.
 
+Above the school zoom the map colours regions instead, and a region is scored
+against **the level above it** — a voivodeship nationally, a powiat within its
+voivodeship, a gmina within its powiat. Scoring every level against the
+voivodeship would put all sixteen voivodeships at ~0 by construction and flatten
+the national view at exactly the zoom where contrast is the point.
+
 For methodological and technical details, see `CLAUDE.md`.
+
+## Licence
+
+The code is MIT — see `LICENSE`.
+
+**Read `NOTICE` before relying on that**, because the MIT grant does not reach
+everything here. This project is a fork of an upstream repository that carries no
+licence, and the two authorships are interleaved within the same files: roughly
+53% of the current code originates upstream and remains its author's copyright.
+A licence can only be granted by the copyright holder, so LICENSE covers this
+fork's own contributions and no more.
+
+Separately, most of the repository by size is data rather than code — CIE's exam
+spreadsheets, GUGiK's PRG boundary polygons, and values computed from them. Those
+belong to their publishers and are governed by their terms, not by LICENSE.
+`NOTICE` sets out both points.

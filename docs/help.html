@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Pomoc — Mazowieckie</title>
+  <title>Pomoc</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body class="page-help">
@@ -38,12 +38,16 @@
         <li><a href="#goal">Cel</a></li>
         <li><a href="#not-goal">Co nie jest celem</a></li>
         <li><a href="#data">Dane i zakres</a></li>
+        <li><a href="#levels">Poziomy mapy</a></li>
         <li><a href="#metrics">Metryki dla przedmiotu</a></li>
+        <li><a href="#baseline">Punkt odniesienia</a></li>
         <li><a href="#composite">Łączenie przedmiotów</a></li>
         <li><a href="#aggregation">Agregacja po latach</a></li>
         <li><a href="#metric-stability">Która metryka jest najstabilniejsza</a></li>
         <li><a href="#colour">Kolor i klasy</a></li>
+        <li><a href="#regions">Kolor regionu</a></li>
         <li><a href="#stability">Stabilność i niepewność</a></li>
+        <li><a href="#ranking">Miejsce i percentyl</a></li>
         <li><a href="#map">Mapa i lokalizacje</a></li>
         <li><a href="#caveat">Czego dane nie mówią</a></li>
         <li><a href="#sources">Inne źródła i kod</a></li>
@@ -57,12 +61,16 @@
         <li><a href="#goal">Goal</a></li>
         <li><a href="#not-goal">What is not the goal</a></li>
         <li><a href="#data">Data and scope</a></li>
+        <li><a href="#levels">The map's levels</a></li>
         <li><a href="#metrics">Per-subject metrics</a></li>
+        <li><a href="#baseline">The reference point</a></li>
         <li><a href="#composite">Combining the subjects</a></li>
         <li><a href="#aggregation">Aggregating across years</a></li>
         <li><a href="#metric-stability">Which metric is the most stable</a></li>
         <li><a href="#colour">Colour and classes</a></li>
+        <li><a href="#regions">How a region gets its colour</a></li>
         <li><a href="#stability">Stability and uncertainty</a></li>
+        <li><a href="#ranking">Rank and percentile</a></li>
         <li><a href="#map">The map and locations</a></li>
         <li><a href="#caveat">What the data does not say</a></li>
         <li><a href="#sources">Other sources and code</a></li>
@@ -74,19 +82,33 @@
       <div data-lang-block="pl">
         <h2>Jak korzystać</h2>
         <ul>
-          <li><strong>Mapa</strong> — kolor kropki to wynik wybranego przedmiotu i metryki.
-            Kliknij szkołę, żeby zobaczyć jej wyniki i wykres rok po roku. Przy oddaleniu
-            kropki łączą się w grona z liczbą szkół; kliknięcie grona przybliża.</li>
+          <li><strong>Mapa</strong> — po oddaleniu widać kolorowe obszary (województwa,
+            powiaty, gminy), a pojedyncze szkoły pojawiają się dopiero po mocnym
+            przybliżeniu. Kliknij region, żeby wejść do środka; kliknij szkołę, żeby
+            zobaczyć jej wyniki i wykres rok po roku. Zobacz
+            <a href="#levels">Poziomy mapy</a>.</li>
           <li><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować, a wiersz,
             żeby rozwinąć szczegóły szkoły: wykresy dla wszystkich trzech przedmiotów
             i tabele liczbowe pod przyciskiem.</li>
+          <li><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
+            uszeregować całe województwa, powiaty albo gminy; wiersz pokazuje wtedy wynik
+            regionu, liczbę jego szkół i liczbę uczniów. Regiony mają tylko wynik za
+            wszystkie lata, więc widok danych i filtr typu szkoły są wtedy nieaktywne.
+            Zobacz <a href="#regions">Skąd bierze się kolor regionu</a>.</li>
+          <li><strong>Obszar</strong> — trzy listy: województwo, a dalej opcjonalnie powiat
+            i gmina. Wybór zawęża zestawienie do tego obszaru; zostawienie powiatu i gminy
+            pustych obejmuje całe województwo. Zobacz
+            <a href="#ranking">Miejsce i percentyl w rankingu</a>.</li>
           <li><strong>Przedmiot</strong> — „Najsłabszy przedmiot" pokazuje najniższy z trzech
             wyników, czyli odpowiada na pytanie „czy szkoła gdzieś nie wysiada?". Przełącz na
             polski, matematykę lub angielski, żeby zobaczyć pojedynczy przedmiot.</li>
           <li><strong>Metryka</strong> — „Średnia" to zwykły wynik procentowy.
-            „Wynik znormalizowany" to odległość od średniej województwa <em>z tego samego
-            roku</em>: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej niej,
-            ujemne poniżej.</li>
+            „Wynik znormalizowany" to odległość od średniej grupy odniesienia <em>z tego
+            samego roku</em>: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej
+            niej, ujemne poniżej.</li>
+          <li><strong>Punkt odniesienia</strong> — decyduje, z czym porównujemy szkołę:
+            z całą Polską, województwem, powiatem czy gminą. Zobacz
+            <a href="#baseline">Punkt odniesienia</a>.</li>
           <li><strong>Filtry</strong> — szkoły publiczne albo niepubliczne, minimalny wynik
             oraz minimalna liczba lat danych (szkoły z krótką historią są mniej pewne).</li>
           <li><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Na mapie jest
@@ -98,18 +120,31 @@
       <div data-lang-block="en" hidden>
         <h2>How to use it</h2>
         <ul>
-          <li><strong>Map</strong> — a dot's colour is the score for the selected subject and
-            metric. Click a school to see its results and a year-by-year chart. Zoomed out,
-            dots merge into clusters showing how many schools they hold; clicking one zooms in.</li>
+          <li><strong>Map</strong> — zoomed out you see coloured areas (voivodeships,
+            counties, municipalities); individual schools appear only once you zoom well in.
+            Click a region to drill into it; click a school to see its results and a
+            year-by-year chart. See <a href="#levels">The map's levels</a>.</li>
           <li><strong>Ranking</strong> — click a column header to sort, and a row to expand the
             school's details: charts for all three subjects, with the numeric tables behind a
             button.</li>
+          <li><strong>Ranking level</strong> — the table need not be about schools. You can rank
+            whole voivodeships, counties or municipalities; a row then shows the region's score,
+            how many schools it holds and how many pupils. Regions carry only the all-years
+            score, so the view selector and the school-type filter are inactive there. See
+            <a href="#regions">How a region gets its colour</a>.</li>
+          <li><strong>Area</strong> — three lists: voivodeship, then optionally county and
+            municipality. A choice narrows the table to that area; leaving county and
+            municipality empty covers the whole voivodeship. See
+            <a href="#ranking">Rank and percentile in the ranking</a>.</li>
           <li><strong>Subject</strong> — "Weakest subject" shows the lowest of the three scores,
             answering "does this school fall down anywhere?". Switch to Polish, Maths or English
             to see a single subject.</li>
           <li><strong>Metric</strong> — "Mean" is the plain percentage score. "Normalised score"
-            is the distance from the voivodeship average <em>of the same year</em>: 0 is exactly
-            average, positive values sit above it, negative below.</li>
+            is the distance from the reference group's average <em>of the same year</em>: 0 is
+            exactly average, positive values sit above it, negative below.</li>
+          <li><strong>Reference point</strong> — sets what a school is compared against: the
+            whole country, its voivodeship, its county or its municipality. See
+            <a href="#baseline">The reference point</a>.</li>
           <li><strong>Filters</strong> — public or private schools, a minimum score, and a
             minimum number of years of data (schools with a short history are less certain).</li>
           <li><strong>Search</strong> — type a school name or a town. The map additionally has an
@@ -180,11 +215,16 @@
       <div data-lang-block="pl">
         <h2>Dane i zakres</h2>
         <ul>
-          <li><strong>Źródło:</strong> OKE Warszawa, egzamin ósmoklasisty, od 2021 r. (pełna lista
+          <li><strong>Źródło:</strong> CIE (Centrum Informatyczne Edukacji), egzamin
+            ósmoklasisty, od 2021 r. (pełna lista
             plików źródłowych:
-            <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
-          <li><strong>Zakres:</strong> tylko województwo <strong>mazowieckie</strong>
-            (okręg OKE Warszawa) — to <em>nie</em> są dane ogólnopolskie. Około 1,7 tys. szkół.</li>
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
+          <li><strong>Granice administracyjne:</strong> Państwowy Rejestr Granic (PRG),
+            © <a target="_blank" rel="noopener" href="https://www.gov.pl/web/gugik">GUGiK</a>,
+            pobrane za pośrednictwem
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>.</li>
+          <li><strong>Zakres:</strong> <strong>cała Polska</strong> — wszystkie 16 województw,
+            380 powiatów i 2 479 gmin. Około 12,9 tys. szkół podstawowych.</li>
           <li><strong>Przedmioty:</strong> tylko polski, matematyka i angielski — z pozostałych
             przedmiotów za mało osób zdaje w jednej szkole, by liczby były miarodajne.</li>
           <li>Konkursy nie są uwzględniane: trudno o kompletne dane, a konkursy mierzą wyniki
@@ -195,17 +235,55 @@
       <div data-lang-block="en" hidden>
         <h2>Data and scope</h2>
         <ul>
-          <li><strong>Source:</strong> the Warsaw OKE district, 8th-grade exam, from 2021 onward
+          <li><strong>Source:</strong> CIE (Centrum Informatyczne Edukacji, the education
+            ministry's IT centre), 8th-grade exam, from 2021 onward
             (full list of source files:
-            <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
-          <li><strong>Scope:</strong> the <strong>Mazowieckie</strong> voivodeship only (Warsaw
-            OKE district) — this is <em>not</em> national data. About 1.7k schools.</li>
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
+          <li><strong>Administrative boundaries:</strong> the Polish National Register of
+            Boundaries (PRG), © <a target="_blank" rel="noopener" href="https://www.gov.pl/web/gugik">GUGiK</a>,
+            obtained via
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>.</li>
+          <li><strong>Scope:</strong> <strong>all of Poland</strong> — all 16 voivodeships,
+            380 counties (powiats) and 2,479 municipalities (gminas). About 12.9k primary
+            schools.</li>
           <li><strong>Subjects:</strong> Polish, Maths and English only — too few pupils sit the
             other subjects at any one school for the numbers to be meaningful.</li>
           <li>Subject olympiads/contests are not included: complete data is hard to gather and
             contests measure individuals — in a large school a few pupils may shine while the
             typical pupil still does poorly.</li>
         </ul>
+      </div>
+    </section>
+
+    <section id="levels">
+      <div data-lang-block="pl">
+        <h2>Poziomy mapy</h2>
+        <p>Mapa ma cztery poziomy i przełącza się między nimi wraz z przybliżeniem:
+          <strong>województwa → powiaty → gminy → szkoły</strong>. Dopóki nie dojedziesz
+          do najgłębszego, kolorowane są całe obszary, a nie pojedyncze szkoły; ścieżka
+          nad mapą pokazuje, gdzie jesteś, i pozwala się cofnąć.</p>
+        <p>Najważniejsza zasada: <strong>region porównujemy z jednostką o jeden poziom
+          wyżej</strong>. Województwo — z całą Polską, powiat — ze swoim województwem,
+          gmina — ze swoim powiatem.</p>
+        <p>Dlaczego akurat tak? Gdyby województwo porównać ze średnią województw, wszystkie
+          szesnaście wyszłoby dokładnie zerem — z definicji, bo każde jest wtedy własnym
+          punktem odniesienia. Widok całego kraju byłby jednolicie żółty akurat tam, gdzie
+          różnice są najciekawsze.</p>
+      </div>
+      <div data-lang-block="en" hidden>
+        <h2>The map's levels</h2>
+        <p>The map has four levels and switches between them as you zoom:
+          <strong>voivodeships → counties (powiats) → municipalities (gminas) →
+          schools</strong>. Until you reach the deepest one it colours whole areas rather
+          than individual schools; the trail above the map shows where you are and lets you
+          step back out.</p>
+        <p>The rule that matters most: <strong>a region is compared with the level above
+          it</strong>. A voivodeship against the whole country, a county against its
+          voivodeship, a municipality against its county.</p>
+        <p>Why that way? If a voivodeship were compared with the average of voivodeships,
+          all sixteen would come out at exactly zero — by construction, because each would
+          then be its own reference. The national view would be uniformly yellow at exactly
+          the zoom where the differences are most interesting.</p>
       </div>
     </section>
 
@@ -220,14 +298,15 @@
         <p>Wynik środkowego ucznia (po posortowaniu od najniższego do najwyższego). Po latach
           również średnia arytmetyczna. Ta sama wada co średnia.</p>
         <h3>Różnica od średniej</h3>
-        <p>Od średniej szkoły odejmujemy średnią wszystkich szkół (w Mazowieckiem, w danym
-          roku i przedmiocie). Neutralizuje to zmiany trudności — surowe 60% w trudnym roku
+        <p>Od średniej szkoły odejmujemy średnią wszystkich szkół z jej
+          <a href="#baseline">grupy odniesienia</a> (w danym roku i przedmiocie).
+          Neutralizuje to zmiany trudności — surowe 60% w trudnym roku
           bywa odpowiednikiem 70% w łatwym. Po latach: średnia <strong>ważona liczbą
           zdających</strong>, więc rok z mniejszym (bardziej niepewnym) rocznikiem waży mniej.</p>
         <h3>Znormalizowana różnica od średniej <span class="muted">(w apce „Wynik znormalizowany")</span></h3>
         <p>Różnicę od średniej skalujemy do zakresu <strong>[−1, +1]</strong>: powyżej zera
           dzielimy przez to, ile jeszcze brakuje do 100%; poniżej — przez samą średnią.
-          Wtedy <strong>0 = średnia województwa</strong>, <strong>+1 = sufit (100%)</strong>,
+          Wtedy <strong>0 = średnia grupy odniesienia</strong>, <strong>+1 = sufit (100%)</strong>,
           <strong>−1 = podłoga (0%)</strong>. Miara jest odporna na braki danych za pojedyncze
           lata. Po latach: średnia ważona liczbą zdających.</p>
       </div>
@@ -241,16 +320,57 @@
         <p>The middle pupil's score (sorting lowest to highest). Also an arithmetic mean across
           years. Same weakness as the mean.</p>
         <h3>Difference from the mean</h3>
-        <p>We subtract the mean of all schools (in Mazowieckie, that year, that subject) from the
-          school's mean. This neutralises difficulty shifts — a raw 60% in a hard year can equal
+        <p>We subtract the mean of every school in its <a href="#baseline">reference group</a>
+          (that year, that subject) from the school's own mean. This neutralises difficulty
+          shifts — a raw 60% in a hard year can equal
           70% in an easy one. Across years: a mean <strong>weighted by the number of pupils</strong>,
           so a year with a smaller (less certain) cohort counts for less.</p>
         <h3>Normalised difference from the mean <span class="muted">(the app's "Normalised score")</span></h3>
         <p>We scale the difference to the range <strong>[−1, +1]</strong>: above zero we divide
           by how far it still is to 100%; below zero, by the mean itself. Then
-          <strong>0 = the voivodeship mean</strong>, <strong>+1 = the ceiling (100%)</strong>,
+          <strong>0 = the reference group's mean</strong>, <strong>+1 = the ceiling (100%)</strong>,
           <strong>−1 = the floor (0%)</strong>. It is robust to missing years. Across years: a
           mean weighted by the number of pupils.</p>
+      </div>
+    </section>
+
+    <section id="baseline">
+      <div data-lang-block="pl">
+        <h2>Punkt odniesienia</h2>
+        <p>Wynik szkoły w metrykach różnicowych to jej odległość od średniej pewnej grupy
+          szkół. Wybór „Punkt odniesienia" na mapie decyduje, jaka to grupa:
+          <strong>cała Polska, województwo, powiat albo gmina</strong>.</p>
+        <p>Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy",
+          a mniej „jak na tle kraju". Ta sama szkoła bywa powyżej średniej swojego powiatu
+          i poniżej średniej kraju — obie liczby są prawdziwe, odpowiadają tylko na dwa
+          różne pytania. Warto wiedzieć, na które się patrzy.</p>
+        <p><strong>Średnia i Mediana nie zmieniają się od tego wyboru.</strong> To surowy
+          wynik procentowy w skali 0–100 — nie ma w nim żadnej grupy odniesienia, którą
+          dałoby się podmienić. Zmienia się tylko to, co odejmujemy, a tu nie odejmujemy
+          niczego.</p>
+        <p>Wybór dotyczy <strong>wyłącznie widoku szkół</strong>. Wyżej, gdy mapa koloruje
+          regiony, o porównaniu decyduje drabinka z sekcji <a href="#levels">Poziomy
+          mapy</a> — region zawsze porównujemy z jednostką nadrzędną — więc lista jest
+          wtedy nieaktywna.</p>
+      </div>
+      <div data-lang-block="en" hidden>
+        <h2>The reference point</h2>
+        <p>Under the difference-based metrics, a school's score is its distance from the
+          mean of some group of schools. The map's "Reference point" control sets which
+          group: <strong>the whole country, the voivodeship, the county or the
+          municipality</strong>.</p>
+        <p>The narrower the group, the more the score says "compared with its immediate
+          surroundings" and the less it says "compared with the country". The same school
+          can sit above its county's average and below the national one — both numbers are
+          true, they just answer different questions. It is worth knowing which one you are
+          looking at.</p>
+        <p><strong>Mean and Median do not change with this choice.</strong> They are raw
+          0–100 percentage scores with no reference population to swap out. The choice only
+          changes what gets subtracted, and here nothing is subtracted.</p>
+        <p>It applies to the <strong>school view only</strong>. Higher up, where the map
+          colours regions, the ladder in <a href="#levels">The map's levels</a> decides
+          instead — a region is always compared with its parent — so the control is
+          disabled there.</p>
       </div>
     </section>
 
@@ -300,7 +420,7 @@
           pomijając po kolei każdy rok, i patrzymy, jak bardzo skacze). Mimo to nawet po
           pominięciu pojedynczych lat pozycje potrafią mocno się zmieniać — dlatego nie warto
           przywiązywać się do konkretnego miejsca w rankingu. Pełna analiza:
-          <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/blob/main/notebooks/how_to_measure_school_quality-2021-2025.ipynb">notebook</a>.</p>
+          <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Which metric is the most stable</h2>
@@ -309,7 +429,7 @@
           score leaving each year out in turn, and see how much it jumps). Even so, dropping
           single years can still move positions a lot — which is why a specific ranking place is
           not worth clinging to. The full analysis:
-          <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/blob/main/notebooks/how_to_measure_school_quality-2021-2025.ipynb">notebook</a>.</p>
+          <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
       </div>
     </section>
 
@@ -346,6 +466,100 @@
       </div>
     </section>
 
+    <section id="regions">
+      <div data-lang-block="pl">
+        <h2>Skąd bierze się kolor regionu</h2>
+        <p>Kolor gminy, powiatu czy województwa <strong>nie jest średnią kolorów jej
+          szkół</strong>. Najpierw z wyników szkół liczymy jeden wynik dla całego regionu,
+          i dopiero on dostaje kolor. To nie to samo: region, w którym połowa szkół jest
+          zielona, a połowa czerwona, wcale nie musi wyjść żółty.</p>
+        <p>W metrykach różnicowych (Różnica od średniej, Wynik znormalizowany) ten wynik
+          jest <strong>ważony liczbą uczniów</strong>: szkoła z 300 uczniami przesuwa gminę
+          mocniej niż szkoła z 30. To celowe — większy rocznik to po prostu więcej dowodów.
+          Średnia i Mediana są zwykłą średnią po szkołach regionu, bez ważenia.</p>
+        <p>Skala kolorów jest osobna dla każdego poziomu. Wyniki regionów są z natury mniej
+          rozstrzelone niż wyniki pojedynczych szkół — uśrednianie zbija skrajności — więc
+          gdyby kolorować je skalą szkolną, mapa regionów byłaby niemal cała żółta.</p>
+        <h3>Zestawienia regionów</h3>
+        <p>Te same wyniki zbiorcze można oglądać jako listę, a nie tylko jako kolor na mapie:
+          w zakładce <strong>Ranking</strong> pole „Poziom rankingu" przełącza tabelę na
+          województwa, powiaty albo gminy. Wiersz pokazuje wtedy wynik regionu, jego klasę,
+          liczbę szkół i liczbę uczniów.</p>
+        <p>Dwie różnice względem zestawienia szkół są celowe. Po pierwsze, <strong>regiony
+          bez wyniku i tak są w tabeli</strong>, z podaną przyczyną — tabela wylicza całą
+          populację danego poziomu, więc pominięcie 66 gmin sugerowałoby, że one nie
+          istnieją. Po drugie, <strong>regiony mają tylko wynik za wszystkie lata</strong>:
+          widoków rocznych ani „bez jednego roku" dla nich nie liczymy, więc widok danych
+          i filtr typu szkoły są przy tych poziomach nieaktywne.</p>
+        <h3>Dlaczego niektóre regiony są szare</h3>
+        <p>Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
+          ręczyć", a powody są trzy — i mapa oraz ranking nazywają je osobno, bo to trzy
+          różne rzeczy:</p>
+        <ul>
+          <li><strong>Brak szkół z wynikami egzaminu.</strong> Region istnieje w rejestrze,
+            ale nie ma w nim ani jednej szkoły podstawowej z wynikami. Takich gmin są dziś 3.</li>
+          <li><strong>Jedyna jednostka w jednostce nadrzędnej.</strong> Gmina, która jest
+            jedyną gminą swojego powiatu, musiałaby zostać porównana sama ze sobą — wynik
+            wyszedłby zerem niezależnie od tego, jak uczą tamtejsze szkoły. Dziś to
+            66 gmin (przede wszystkim miasta na prawach powiatu).</li>
+          <li><strong>Za mała grupa odniesienia.</strong> Gdy jednostka nadrzędna ma mniej
+            niż 5 szkół, jej średnia sama jest zbyt niepewna, żeby cokolwiek od niej
+            odmierzać. Reguła jest wpisana w dane; przy dzisiejszym zestawie nie trafia
+            w żaden region.</li>
+        </ul>
+        <p>Dwa pierwsze powody dotyczą tylko metryk różnicowych. Średnia i Mediana nie mają
+          grupy odniesienia, więc pozostają widoczne wszędzie tam, gdzie w ogóle są jakieś
+          szkoły.</p>
+      </div>
+      <div data-lang-block="en" hidden>
+        <h2>How a region gets its colour</h2>
+        <p>A municipality's, county's or voivodeship's colour is <strong>not the average of
+          its schools' colours</strong>. We first compute one score for the whole region
+          from its schools' scores, and only that score gets a colour. It is not the same
+          thing: a region with half its schools green and half red need not come out
+          yellow.</p>
+        <p>Under the difference-based metrics (Difference from the mean, Normalised score)
+          that score is <strong>weighted by the number of pupils</strong>: a school with
+          300 pupils moves its municipality more than one with 30. That is deliberate — a
+          larger cohort is simply more evidence. Mean and Median are a plain average across
+          the region's schools, unweighted.</p>
+        <p>The colour scale is computed separately for each level. Region scores are
+          inherently less spread out than individual schools' — averaging pulls in the
+          extremes — so colouring them on the school scale would leave the region map
+          almost entirely yellow.</p>
+        <h3>Region tables</h3>
+        <p>The same grouped scores can be read as a list rather than only as a colour on the
+          map: on the <strong>Ranking</strong> tab, "Ranking level" switches the table to
+          voivodeships, counties or municipalities. A row then shows the region's score, its
+          class, how many schools it holds and how many pupils.</p>
+        <p>Two differences from the school table are deliberate. First, <strong>regions with
+          no score still appear</strong>, carrying their reason — the table enumerates that
+          level's whole population, so omitting 66 municipalities would suggest they do not
+          exist. Second, <strong>regions carry only the all-years score</strong>: we compute
+          no single-year or leave-one-year-out views for them, which is why the view selector
+          and the school-type filter are inactive at those levels.</p>
+        <h3>Why some regions are grey</h3>
+        <p>Grey does not mean "weak". It means "we have no number here we would stand
+          behind", and there are three reasons — named separately on the map and in the
+          ranking, because they are three different things:</p>
+        <ul>
+          <li><strong>No schools with exam results.</strong> The region exists in the
+            register but holds no primary school with results. Today that is 3
+            municipalities.</li>
+          <li><strong>An only child of its parent.</strong> A municipality that is the only
+            one in its county would have to be compared against itself — the score would
+            come out zero however its schools actually teach. Today that is 66
+            municipalities, mostly cities holding county rights.</li>
+          <li><strong>Too small a reference group.</strong> Where the parent holds fewer
+            than 5 schools, its own average is too uncertain to measure anything against.
+            The rule is built into the data; on the current dataset it catches no region.</li>
+        </ul>
+        <p>The first two reasons apply only to the difference-based metrics. Mean and Median
+          have no reference group, so they stay visible wherever there are any schools at
+          all.</p>
+      </div>
+    </section>
+
     <section id="stability">
       <div data-lang-block="pl">
         <h2>Stabilność i niepewność</h2>
@@ -372,18 +586,95 @@
       </div>
     </section>
 
+    <section id="ranking">
+      <div data-lang-block="pl">
+        <h2>Miejsce i percentyl w rankingu</h2>
+        <p>Te kolumny liczone są na <strong>różnych populacjach</strong>, i to nie jest
+          niedopatrzenie — dlatego nagłówki mówią, na jakiej.</p>
+        <ul>
+          <li><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
+            wszystkich województw, wszystkich 380 powiatów, wszystkich 2 479 gmin albo
+            wszystkich 12 889 szkół, które mają wynik. Jednostki bez wyniku nie zajmują
+            miejsca, więc mianownik bywa mniejszy niż liczba wierszy w tabeli.</li>
+          <li><strong>Percentyl liczymy tylko wśród „rodzeństwa"</strong> — jednostek
+            mających tę samą jednostkę nadrzędną. Percentyl gminy dotyczy gmin jej powiatu,
+            percentyl powiatu — powiatów jego województwa. Zostaje pusty, gdy rodzeństwa
+            jest mniej niż 8: w tak małej grupie percentyl udaje precyzję, której nie ma
+            (przy trzech jednostkach są tylko wartości 0, 50 i 100). Dziś dotyczy to 1 042
+            z 2 479 gmin.</li>
+          <li><strong>Po zawężeniu do obszaru dochodzi druga kolumna miejsca</strong> —
+            „Miejsce w województwie", „w powiecie" albo „w gminie", zależnie od tego, jak
+            głęboko sięga wybór. Liczy się ją tylko wśród wierszy tego obszaru. Stoi obok
+            krajowej celowo: dwie liczby w jednym wierszu mają wtedy różne mianowniki
+            i pomylenie ich zmienia sens. Filtr nazwy ani typu szkoły jej nie przesuwa —
+            tak samo jak nie przesuwa miejsca w kraju.</li>
+        </ul>
+        <p>Kolumna obszaru znika, gdy nic by nie wnosiła: przy zestawieniu powiatów
+          zawężonym do jednego powiatu zostaje jeden wiersz, a jego „miejsce" byłoby
+          zawsze pierwsze. Taki wybór nadal działa — to podgląd jednej jednostki wraz z jej
+          miejscem w kraju — ale drugiej kolumny już nie dostaje.</p>
+        <p><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — jest
+          miejsce w kraju, a po wybraniu obszaru także miejsce w nim. Ranking szkół
+          pokazujemy zawsze w obrębie <strong>wybranego obszaru — województwa, powiatu albo
+          gminy</strong> (ogólnopolska lista wszystkich szkół to plik, którego nikt nie chce
+          pobierać na telefonie), ale numery w kolumnie krajowej pozostają krajowe —
+          dlatego w takiej liście nie idą po kolei. Percentyl przy szkole w dymku na mapie
+          też jest krajowy: mówi, ile procent szkół w Polsce ma wynik nie lepszy niż ta.</p>
+      </div>
+      <div data-lang-block="en" hidden>
+        <h2>Rank and percentile in the ranking</h2>
+        <p>These columns are computed over <strong>different populations</strong>, and
+          that is not an oversight — which is why the headers say which.</p>
+        <ul>
+          <li><strong>Rank is national</strong> at every level: among all voivodeships, all
+            380 counties, all 2,479 municipalities, or all 12,889 schools that have a score.
+            Units with no score take no place, so the denominator can be smaller than the
+            number of rows in the table.</li>
+          <li><strong>The percentile is computed among siblings only</strong> — units
+            sharing the same parent. A municipality's percentile is among its county's
+            municipalities, a county's among its voivodeship's counties. It is left blank
+            where there are fewer than 8 siblings: in a group that small a percentile fakes
+            a precision it does not have (with three units the only possible values are 0,
+            50 and 100). Today that applies to 1,042 of 2,479 municipalities.</li>
+          <li><strong>Narrowing to an area adds a second rank column</strong> — "Rank in
+            voivodeship", "in county" or "in municipality", depending how deep the choice
+            goes. It is computed among the rows of that area alone. It sits beside the
+            national one deliberately: two numbers in one row then have different
+            denominators, and confusing them changes what they mean. Neither the name
+            search nor the school-type filter moves it — just as neither moves the national
+            rank.</li>
+        </ul>
+        <p>The area column disappears where it would add nothing: ranking counties narrowed
+          to a single county leaves one row, whose "rank" would always be first. That choice
+          still works — it is a look at one unit together with its national standing — but it
+          gets no second column.</p>
+        <p><strong>At school level the table has no percentile column at all</strong> — there
+          is the national rank, and the rank within the area once one is chosen. The school
+          ranking is always shown within the <strong>chosen area — a voivodeship, a county or
+          a municipality</strong> (a national list of every school is a file nobody wants to
+          download on a phone), but the numbers in the national column stay national, which
+          is why they do not run consecutively in such a list. The percentile in a school's
+          map popup is national too: it says what share of schools in Poland score no better
+          than this one.</p>
+      </div>
+    </section>
+
     <section id="map">
       <div data-lang-block="pl">
         <h2>Mapa i lokalizacje</h2>
-        <p>Współrzędnych nie ma w danych OKE — adresy geokodujemy osobno (OpenStreetMap).
-          Gdy adresu nie uda się przypisać do punktu, szkoła <strong>nie pojawia się na
-          mapie</strong> (ale zostaje w rankingu).</p>
+        <p>Współrzędnych nie ma w danych egzaminacyjnych. Bierzemy je z rejestru szkół
+          <strong>RSPO</strong> po numerze szkoły; dopiero gdy rejestr ich nie ma,
+          geokodujemy adres w OpenStreetMap. Lokalizacji nigdy nie zgadujemy — gdy obie
+          drogi zawiodą, szkoła <strong>nie pojawia się na mapie</strong> (ale zostaje
+          w rankingu). Dziś dotyczy to 3 z 12 889 szkół.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>The map and locations</h2>
-        <p>Coordinates are not in the OKE data — addresses are geocoded separately (OpenStreetMap).
-          When an address cannot be pinned to a point, the school <strong>does not appear on the
-          map</strong> (but stays in the ranking).</p>
+        <p>Coordinates are not in the exam data. They come from the <strong>RSPO</strong>
+          school register, looked up by the school's id; only where the register has none do
+          we geocode the address against OpenStreetMap. We never guess a location — when both
+          routes fail the school <strong>does not appear on the map</strong> (but stays in the
+          ranking). Today that is 3 of 12,889 schools.</p>
       </div>
     </section>
 
@@ -408,19 +699,35 @@
       <div data-lang-block="pl">
         <h2>Inne źródła i kod</h2>
         <ul>
-          <li>Podobne narzędzia: <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>,
+          <li><strong>Skąd pochodzą dane:</strong>
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
+            — serwis CIE, w którym publikowane są wyniki egzaminu ósmoklasisty dla całej
+            Polski. Stamtąd pobieramy zarówno arkusze z wynikami, jak i granice
+            administracyjne rysowane na mapie (Państwowy Rejestr Granic, © GUGiK). Sami
+            żadnych danych nie zbieramy — liczymy na nich metryki i rysujemy je inaczej.
+            Serwis ma też własną mapę, więc bywa wymieniany jako narzędzie obok; jest przede
+            wszystkim naszym źródłem.</li>
+          <li>Podobne narzędzia:
             <a target="_blank" rel="noopener" href="https://www.rankingedukacji.pl/rankingi/szkoly-podstawowe/warszawa">rankingedukacji.pl</a>.</li>
           <li>Kod i pełna analiza (notebook):
-            <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie">GitHub</a>.</li>
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz">GitHub</a>.</li>
         </ul>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Other sources and code</h2>
         <ul>
-          <li>Similar tools: <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>,
+          <li><strong>Where the data comes from:</strong>
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
+            — the CIE service that publishes 8th-grade exam results for the whole of Poland.
+            Both the result sheets and the administrative boundaries drawn on the map (the
+            National Register of Boundaries, © GUGiK) are taken from there. We collect no
+            data ourselves — we compute metrics on theirs and draw them differently. The
+            service has its own map too, so it is sometimes listed as a neighbouring tool;
+            it is first of all our source.</li>
+          <li>Similar tools:
             <a target="_blank" rel="noopener" href="https://www.rankingedukacji.pl/rankingi/szkoly-podstawowe/warszawa">rankingedukacji.pl</a>.</li>
           <li>Code and the full analysis (notebook):
-            <a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie">GitHub</a>.</li>
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz">GitHub</a>.</li>
         </ul>
       </div>
     </section>
@@ -428,37 +735,43 @@
     <section id="data-files">
       <div data-lang-block="pl">
         <h2>Dane do pobrania</h2>
-        <p>Każdą liczbę z tej strony da się prześledzić wstecz aż do arkusza OKE. Wszystkie
+        <p>Każdą liczbę z tej strony da się prześledzić wstecz aż do arkusza źródłowego. Wszystkie
           trzy etapy są jawne:</p>
         <ul>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/data/egzamin-osmoklasisty">Pliki
-            źródłowe OKE</a> — arkusze xlsx dokładnie tak, jak opublikowała je OKE Warszawa,
-            bez żadnych zmian. Obok leży <code>SOURCES.csv</code> z adresem i datą pobrania
-            każdego pliku.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/output">Dane
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Pliki
+            źródłowe</a> — arkusze xlsx dokładnie tak, jak opublikowało je CIE, bez żadnych
+            zmian. Oryginały stoją na
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>;
+            trzymamy ich nienaruszoną kopię, żeby każdą liczbę dało się odtworzyć także
+            wtedy, gdy serwis źródłowy się zmieni. Obok leży <code>SOURCES.csv</code>
+            z adresem i datą pobrania każdego pliku.</li>
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Dane
             przetworzone (xlsx)</a> — po przeliczeniu, jeden wiersz na (szkoła, przedmiot,
             widok), osobny plik dla każdej metryki. Każdy ma arkusz <code>legend</code>
             objaśniający wszystkie kolumny, więc da się sprawdzić pojedynczą szkołę
             w Excelu.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/docs/data">Dane
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">Dane
             JSON</a> — dokładnie te pliki, które wczytuje ta strona. Wyniki, miejsca
             i percentyle są w nich gotowe; przeglądarka dobiera do nich już tylko kolory.</li>
         </ul>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Data files</h2>
-        <p>Every number on this site can be traced back to an OKE spreadsheet. All three
+        <p>Every number on this site can be traced back to a source spreadsheet. All three
           stages are public:</p>
         <ul>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/data/egzamin-osmoklasisty">OKE
-            source files</a> — the xlsx sheets exactly as the Warsaw OKE district published
-            them, unmodified. Alongside them, <code>SOURCES.csv</code> records where each file
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Source
+            files</a> — the xlsx sheets exactly as CIE published them, unmodified. The
+            originals live at
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>;
+            we keep an untouched copy so every number stays reproducible even if the source
+            service changes. Alongside them, <code>SOURCES.csv</code> records where each file
             came from and when it was retrieved.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/output">Processed
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Processed
             data (xlsx)</a> — after computation, one row per (school, subject, view), a separate
             file per metric. Each has a <code>legend</code> sheet explaining every column, so a
             single school can be checked in Excel.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/herbakamil/compare-primary-schools-mazowieckie/tree/main/docs/data">JSON
+          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">JSON
             data</a> — the very files this site loads. Scores, ranks and percentiles arrive
             ready-made; the browser only maps them to colours.</li>
         </ul>

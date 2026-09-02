@@ -54,9 +54,10 @@ const SUBJECTS = ['polski', 'matematyka', 'angielski', 'composite_min'];
 const CORE_SUBJECTS = ['polski', 'matematyka', 'angielski'];
 
 const DEFAULTS = {
-  metric:  'mean',
-  subject: 'composite_min',
-  lang:    'pl',
+  metric:   'mean',
+  subject:  'composite_min',
+  lang:     'pl',
+  baseline: 'voivodeship',   // the level the map used before this change
 };
 
 const COLOURS = {
@@ -69,8 +70,14 @@ const COLOURS = {
 };
 
 const NOMINATIM_BASE = 'https://nominatim.openstreetmap.org/search';
-// Mazowieckie viewbox: left,top,right,bottom (lon/lat).
-const MAZ_VIEWBOX = '19.2,53.6,23.2,51.0';
+// Poland's bounding box as a Nominatim viewbox: left,top,right,bottom
+// (lon/lat). Same extent as the coarse Poland gate in
+// src/school_quality/rspo.py, so the two agree on where Poland is. The offline
+// school geocoder is bounded to one VOIVODESHIP rather than to this box — it
+// knows which school it is resolving and can be strict. This box serves a
+// free-text address the user typed, which could be anywhere in the country, so
+// it is passed with bounded=0: it prefers rather than requires a result inside.
+const POLAND_VIEWBOX = '14.0,55.0,24.3,48.9';
 
 // -----------------------------------------------------------------------------
 // Colour / class mapping
@@ -142,21 +149,37 @@ function colourFor(score, centre, sigma, p1, p99, gradient) {
   return gradient ? gradient3Colour(score, centre, sigma, p1, p99) : CLASS3_FLAT[i];
 }
 
-// p1/p99 of the base scores for a (metric, subject), computed once and cached.
-// 1720 numbers → sorting is sub-millisecond; recomputed only on a cache miss
-// (per metric/subject), never per marker. No notebook/metadata change needed.
-const _extentCache = {};
+const REFERENCE_LEVEL_KEYS = ['national', 'voivodeship', 'powiat', 'gmina'];
+
+// What a SCHOOL is compared against (spec §6.2). Shared rather than per-page:
+// index.html and ranking.html both load app.js and both colour by these anchors.
+let baselineLevel = DEFAULTS.baseline;
+
+// p1/p99 are precomputed nationally in scale.json. They used to be derived here
+// by sorting every school's score, which with per-powiat shards would sort ~27
+// schools and colour the same school differently depending which shard loaded
+// first.
+function scaleFor(metric, subject) {
+  const byMetric = scaleData && scaleData.school[baselineLevel];
+  return (byMetric && byMetric[metric] && byMetric[metric][subject])
+    || { sigma: 1, sigma_centre: 0, p1: 0, p99: 0 };
+}
+
 function scoreExtent(metric, subject) {
-  const key = metric + '|' + subject;
-  if (_extentCache[key]) return _extentCache[key];
-  const vals = baseData.schools
-    .map(s => s.scores?.[metric]?.[subject]?.score)
-    .filter(v => v != null)
-    .sort((a, b) => a - b);
-  const at = (p) => vals.length ? vals[Math.min(vals.length - 1, Math.max(0, Math.round(p / 100 * (vals.length - 1))))] : 0;
-  const r = { p1: at(1), p99: at(99) };
-  _extentCache[key] = r;
-  return r;
+  const { p1, p99 } = scaleFor(metric, subject);
+  return { p1, p99 };
+}
+
+// Which block of a shard holds the scores for the current reference point. A
+// shard names the levels it carries (metadata.levels, §2d): all four for the
+// difference metrics, and for mean/median just the one level they are computed
+// at — raw 0–100 aggregates have no reference population, so four identical
+// copies were most of a gigabyte of duplication. Resolving the level from the
+// file keeps the nesting depth uniform (school[level][subject][view] still works
+// everywhere) without any page hardcoding which metrics vary by level.
+function shardLevel(shard) {
+  const levels = shard.metadata.levels;
+  return levels.includes(baselineLevel) ? baselineLevel : levels[0];
 }
 
 // Per-subject line colours, shared by the map popup sparkline and the ranking
@@ -265,23 +288,136 @@ function subjectLegendHTML(subjects) {
 // -----------------------------------------------------------------------------
 // Data loading
 
-let baseData = null;
-const metricCache = {};  // metric -> parsed JSON
+// One loader per artifact. The old loadBaseData was a single-shot memoised
+// global with no merge path: a second fetch overwrote the first, which is fine
+// for one whole-country file and wrong for 1,520 per-powiat shards. Each cache
+// below is therefore keyed by what makes its payload distinct.
 
-async function loadBaseData() {
-  if (baseData) return baseData;
-  const res = await fetch('data/schools-base.json');
-  if (!res.ok) throw new Error(`schools-base.json: HTTP ${res.status}`);
-  baseData = await res.json();
-  return baseData;
+// regionCache and shardCache hold the PROMISE, not the resolved payload, for the
+// same reason geoCache does: zoomend and moveend both fire in one interaction, so
+// the same key can be requested twice before the first fetch lands. Caching the
+// resolved value would let both requests through — up to 4.3 MB for a powiat
+// shard, 0.77 MB for regions-gmina.json.
+let indexData = null, scaleData = null;
+const regionCache = new Map();   // level       -> Promise<payload>
+const shardCache  = new Map();   // "1425|mean" -> Promise<payload>
+const NAME_CACHE  = new Map();   // level       -> Map(teryt -> name)
+
+async function loadIndex() {
+  if (indexData) return indexData;
+  const res = await fetch('data/schools-index.json');
+  if (!res.ok) throw new Error(`schools-index.json: HTTP ${res.status}`);
+  indexData = await res.json();
+  return indexData;
 }
 
-async function loadMetricData(metric) {
-  if (metricCache[metric]) return metricCache[metric];
-  const res = await fetch(`data/schools-${metric}.json`);
-  if (!res.ok) throw new Error(`schools-${metric}.json: HTTP ${res.status}`);
-  metricCache[metric] = await res.json();
-  return metricCache[metric];
+async function loadScale() {
+  if (scaleData) return scaleData;
+  const res = await fetch('data/scale.json');
+  if (!res.ok) throw new Error(`scale.json: HTTP ${res.status}`);
+  scaleData = await res.json();
+  return scaleData;
+}
+
+async function loadRegions(level) {
+  if (!regionCache.has(level)) {
+    regionCache.set(level, fetch('data/regions-' + level + '.json').then((r) => {
+      if (!r.ok) throw new Error(`regions-${level}.json: HTTP ${r.status}`);
+      return r.json();
+    }).then((payload) => {
+      const names = new Map();
+      const { teryt, name } = payload.regions;
+      for (let i = 0; i < teryt.length; i++) names.set(teryt[i], name[i]);
+      NAME_CACHE.set(level, names);
+      return payload;
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      regionCache.delete(level);
+      throw e;
+    }));
+  }
+  return regionCache.get(level);
+}
+
+// Region display names, filled by loadRegions as each level lands. Here rather
+// than in map.js because ranking.html loads only app.js and ranking.js.
+// schools-index.json carries no gmina name — it has the TERYT code — so a
+// school's gmina label ("gm. Gózd" in the typeahead, a ranking column, and the
+// text the ranking query matches against) resolves through this. Falls back to
+// the code, so a name that has not loaded yet degrades rather than blanks.
+function nameOf(level, teryt) {
+  const m = NAME_CACHE.get(level);
+  return (m && m.get(teryt)) || teryt;
+}
+
+async function loadShard(powiat, metric) {
+  const key = powiat + '|' + metric;
+  if (!shardCache.has(key)) {
+    shardCache.set(key, fetch('data/powiat/' + powiat + '-' + metric + '.json').then((r) => {
+      if (!r.ok) throw new Error(`${powiat}-${metric}.json: HTTP ${r.status}`);
+      return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      shardCache.delete(key);
+      throw e;
+    }));
+  }
+  return shardCache.get(key);
+}
+
+// Every shard under one selection, fetched concurrently. A voivodeship-wide
+// school ranking is up to 42 files and ~3.4 MB on the primary metric, so
+// `onProgress(done, total)` fires as each lands and the caller can show a count
+// instead of an unexplained pause. Individually cached by loadShard, so
+// narrowing a selection after a wide one refetches nothing.
+//
+// Promise.all, deliberately, not allSettled: if one shard fails the result is a
+// ranking missing a county with no way for a reader to tell. This page's whole
+// premise is that a partial list must not be shown as a whole one, so the
+// failure has to propagate and become the error message.
+async function loadShards(powiats, metric, onProgress) {
+  let done = 0;
+  const total = powiats.length;
+  if (onProgress) onProgress(0, total);
+  return Promise.all(powiats.map((p) => loadShard(p, metric).then((payload) => {
+    done += 1;
+    if (onProgress) onProgress(done, total);
+    return payload;
+  })));
+}
+
+// Each geometry file is named for the region in view but contains its CHILDREN,
+// so `level` here is the parent's level, not the level being drawn. There is no
+// gmina branch because there is no geometry below gmina — at that level the map
+// draws school markers instead. Caching the promise rather than the resolved
+// value means two moveend events in the same tick share one fetch.
+const geoCache = new Map();
+
+async function loadGeometryFor(level, focused) {
+  const path = level === 'country' ? 'geo/kraj.json'
+    : level === 'voivodeship' ? `geo/woj/${focused.slice(0, 2)}.json`
+    : `geo/pow/${focused.slice(0, 4)}.json`;
+  if (!geoCache.has(path)) {
+    geoCache.set(path, fetch(path).then((r) => {
+      if (!r.ok) throw new Error(`no geometry at ${path}`);
+      return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing. Caching the REJECTION would
+      // hand the same failure to every later caller for this path, and geometry
+      // is fetched from zoomend/moveend — where panning away and back IS the
+      // natural retry. Without this, one transient blip leaves that region
+      // permanently unrendered for the rest of the session, silently. The
+      // caller still sees the error; only the cache entry goes.
+      // loadRegions and loadShard do the same, and must: they are reached from
+      // the very same handler (renderLevel awaits loadRegions; renderSchools ->
+      // buildSchools awaits loadShard and loadRegions('gmina')), so a rejection
+      // held there would leave every powiat in the country without markers, and
+      // the panel reading "0 z 0 szkół" as though that were the data.
+      geoCache.delete(path);
+      throw e;
+    }));
+  }
+  return geoCache.get(path);
 }
 
 // -----------------------------------------------------------------------------
@@ -332,10 +468,11 @@ function resolvePref(name, allowed) {
 
 const I18N = {
   pl: {
-    appTitle: 'Mapa szkół podstawowych — Mazowieckie',
+    appTitle: 'Mapa szkół podstawowych',
     navMap: 'Mapa',
     navRanking: 'Ranking',
     navHelp: 'Pomoc',
+    breadcrumbPoland: 'Polska',
     helpTitle: 'Pomoc',
     helpLink: 'Jak liczone są wyniki? → Pomoc',
     tocFabLabel: 'Do spisu treści',
@@ -353,6 +490,14 @@ const I18N = {
     gradientHelp: 'Płynne przejście koloru w klasach A i C (im dalej od średniej, tym mocniej, aż do 1.–99. percentyla). Środek (B) pozostaje jednolicie żółty.',
     labelSubject: 'Przedmiot',
     labelMetric: 'Metryka',
+    labelBaseline: 'Punkt odniesienia',
+    // The four REFERENCE_LEVEL_KEYS. Deliberately not the same vocabulary as the
+    // zoom levels: `country` is a zoom rung, `national` is what a school is
+    // compared against.
+    levelNational: 'Cała Polska',
+    levelVoivodeship: 'Województwo',
+    levelPowiat: 'Powiat',
+    levelGmina: 'Gmina',
     labelPublic: 'Publiczna',
     publicAll: 'Wszystkie',
     publicYes: 'Tak',
@@ -386,9 +531,24 @@ const I18N = {
     popupComposite: 'Najsłabszy z 3',
     warnShortHistory: 'Krótka historia (< 3 lata) — wyniki mniej pewne.',
     warnVolatile: 'Duże wahania roczne — wynik zależy od wyboru lat.',
-    rankingTitle: 'Ranking szkół — Mazowieckie',
+    rankingTitle: 'Ranking szkół podstawowych',
     rankingNameSearch: 'Szukaj po nazwie lub lokalizacji',
     rankingSearchPlaceholder: 'np. STO, Vizja, Słupica',
+    // The ranking page's level control. Deliberately asymmetric, and the help
+    // text says why rather than leaving the reader to discover it by clicking.
+    labelRankLevel: 'Poziom rankingu',
+    levelSchool: 'Szkoła',
+    helpRankLevel: 'Województwa, powiaty i gminy są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły tylko w obrębie jednego powiatu: ogólnopolski ranking szkół wymagałby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
+    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
+    labelVoivodeship: 'Województwo',
+    labelPowiatOptional: 'Powiat (opcjonalnie)',
+    labelGminaOptional: 'Gmina (opcjonalnie)',
+    voivPlaceholder: '— wybierz województwo —',
+    powiatPlaceholderAll: '— całe województwo —',
+    gminaPlaceholderAll: '— cały powiat —',
+    selectDeeperThanLevel: 'Głębszy wybór niż poziom rankingu nie zawęziłby listy, tylko ją opróżnił.',
+    shardsLoading: (done, total) => `Wczytywanie danych szkół… ${done}/${total} powiatów`,
+    rankingPickRegion: 'Wybierz województwo, aby zobaczyć ranking jego szkół — opcjonalnie zawęź go do powiatu lub gminy. Szkoły są rankingowane w obrębie wybranego obszaru; pokazanie części listy jako całości byłoby mylące, więc dopóki obszar nie jest wybrany, ranking się nie pojawia.',
     lastKRow: (k) => `ostatnie ${k}`,
     rankingView: 'Widok danych',
     rankingViewParam: 'Parametr widoku',
@@ -403,7 +563,32 @@ const I18N = {
     colPowiat: 'Powiat',
     colPublic: 'Publiczna',
     colNYears: 'Lata',
-    colRank: 'Miejsce',
+    // `rank` is national at every level — for regions among all regions of that
+    // level in Poland, for schools among all 12,889. `pct` is NOT: it is scoped
+    // to the siblings under the same parent. Different denominators on purpose,
+    // so the headers name the scope instead of leaving it to the tooltip.
+    colRankNational: 'Miejsce w kraju',
+    // `ref` names the reference level actually in force, not "the selected" one:
+    // the ranking page carries no baseline control, so it always uses the
+    // default — while the map writes a user-chosen baseline into the same
+    // localStorage. Claiming a control this page does not have would be wrong
+    // for anyone who had changed it on the map.
+    helpRankNational: (n, ref) => (n == null
+      ? `Miejsce wśród wszystkich szkół w Polsce, policzone przy punkcie odniesienia „${ref}". W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.`
+      : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
+    // Named by the LEVEL of the selection, not by its name: "Miejsce w" takes the
+    // locative, and no template can decline 2,479 gmina names correctly. The
+    // actual region is named in the help text, where a colon sidesteps the case.
+    colRankInVoivodeship: 'Miejsce w województwie',
+    colRankInPowiat: 'Miejsce w powiecie',
+    colRankInGmina: 'Miejsce w gminie',
+    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Filtry nazwy i typu szkoły nie zmieniają tego miejsca.`,
+    colPctInCountry: 'Percentyl w kraju',
+    colPctInVoivodeship: 'Percentyl w województwie',
+    colPctInPowiat: 'Percentyl w powiecie',
+    helpPctInParent: (n) => `Percentyl liczony wyłącznie wśród jednostek o tej samej jednostce nadrzędnej — inaczej niż miejsce, które jest ogólnopolskie. Pusty, gdy takich jednostek jest mniej niż ${n}: w tak małej grupie percentyl niczego nie mówi.`,
+    colNSchools: 'Szkoły',
+    colNStudents: 'Uczniowie',
     colLOORange: 'Zakres pozycji (LOO)',
     colSingleRange: 'Zakres pozycji (pojed. lata)',
     helpLOORange: 'Zakres miejsc w rankingu, gdy z obliczeń pominiemy po kolei każdy rok (jackknife „leave-one-out”). Szeroki zakres = pozycja mocno zależy od tego, który rok uwzględnimy.',
@@ -423,12 +608,49 @@ const I18N = {
     detailWeakestNote: 'Pogrubienie = przedmiot z najniższym wynikiem (ten, który wyznacza composite_min), niezależnie od pokazywanej miary (wynik/pozycja/percentyl).',
     offMap: 'brak lokalizacji',
     rowsShown: (n, total) => `${n} z ${total} szkół`,
+    // One per region level. No three-form plural logic here, unlike
+    // schoolsInRegion: the noun after "z" agrees with `total`, which is the
+    // level's whole population (16 / 380 / 2479) — always genitive plural.
+    rowsShownVoivodeship: (n, total) => `${n} z ${total} województw`,
+    rowsShownPowiat: (n, total) => `${n} z ${total} powiatów`,
+    rowsShownGmina: (n, total) => `${n} z ${total} gmin`,
+    regionNoSchools: 'Brak szkół z wynikami egzaminu',
+    // Not "the region is small": the score is withheld when the COMPARISON
+    // population is too small — a difference metric needs siblings to measure
+    // against, and an only child is its own reference (suppression.py).
+    regionTooSmall: 'Za mała grupa odniesienia, aby policzyć wynik',
+    // The other half of that gate, and on today's data the ONLY half that fires:
+    // every suppressed region is the single gmina of a one-gmina powiat, whose
+    // parent holds far more than MIN_REFERENCE_N schools. Saying "too small"
+    // there is simply false.
+    regionOnlyChild: 'Jedyna jednostka w jednostce nadrzędnej — nie ma z czym porównać',
+    // Polish counts in three forms and 312 gminas hold exactly one school, so
+    // a single fixed noun would read "1 szkół" on the tooltip of every one.
+    schoolsInRegion: (n) => {
+      const d = n % 10, dd = n % 100;
+      const word = n === 1 ? 'szkoła'
+        : (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) ? 'szkoły' : 'szkół';
+      return `${n} ${word}`;
+    },
     dataYears: (lo, hi) => `Egzamin ósmoklasisty ${lo}–${hi}`,
     historyLoading: 'Ładowanie szczegółowych danych…',
     historyFailed: 'Nie udało się wczytać danych rocznych — odśwież stronę.',
+    // The two above are right only where the file being fetched really is the
+    // year-by-year data — that is, the per-powiat shard. The region levels load
+    // regions-{level}.json, which carries no yearly views at all, so they say so
+    // themselves rather than borrowing copy about data they never ask for.
+    regionsLoading: 'Ładowanie zestawienia regionów…',
+    regionsFailed: 'Nie udało się wczytać zestawienia regionów — odśwież stronę.',
+    // Replaces the school count when anything behind the map fails to load.
+    // Without it the panel keeps saying "0 z 0 szkół", which reads as a fact
+    // about the region rather than as a failure to fetch it.
+    renderFailed: 'Nie udało się wczytać danych mapy — przesuń mapę, aby spróbować ponownie.',
     chartYearsCaption: 'Wynik w poszczególnych latach',
     helpPopupChart: 'Wykres pokazuje wynik policzony osobno dla każdego roku — to nie jest wynik zbiorczy za wszystkie lata ani wersja LOO. Wynik zbiorczy masz w tabeli powyżej.',
     helpMetric: 'Średnia to zwykły wynik procentowy — tyle procent punktów zdobyli przeciętnie uczniowie tej szkoły. Wynik znormalizowany to odległość od średniej województwa z tego samego roku: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej niej, ujemne poniżej. Kliknij, aby przeczytać o wszystkich metrykach.',
+    helpBaseline: 'Wynik szkoły to odległość od średniej grupy odniesienia. Ten wybór decyduje, jaka to grupa: cała Polska, województwo, powiat czy gmina. Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy”, a mniej „jak na tle kraju”.',
+    baselineFollowsZoom: 'Dotyczy tylko widoku szkół. Wyżej kolor regionu zawsze porównuje go z jednostką nadrzędną.',
+    baselineRawMetric: 'Średnia i Mediana to surowy wynik procentowy — nie mają grupy odniesienia, więc ten wybór ich nie zmienia.',
     advancedMetrics: 'Metryki zaawansowane',
     advancedMetricsHelp: 'Dokłada „Mediana” i „Różnica od średniej”. Różnica od średniej ustawia szkoły w dokładnie tej samej kolejności co wynik znormalizowany — zmienia się tylko skala liczb.',
     chartDiffCaption: 'LOO a pojedyncze lata — jaka różnica?',
@@ -439,10 +661,11 @@ const I18N = {
     langEN: 'EN',
   },
   en: {
-    appTitle: 'Primary schools map — Mazowieckie',
+    appTitle: 'Primary schools map',
     navMap: 'Map',
     navRanking: 'Ranking',
     navHelp: 'Help',
+    breadcrumbPoland: 'Poland',
     helpTitle: 'Help',
     helpLink: 'How are scores computed? → Help',
     tocFabLabel: 'To contents',
@@ -460,6 +683,11 @@ const I18N = {
     gradientHelp: 'Smooth colour within classes A and C (stronger the further from average, up to the 1st/99th percentile). The middle (B) stays solid yellow.',
     labelSubject: 'Subject',
     labelMetric: 'Metric',
+    labelBaseline: 'Reference point',
+    levelNational: 'Whole country',
+    levelVoivodeship: 'Voivodeship',
+    levelPowiat: 'County',
+    levelGmina: 'Municipality',
     labelPublic: 'Public',
     publicAll: 'All',
     publicYes: 'Yes',
@@ -493,9 +721,22 @@ const I18N = {
     popupComposite: 'Weakest of 3',
     warnShortHistory: 'Short history (< 3 years) — less certain.',
     warnVolatile: 'High year-to-year volatility — score depends on which years are included.',
-    rankingTitle: 'School ranking — Mazowieckie',
+    rankingTitle: 'School ranking',
     rankingNameSearch: 'Search by name or location',
     rankingSearchPlaceholder: 'e.g. STO, Vizja, Słupica',
+    labelRankLevel: 'Ranking level',
+    levelSchool: 'School',
+    helpRankLevel: 'Voivodeships, counties and municipalities rank across the whole country — their files already cover all of Poland. Schools rank within one county only: a national school ranking would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
+    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the school-type filter apply to the school level alone.',
+    labelVoivodeship: 'Voivodeship',
+    labelPowiatOptional: 'County (optional)',
+    labelGminaOptional: 'Municipality (optional)',
+    voivPlaceholder: '— pick a voivodeship —',
+    powiatPlaceholderAll: '— whole voivodeship —',
+    gminaPlaceholderAll: '— whole county —',
+    selectDeeperThanLevel: 'Selecting deeper than the ranking level would not narrow the list, only empty it.',
+    shardsLoading: (done, total) => `Loading school data… ${done}/${total} counties`,
+    rankingPickRegion: 'Pick a voivodeship to rank its schools — optionally narrow to a county or municipality. Schools are ranked within the selected area; showing part of the list as if it were the whole would mislead, so no ranking appears until an area is chosen.',
     lastKRow: (k) => `last ${k}`,
     rankingView: 'View',
     rankingViewParam: 'View parameter',
@@ -510,7 +751,20 @@ const I18N = {
     colPowiat: 'County',
     colPublic: 'Public',
     colNYears: 'Years',
-    colRank: 'Rank',
+    colRankNational: 'Rank in Poland',
+    helpRankNational: (n, ref) => (n == null
+      ? `Rank among every school in Poland, computed against the "${ref}" reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.`
+      : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
+    colRankInVoivodeship: 'Rank in voivodeship',
+    colRankInPowiat: 'Rank in county',
+    colRankInGmina: 'Rank in municipality',
+    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. The name and school-type filters do not change this rank.`,
+    colPctInCountry: 'Percentile in Poland',
+    colPctInVoivodeship: 'Percentile in voivodeship',
+    colPctInPowiat: 'Percentile in county',
+    helpPctInParent: (n) => `A percentile computed only among the units sharing the same parent — unlike the rank, which is national. Empty when there are fewer than ${n} of them: in a group that small a percentile says nothing.`,
+    colNSchools: 'Schools',
+    colNStudents: 'Pupils',
     colLOORange: 'Rank range (LOO)',
     colSingleRange: 'Rank range (single-year)',
     helpLOORange: 'Range of ranks when each year is left out in turn (leave-one-out jackknife). A wide range means the position depends a lot on which year is included.',
@@ -530,12 +784,25 @@ const I18N = {
     detailWeakestNote: 'Bold = the subject with the lowest score (the one that sets composite_min), regardless of the dimension shown (score/rank/percentile).',
     offMap: 'no location',
     rowsShown: (n, total) => `${n} of ${total} schools`,
+    rowsShownVoivodeship: (n, total) => `${n} of ${total} voivodeships`,
+    rowsShownPowiat: (n, total) => `${n} of ${total} counties`,
+    rowsShownGmina: (n, total) => `${n} of ${total} municipalities`,
+    regionNoSchools: 'No schools with exam results',
+    regionTooSmall: 'Reference group too small to score',
+    regionOnlyChild: 'The only unit within its parent — nothing to compare it against',
+    schoolsInRegion: (n) => `${n} ${n === 1 ? 'school' : 'schools'}`,
     dataYears: (lo, hi) => `8th-grade exam ${lo}–${hi}`,
     historyLoading: 'Loading detailed data…',
     historyFailed: 'Could not load the year-by-year data — try refreshing.',
+    regionsLoading: 'Loading the region ranking…',
+    regionsFailed: 'Could not load the region ranking — try refreshing.',
+    renderFailed: 'Could not load the map data — pan the map to try again.',
     chartYearsCaption: 'Score in each year',
     helpPopupChart: 'The chart plots the score computed from each year on its own — not the multi-year score, and not the LOO version. The multi-year score is in the table above.',
     helpMetric: 'Mean is the plain percentage score — the share of points this school\'s pupils scored on average. Normalised score is the distance from the voivodeship average of the same year: 0 is exactly average, positive values sit above it, negative below. Click to read about all the metrics.',
+    helpBaseline: 'A school\'s score is its distance from the mean of a reference group. This choice sets that group: the whole country, the voivodeship, the county or the municipality. The narrower the group, the more the score says "compared with its immediate surroundings" rather than "compared with the country".',
+    baselineFollowsZoom: 'Applies to the school view only. Above it a region\'s colour always compares it with its parent unit.',
+    baselineRawMetric: 'Mean and Median are raw percentage scores — they have no reference population, so this choice does not change them.',
     advancedMetrics: 'Advanced metrics',
     advancedMetricsHelp: 'Adds "Median" and "Difference from mean". Difference from mean orders schools exactly as the normalised score does — only the scale of the numbers changes.',
     chartDiffCaption: 'LOO vs single years — what is the difference?',
@@ -622,13 +889,13 @@ function wireLangToggle(onAfterChange) {
   });
 }
 
-// Fill the #data-years subtitle (if present) from the loaded base metadata.
+// Fill the #data-years subtitle (if present) from the loaded scale metadata.
 // Range min–max, so it auto-updates when a new exam year is added. Re-callable
 // (e.g. after a language switch) since the label text is language-dependent.
 function fillDataYears() {
   const el = document.getElementById('data-years');
-  if (!el || typeof baseData === 'undefined' || !baseData) return;
-  const years = baseData.metadata.years_in_data;
+  if (!el || !scaleData) return;
+  const years = scaleData.metadata.years_in_data;
   if (!years || !years.length) return;
   el.textContent = t('dataYears', Math.min(...years), Math.max(...years));
 }

@@ -67,6 +67,24 @@ body { display: flex; flex-direction: column; }
   cursor: default;
 }
 
+/* Region breadcrumb (map page) — a strip between the nav and the map. Its own
+   body-level row rather than a child of <main>, which is a horizontal flex row.
+   flex-shrink: 0 so it keeps its height while the map takes the rest. */
+.breadcrumb {
+  flex-shrink: 0;
+  padding: 0.35rem 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  /* One long gmina name plus its ancestors can outrun a phone's width; scroll
+     that strip rather than wrapping it into a second row that shifts the map. */
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.breadcrumb a { color: var(--accent); text-decoration: none; }
+.breadcrumb a:hover { text-decoration: underline; }
+
 /* Low-data warning icon (ranking "Lata" column) */
 .warn-icon { cursor: help; font-size: 0.85em; }
 
@@ -153,6 +171,12 @@ body.page-help { display: block; height: auto; }
 .page-map main { flex: 1; display: flex; min-height: 0; }
 #map { flex: 1; min-width: 0; height: 100%; }
 
+/* The basemap is full-colour OSM Carto, and its forest green sits close enough
+   to the class-A "#1a9850" to read as data under a semi-transparent choropleth.
+   Desaturating the tile pane keeps the colour ramp the only saturated thing on
+   the map. Labels stay legible; this is not grayscale(1). */
+.leaflet-tile-pane { filter: saturate(25%); }
+
 #panel {
   width: 320px;
   background: var(--bg-muted);
@@ -184,6 +208,11 @@ body.page-help { display: block; height: auto; }
   margin-bottom: 0.6rem;
 }
 .field > span { font-size: 0.85rem; color: var(--text-muted); }
+
+/* A note under a control saying why it is inert or limited. :empty so the
+   flex gap above it disappears when there is nothing to say. */
+.field-note { font-size: 0.8rem; line-height: 1.35; color: var(--text-muted); }
+.field-note:empty { display: none; }
 
 .field select, .field input[type="text"], .field input[type="number"] {
   padding: 0.35rem 0.5rem;
@@ -643,12 +672,20 @@ table.ranking-table tr.detail-row > td {
     row-gap: 0.45rem;
     align-items: start;
   }
-  .ranking-controls .field--metric   { grid-column: 1; grid-row: 1; }
-  .ranking-controls .field--subject  { grid-column: 2; grid-row: 1; }
-  .ranking-controls .field--view     { grid-column: 1; grid-row: 2; }
-  .ranking-controls .field--search   { grid-column: 1; grid-row: 3; }
-  .ranking-controls .radio-group     { grid-column: 2; grid-row: 2 / span 2; }
-  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 4; }
+  /* Level and the area cascade lead: they decide what the table ranks at all, so
+     they must not auto-flow to the bottom past the explicitly placed fields
+     below. The cascade reads left-to-right then down, in the order it is filled
+     in — voivodeship beside the level it qualifies, then powiat and gmina. */
+  .ranking-controls .field--level    { grid-column: 1; grid-row: 1; }
+  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 1; }
+  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 2; }
+  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 2; }
+  .ranking-controls .field--metric   { grid-column: 1; grid-row: 3; }
+  .ranking-controls .field--subject  { grid-column: 2; grid-row: 3; }
+  .ranking-controls .field--view     { grid-column: 1; grid-row: 4; }
+  .ranking-controls .field--search   { grid-column: 1; grid-row: 5; }
+  .ranking-controls .radio-group     { grid-column: 2; grid-row: 4 / span 2; }
+  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 6; }
   /* Grid columns are half the viewport, so the desktop min-widths would overflow. */
   .ranking-controls .field,
   .ranking-controls .field input[type="text"] { min-width: 0; }
@@ -670,13 +707,19 @@ table.ranking-table tr.detail-row > td {
   .ranking-meta > details { margin: 0; }
   .ranking-meta .data-years { grid-column: 1; grid-row: 1; font-size: 0.9rem; }
   .ranking-meta #ranking-info { grid-column: 2; grid-row: 1; }
-  .ranking-meta .click-hint { grid-column: 1 / -1; grid-row: 2; }
+  /* Both are full-width sentences, and each is empty in the state the other
+     shows in, so they never both take a row: the prompt replaces the table at
+     school level with no county, the note explains the greyed-out controls at a
+     region level. */
+  .ranking-meta #level-note { grid-column: 1 / -1; grid-row: 2; }
+  .ranking-meta #ranking-prompt { grid-column: 1 / -1; grid-row: 3; }
+  .ranking-meta .click-hint { grid-column: 1 / -1; grid-row: 4; }
   /* Collapsed, the settings toggle rides along in the methodology link's row, so
      it adds no height at all. Opened, it drops to a full-width row of its own —
      a half-width column would squeeze the explanation into a ribbon. */
-  .ranking-meta .meta-links { grid-column: 1; grid-row: 3; }
-  .ranking-meta .settings-block { grid-column: 2; grid-row: 3; justify-self: end; }
-  .ranking-meta .settings-block[open] { grid-column: 1 / -1; grid-row: 4; justify-self: stretch; }
+  .ranking-meta .meta-links { grid-column: 1; grid-row: 5; }
+  .ranking-meta .settings-block { grid-column: 2; grid-row: 5; justify-self: end; }
+  .ranking-meta .settings-block[open] { grid-column: 1 / -1; grid-row: 6; justify-self: stretch; }
 
   .page-map main { flex-direction: column; }
   #map { height: 60vh; flex: 0 0 60vh; }

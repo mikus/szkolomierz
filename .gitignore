@@ -1,7 +1,11 @@
 .ipynb_checkpoints/
 .venv/
-*lock*
 outputs/
+
+# LibreOffice lock files, which appear in data/ when a source xlsx is open.
+# This replaces a bare `*lock*`, whose only actual effect was to exclude uv.lock
+# — leaving CI with no way to reproduce the environment.
+.~lock.*#
 
 # Python bytecode caches
 __pycache__/
@@ -12,3 +16,6 @@ data/school_coords.csv.bak-*
 
 # Claude Code local-only settings (project settings.json IS tracked)
 .claude/settings.local.json
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

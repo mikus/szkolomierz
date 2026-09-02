@@ -10,8 +10,15 @@ data to build the app — everything about the data shape is described below.
 ## 1. What we're building
 
 A public, static, client-side web map where a parent can look up primary schools
-in the Mazowieckie voivodeship (Poland) and see how they perform on the 8th-grade
-exam (egzamin ósmoklasisty), 2021–2025.
+anywhere in Poland and see how they perform on the 8th-grade exam (egzamin
+ósmoklasisty), 2021–2026. ~12.9k schools, 16 voivodeships, 380 powiats, 2,479
+gminas.
+
+The map is a **zoom ladder**, not a single pin layer. Zoomed out it is a
+choropleth of regions — voivodeships, then powiats, then gminas — and only at the
+deepest rung does it draw individual schools. A region is always coloured by its
+distance from **the level above it**. See §5 for the ladder and §4 for what that
+distance means.
 
 - **Hosting:** GitHub Pages, serving a `docs/` directory. No backend, no server,
   no API keys, no build step required at runtime.
@@ -22,114 +29,209 @@ exam (egzamin ósmoklasisty), 2021–2025.
   out). Free, attribution required. Do not use a keyed provider.
 - **Audience:** Polish parents, mostly on mobile. Polish UI by default.
 
-The whole point is the **colour** of each school marker, which encodes a quality
-score. The map must communicate uncertainty honestly (see §7) — it deliberately
-does **not** show numeric rankings on the map itself.
+The whole point is the **colour** — of a region at the upper rungs, of a school
+marker at the deepest one — which encodes a quality score. The map must
+communicate uncertainty honestly (see §7): it deliberately does **not** show
+numeric rankings on the map itself, and where a number would be dishonest it
+shows a neutral fill and says which rule withheld it, never a bare grey.
 
 ---
 
 ## 2. Data files (already generated, in `docs/data/`)
 
 The analysis notebook writes the JSON files straight into `docs/data/`, so they
-are already in place for the app to fetch — no copy step. Paths below are relative
-to `docs/` (where `index.html` lives), so the app fetches them as `data/...`.
-There are two kinds the app uses (plus xlsx files in `output/` it ignores).
+are already in place for the app to fetch — no copy step. `docs/geo/` is written
+by `scripts/fetch_geometry.py` instead, and committed. Paths below are relative
+to `docs/` (where `index.html` lives), so the app fetches them as `data/...` and
+`geo/...`.
 
-### 2a. `data/schools-base.json` — loaded immediately on page open
+**Five artifacts**, and the split is the whole loading strategy (§8): identity,
+colour anchors and region aggregates are small and load eagerly; the per-school
+detail is ~334 MB in total and is fetched one powiat at a time.
 
-~3.8 MB raw, ~0.4 MB gzipped (GitHub Pages gzips automatically). This is the only
-file the map needs for its core function. Shape:
+### 2a. `data/schools-index.json` — loaded immediately on page open
+
+~1.8 MB raw. **Identity only, no scores.** Stored as **parallel arrays**, not an
+array of objects — index `i` is one school in every array:
 
 ```json
 {
-  "metadata": {
-    "generated_at": "2026-...",
-    "default_metric": "unit_norm_diff_mean",
-    "metrics":  ["mean", "median", "diff_mean", "unit_norm_diff_mean"],
-    "subjects": ["polski", "matematyka", "angielski", "composite_min"],
-    "years_in_data": [2021, 2022, 2023, 2024, 2025],
-    "sigma":        { "mean": {"polski": 9.31, "matematyka": 14.02, "angielski": 15.91, "composite_min": 13.30}, ... },
-    "sigma_centre": { "mean": {"polski": 63.76, "matematyka": 53.83, "angielski": 66.21, "composite_min": 53.14}, ... },
-    "slider_ranges": {
-      "mean":                {"min": 10.22, "max": 87.07, "p1": 18.31, "p99": 82.01, "step": 0.77},
-      "unit_norm_diff_mean": {"min": -0.85, "max": 0.64, "p1": -0.67, "p99": 0.51, "step": 0.015},
-      ...
-    }
-  },
-  "schools": [
-    {
-      "rspo": 8847,
-      "name": "SZKOŁA PODSTAWOWA W RACZYNACH",
-      "is_public": "Tak",          // "Tak" = public, "Nie" = private/non-public
-      "n_years": 5,
-      "miejscowosc": "Raczyny",
-      "ulica_nr": "ul. Kopernika 5",
-      "gmina": "Sokołów Podlaski",
-      "powiat": "Sokołowski",
-      "lat": 52.26853,             // null if not geocoded
-      "lon": 22.63428,             // null if not geocoded
-      "scores": {
-        "mean":                { "polski": {"score": 68.05, "rank": 529, "pct": 69.3}, "matematyka": {...}, "angielski": {...}, "composite_min": {...} },
-        "median":              { ... },
-        "diff_mean":           { ... },
-        "unit_norm_diff_mean": { ... }
-      }
-    },
-    ...
-  ]
+  "metadata": { "generated_at": "2026-..." },
+  "schools": {
+    "rspo":        [2880, 2890, ...],
+    "name":        ["PUBLICZNA SZKOŁA PODSTAWOWA IM. JANA BRZECHWY W SŁUPICY", ...],
+    "teryt":       ["1425065", ...],   // 7-char string; keep it a string
+    "powiat":      ["1425", ...],      // which shard holds this school's scores
+    "miejscowosc": ["Słupica", ...],
+    "ulica_nr":    ["84", ...],
+    "is_public":   ["Tak", ...],       // "Tak" = public, "Nie" = private/non-public
+    "n_years":     [5, ...],
+    "lat":         [51.41084, ...],    // null if no coordinates
+    "lon":         [21.38722, ...],
+    "on_map":      [true, ...]
+  }
 }
 ```
 
 Key points:
-- `schools` is an **array**. ~1,720 schools.
-- Every school has **base** score/rank/pct for **all 4 metrics × 4 subjects** in
-  `scores[metric][subject]`. So switching metric or subject, filtering by value,
-  and showing base ranks all work from this one file — no extra download.
-- `rank` is 1 = best. `pct` is 0–100, 100 = best. `score` scale depends on metric
-  (see §4).
-- `lat`/`lon` may be `null` (geocoding failed). Such schools are **not placed on
-  the map** but still appear in the ranking page (§6) marked "not on map".
+- 12,889 schools. This backs the "find a school" typeahead, the `?school=` deep
+  link and the marker metadata — all without any score download.
+- `powiat` is the join key to the shard (§2d). Given an rspo you know exactly
+  which one file to fetch.
+- `lat`/`lon` may be `null` (neither RSPO nor Nominatim placed the school; 3
+  today). Those are **not placed on the map** but still appear in the ranking
+  page (§6) marked "not on map".
 
-### 2b. `data/schools-{metric}.json` × 4 — loaded on demand (year-by-year history)
+### 2b. `data/scale.json` — loaded immediately on page open
 
-One per metric: `schools-mean.json`, `schools-median.json`,
-`schools-diff_mean.json`, `schools-unit_norm_diff_mean.json`. ~7 MB raw / ~0.8 MB
-gzipped each. **Only needed for the per-school year-by-year history and for the
-ranking page's LOO / single-year / last_k views.** Do not load on page open.
-
-Here `schools` is an **object keyed by rspo (string)**:
+~6.6 KB. Everything needed to turn a score into a colour, for every combination
+the UI can select:
 
 ```json
 {
-  "metadata": { "metric": "unit_norm_diff_mean", "years_in_data": [...] },
+  "metadata": {
+    "default_metric": "unit_norm_diff_mean",
+    "metrics":  ["mean", "median", "diff_mean", "unit_norm_diff_mean"],
+    "subjects": ["polski", "matematyka", "angielski", "composite_min"],
+    "years_in_data": [2021, 2022, 2023, 2024, 2025, 2026],
+    "slider_ranges": {
+      "national":    { "mean": {"min": 6.2, "max": 92.0, "p1": 16.93, "p99": 79.05, "step": 0.858}, ... },
+      "voivodeship": { ... }, "powiat": { ... }, "gmina": { ... }
+    }
+  },
+  "school": {
+    "national": {
+      "mean": { "polski": {"sigma": 8.6513, "sigma_centre": 61.2082, "p1": 25.125, "p99": 80.0}, ... },
+      ...
+    },
+    "voivodeship": { ... }, "powiat": { ... }, "gmina": { ... }
+  }
+}
+```
+
+- Keyed by **reference level first** (§4), then metric, then subject.
+- `p1`/`p99` are **exported, not computed in the browser**. They used to be
+  derived by sorting every loaded school's score; with per-powiat shards that
+  would sort a median of 27 schools and colour the same school differently
+  depending which shard loaded first.
+- `mean` and `median` have no reference population, so their numbers are
+  identical under all four level keys **of this file**. That is deliberate, not
+  duplication to "fix": the app reads `school[baselineLevel][metric]` whatever
+  the metric is, and four copies of a 6.6 KB file cost nothing. In the shards,
+  where the same duplication cost most of a gigabyte, they are not repeated
+  (§2d).
+
+### 2c. `data/regions-{level}.json` × 3 — the choropleth, loaded per level on demand
+
+`regions-voivodeship.json` (~6.9 KB), `regions-powiat.json` (~118 KB),
+`regions-gmina.json` (~0.77 MB). Parallel arrays again, one entry per region:
+
+```json
+{
+  "metadata": {
+    "level": "gmina",
+    "sigma":        { "unit_norm_diff_mean": {"composite_min": 0.0785, ...}, ... },
+    "sigma_centre": { "unit_norm_diff_mean": {"composite_min": -0.0519, ...}, ... },
+    "min_reference_n": 5,
+    "min_percentile_n": 8
+  },
+  "regions": {
+    "teryt":      ["020101", ...],
+    "name":       ["Bolesławiec", ...],
+    "parent":     ["0201", ...],       // "" for voivodeships
+    "lat":        [51.2, ...], "lon": [15.6, ...],
+    "n_schools":  [7, ...],
+    "n_students": [412, ...],
+    "score":     { "unit_norm_diff_mean": { "composite_min": [0.12, null, ...] }, ... },
+    "rank":      { "unit_norm_diff_mean": { "composite_min": [231, null, ...] }, ... },
+    "pct":       { "unit_norm_diff_mean": { "composite_min": [64.2, null, ...] }, ... },
+    "n_ranked":  { "unit_norm_diff_mean": { "composite_min": 2410 } }
+  }
+}
+```
+
+Key points:
+- **Row identity comes from the polygons, not from the schools.** A gmina the
+  register knows but no scored school sits in is a real row with
+  `n_schools = 0` — not a hole in the map.
+- **`sigma`/`sigma_centre` live here, per level**, not in `scale.json`. Region
+  aggregates are far less spread out than individual schools, so colouring them
+  on the school scale would leave the choropleth almost uniformly yellow.
+- `score` is `null` where a suppression rule withheld it. The UI must say
+  **which** rule (§5) — a bare grey with no explanation is what makes a
+  choropleth feel broken, and a wrong explanation is worse than none.
+- `rank` is **national** (among every region of that level with a score;
+  `n_ranked` is the denominator, and it is smaller than the row count). `pct` is
+  among **siblings** — regions sharing a `parent`. Two different denominators on
+  purpose; the column headers must name the scope.
+
+### 2d. `data/powiat/{teryt4}-{metric}.json` — one powiat's schools, on demand
+
+4 metrics × 380 powiats = 1,520 files, ~334 MB in total: median 0.14 MB, p90
+0.45 MB, largest 4.3 MB (Warszawa, `1465`, a difference metric). **Never load
+more than the one you need** — this size is precisely why the data is sharded.
+
+```json
+{
+  "metadata": { "metric": "unit_norm_diff_mean", "powiat": "1425",
+                "levels": ["national", "voivodeship", "powiat", "gmina"] },
   "schools": {
     "2880": {
-      "polski":        { "base": {...}, "loo": {...}, "single_year": {...}, "last_k": {...} },
-      "matematyka":    { ... },
-      "angielski":     { ... },
-      "composite_min": {
-        "base":        { "score": -0.18, "rank": 1023, "pct": 34.9 },
-        "loo":         { "2022": {"score": ..., "rank": ..., "pct": ...}, "2023": {...}, ... },
-        "single_year": { "2022": {...}, "2023": {...}, "2024": {...}, "2025": {...} },
-        "last_k":      { "2": {...}, "3": {...} }
-      }
+      "national":    { "polski": {...}, "matematyka": {...}, "angielski": {...},
+                       "composite_min": {
+                         "base":        { "score": -0.18, "rank": 10231, "pct": 34.9 },
+                         "loo":         { "2022": {"score": ..., "rank": ..., "pct": ...}, ... },
+                         "single_year": { "2022": {...}, "2023": {...}, ... },
+                         "last_k":      { "2": {...}, "3": {...} }
+                       } },
+      "voivodeship": { ... }, "powiat": { ... }, "gmina": { ... }
     },
     ...
   }
 }
 ```
 
-View kinds:
-- **base** — flat `{score, rank, pct}`, over all the school's years.
-- **loo** — leave-one-out; keyed by the *excluded* year. Only present if the
-  school has ≥ 2 years. Only the school's real years appear.
-- **single_year** — keyed by year; the raw score from that one year.
-- **last_k** — keyed by k (string "2", "3", ...); score over the most recent k
-  years. k ranges 2 … (n_years − 1).
+- Keyed `schools[rspo][level][subject][view]` — **reference level before
+  subject**.
+- **`metadata.levels` says which levels the file carries, and it is not always
+  all four.** `mean` and `median` are raw 0–100 aggregates with no reference
+  population, so their four blocks held four copies of one thing — checked over
+  all 25,778 school entries of those shards, byte-identical in every one. A
+  `mean` or `median` shard now carries `["voivodeship"]` alone; the two
+  difference metrics keep all four. Resolve the level **from the file**, never
+  from `baselineLevel` alone:
 
-All keys that look like years/numbers are **strings** ("2021", "3").
+  ```js
+  const lvl = shard.metadata.levels.includes(baselineLevel)
+    ? baselineLevel : shard.metadata.levels[0];
+  ```
 
-### 2c. `output/schools-{metric}.xlsx` × 4 — NOT used by the app
+  That is `shardLevel(shard)` in `app.js`, and the two shard readers
+  (`buildSchools` in `map.js`, `fetchPopulation` in `ranking.js`) both go
+  through it. The nesting depth is unchanged — `school[lvl][subject][view]`
+  still works everywhere — so no page has to know which metrics vary by level,
+  and a reference point the user picked while on a raw metric resolves to the
+  one block there is instead of reading `undefined`.
+- Ranks and percentiles inside are **national**, over every school in Poland
+  present in that view. The shard is a delivery unit, not a population: never
+  present a shard's contents as "the ranking".
+- View kinds: **base** (flat `{score, rank, pct}`, all the school's years);
+  **loo** (keyed by the *excluded* year, only if ≥ 2 years); **single_year**
+  (keyed by year); **last_k** (keyed by k, 2 … n_years − 1). All year/number keys
+  are **strings** ("2021", "3").
+
+### 2e. `geo/` — the boundary polygons the choropleth draws
+
+`geo/kraj.json` (16 voivodeship polygons), `geo/woj/{ww}.json` × 16 (each holding
+its powiats), `geo/pow/{wwpp}.json` × 380 (each holding its gminas). ~48 MB in
+total, so again: fetch only the file for the region in view.
+
+**Each file is named for a region but contains its children.** Features are keyed
+by `properties.JPT_KOD_JE`, which is the TERYT code — the same key
+`regions-{level}.json` and `schools-index.json` use. There is no file below
+gmina: at that rung the map draws school markers instead.
+
+### 2f. `output/schools-{metric}.xlsx` × 4 — NOT used by the app
 
 These live in `output/` (not `docs/`), are for human analysts (Excel), and are
 not served by the site. Ignore them in the web app.
@@ -138,14 +240,16 @@ not served by the site. Ignore them in the web app.
 
 ## 3. Coordinates
 
-`lat`/`lon` are already in `data/schools-base.json` (geocoded offline by a
+`lat`/`lon` are already in `data/schools-index.json` (resolved offline by a
 separate Python script). The app does **not** geocode schools.
 
-The offline geocoder (see `scripts/geocode_schools.py` and CLAUDE.md "Geocoding")
-**never plants a school on its town's centroid** as a fallback. If it can't
-find a street-level match inside the Mazowieckie bbox after multiple attempts,
-the school keeps `lat`/`lon` = null and stays off the map. So a missing-coords
-school is genuinely missing — not "approximately somewhere in town".
+The offline resolver (see `scripts/geocode_schools.py` and CLAUDE.md "Geocoding")
+takes coordinates from the **RSPO school register by school id** first, and only
+falls back to Nominatim address geocoding for a school RSPO cannot place. It
+**never plants a school on its town's centroid**. If no street-level match inside
+Poland is found either, the school keeps `lat`/`lon` = null and stays off the
+map. So a missing-coords school is genuinely missing — not "approximately
+somewhere in town". Today that is 3 of 12,889.
 
 The app may use a geocoding API for **one thing only**: the **address search box**
 (turning a user-typed address into a map location to pan/zoom to). Use Nominatim
@@ -166,11 +270,18 @@ differ from the offline script:
   never one request per keystroke.
 - **One request per user action**, end-user-triggered only (which an address search
   is). Display OSM attribution as the policy requires.
-- **Bias results to Poland and Mazowieckie.** Pass `countrycodes=pl` so "Kraków"
-  doesn't lose to a Kraków in another country, and a `viewbox` covering Mazowieckie
-  (approximately `19.2,53.6,23.2,51.0` as `left,top,right,bottom`) with
-  `bounded=0` so the box prefers but does not require results inside it. This
-  keeps "Krakowska 5" inside Warszawa rather than the literal city of Kraków.
+- **Bias results to Poland.** Pass `countrycodes=pl` so "Kraków" doesn't lose to
+  a Kraków in another country, and a `viewbox` covering **Poland**
+  (`14.0,55.0,24.3,48.9` as `left,top,right,bottom` — `POLAND_VIEWBOX` in
+  `app.js`, the same extent `src/school_quality/rspo.py` uses as its coarse
+  Poland gate) with `bounded=0` so the box prefers but does not require results
+  inside it. **Do not bias to one voivodeship**: the map covers all sixteen, and
+  a viewbox around one of them means a parent in Kraków typing a street name gets
+  a Warsaw result preferred. This is the opposite of the rule in
+  `scripts/geocode_schools.py`, and deliberately so: that script is resolving a
+  school whose voivodeship the exam data already names, so it can and does bound
+  each lookup to that one region. Here the input is free text and no region is
+  known.
 - This is a **deliberate** choice to use the public Nominatim API, made here with
   knowledge of its policy — not a default to reach for automatically. If the app's
   search traffic ever grows beyond light/moderate, switch to a self-hosted
@@ -183,24 +294,57 @@ the school is simply absent from the map (see §7).
 
 ## 4. Metrics and the colour scale
 
-Four metrics, exposed as a toggle. `unit_norm_diff_mean` is the default.
+Four metrics, exposed as a toggle. `unit_norm_diff_mean` is the **primary**
+metric (what the analysis endorses, and `metadata.default_metric`); the app
+**opens on `mean`**, which is a UI decision, not a statistical one — a reader
+looking for "56%" concludes an unlabelled decimal near zero is a broken page.
+The two are allowed to disagree; the frontend never reads `default_metric`.
 
 | Metric | Scale | Meaning |
 |--------|-------|---------|
-| `mean` | 0–100 | Raw mean exam score (%). Baseline, easiest to read. |
+| `mean` | 0–100 | Raw mean exam score (%). Baseline, easiest to read. **App default.** |
 | `median` | 0–100 | Raw median exam score (%). Baseline. |
-| `diff_mean` | ≈ −15…+15 | School mean minus voivodeship mean, in percentage points. |
+| `diff_mean` | ≈ −58…+29 | School mean minus its **reference level's** mean, in percentage points. |
 | `unit_norm_diff_mean` | −1…+1 | `diff_mean` normalised by ceiling/floor distance. **Primary.** |
+
+`median` and `diff_mean` sit behind an "advanced metrics" toggle
+(`BASIC_METRICS` in `app.js`): `diff_mean` ranks identically to
+`unit_norm_diff_mean` (Spearman 1.000), and `median` lost the stability test to
+`mean`. Both stay fully present in the data.
 
 Four subjects, also a toggle: `polski`, `matematyka`, `angielski`, and
 `composite_min` (the minimum of the three subject scores — "is the school weak in
 *any* subject?"). `composite_min` is the default subject.
 
+### Reference levels — a third axis the UI exposes
+
+A difference-based score is a distance from the per-year mean of **some**
+population, and which population is a user-visible choice: `national`,
+`voivodeship`, `powiat` or `gmina`. All four are exported for every school, for
+the metrics the choice can actually move (§2d), and the map's **"Punkt
+odniesienia" / "Reference point"** selector picks between them, defaulting to
+`voivodeship`.
+
+Three rules the UI must honour, none of them optional:
+
+1. **`mean` and `median` do not vary with it.** They are raw 0–100 scores with no
+   reference population — which is why their shard carries one level rather than
+   four copies of it (§2d). Say so next to the disabled-looking control rather
+   than letting a user conclude the app ignored their click.
+2. **It applies to the school view only.** Above school zoom the ladder decides
+   (§5) — a region is always compared with its parent — so the control is
+   disabled there, with a note saying why.
+3. **The colour anchors must follow it.** Reading `scale.json` at the wrong level
+   silently mis-colours every school; `scaleFor(metric, subject)` in `app.js`
+   resolves the level from the shared `baselineLevel` binding so no call site can
+   forget.
+
 ### Colour computation (client-side)
 
-For the selected (metric, subject), read `centre = metadata.sigma_centre[metric][subject]`
-and `sigma = metadata.sigma[metric][subject]`. Map a school's
-`score = scores[metric][subject].score` to one of **3 classes** (boundary ±0.33σ):
+For a **school**, read `centre` and `sigma` from
+`scale.json` → `school[baselineLevel][metric][subject]`. For a **region**, read
+them from that level's own `regions-{level}.json` → `metadata.sigma_centre` /
+`metadata.sigma`. Map the score to one of **3 classes** (boundary ±0.33σ):
 
 | Class | Condition | Flat colour |
 |-------|-----------|-------------|
@@ -218,26 +362,78 @@ LOO), so the 3 buckets are statistically distinguishable. The earlier 5-class
 scheme (extra ±1.5σ "saturated" cutoffs) was dropped — ±1.5σ was arbitrary and
 left class A empty for median-angielski (centre + 1.5σ > 100).
 
-**Gradient toggle (Ustawienia / Settings, below the legend; default off — the
+**Gradient toggle (Ustawienia / Settings, below the legend; default ON — the
 ranking class column is always gradient).** A continuous colour instead of 3 flat
 ones: **B stays flat yellow** (muddy middle, §7), **A ramps yellow→green** and
 **C ramps yellow→red** out to the **1st / 99th percentile** of the score
 distribution (robust — one outlier can't stretch the scale). `colourFor(score,
 centre, sigma, p1, p99, gradient)` + `gradient3Colour` (app.js) implement it;
-clusters colour by the same function on their mean. p1/p99 are computed
-**client-side** from the 1,720 base scores per (metric, subject) (`scoreExtent`,
-cached) — not exported. State persists like other settings (URL `gradient=1` >
-localStorage > default off). The legend shows the 3 classes labelled A/B/C
+clusters colour by the same function on their mean. p1/p99 come from
+`scale.json` (`scoreExtent` → `scaleFor`), **not** from sorting whatever is
+loaded — see §2b. State persists like other settings (URL `gradient=0` >
+localStorage > default on). The legend shows the 3 classes labelled A/B/C
 (matching the ranking's "Klasa" column).
 
-The centre differs by metric: for `mean`/`median` it's the voivodeship average
-(~54–66), for the diff-based metrics it's 0 (and composite_min uses its own
-empirical mean). That's why you must read centre/sigma from metadata rather than
-assuming 0.
+The centre differs by metric **and by level**: for `mean`/`median` it's the
+population average (≈ 50–64 by subject), for the diff-based metrics it's 0 for
+the three real subjects (centred by construction), and `composite_min` uses its
+own empirical mean under every metric — the minimum of three draws sits
+systematically below each draw, so centring it at 0 would paint almost everything
+red. Never assume 0; read centre/sigma from the file.
+
+### Region colour is an aggregate of scores, not of colours
+
+A region's score is computed from its schools' **scores** and only then coloured.
+It is **not** the average of its schools' colours, and the UI must not describe it
+that way. Under `diff_mean` and `unit_norm_diff_mean` the aggregate is **weighted
+by pupil count**, so a 300-pupil school moves a gmina more than a 30-pupil one;
+under `mean` and `median` it is a plain average across the region's schools.
 
 ---
 
 ## 5. Map view (the main page — `index.html`)
+
+### 5.0 The zoom ladder — the structure everything else hangs off
+
+Four rungs, chosen by zoom (`ZOOM_THRESHOLDS`, mirrored in
+`src/school_quality/zoom.py` so Python and JS cannot drift):
+
+| Zoom | Rung | What is drawn |
+|------|------|---------------|
+| < 8 | `country` | the 16 **voivodeship** polygons |
+| 8–9 | `voivodeship` | the focused voivodeship's **powiat** polygons |
+| 10–11 | `powiat` | the focused powiat's **gmina** polygons |
+| ≥ 12 | `gmina` | **school markers**, for the focused powiat |
+
+Two rules are not tunable even though the thresholds are:
+
+- **A region is scored against the level above it.** A voivodeship nationally, a
+  powiat within its voivodeship, a gmina within its powiat. Scoring a level
+  against itself puts every one of its regions at ~0 by construction — all
+  sixteen voivodeships identical, the national view uniformly flat, at exactly
+  the zoom where contrast is the point.
+- **A click never lands below the rung it drilled into.** A plain `fitBounds` on
+  a large region can settle one rung out (measured at 960×679: 2 of the 16
+  voivodeships and 14 powiats fit only at zoom 7), which
+  redraws the parent choropleth and resets the breadcrumb — clicking a region
+  puts you back where you started. Clamp to the rung's floor, computing the
+  target zoom with `getBoundsZoom` *before* moving. For a ring-shaped region
+  whose centre lies in its own hole, fall back to plain `fitBounds` rather than
+  focusing the enclosed city.
+
+**Breadcrumb** above the map (Polska › województwo › powiat › gmina) shows where
+you are and steps back out. Focus is derived by point-in-polygon from the map
+centre.
+
+**Neutral fill, with a reason.** Where `score` is `null`, colour the region
+neutral **and say which rule withheld it** — the three are different facts and a
+single "too small" is wrong for most of them:
+
+| Condition | Message |
+|---|---|
+| `n_schools === 0` | no schools with exam results |
+| the region is its parent's only child | only unit in its parent — nothing to compare against |
+| otherwise | reference group too small to score against |
 
 - **Layout:** full-screen map + a side panel (school search/list). On mobile the
   panel collapses to a drawer or bottom sheet. **Mobile must work well** — most
@@ -245,27 +441,39 @@ assuming 0.
 - **Top nav:** link to the ranking page (`ranking.html`). Carry the current
   metric/subject/language through the link as URL params (§9) so switching pages
   preserves the user's selection.
-- **Initial view:** fit-to-bounds across all geocoded schools (`map.fitBounds`
-  on the lat/lon array). This covers Mazowieckie naturally and adapts if the
-  dataset is ever extended. No hard-coded centre/zoom.
-- **Markers:** fixed-size coloured circles, colour from §4. Cluster at low zoom
-  (Leaflet.markercluster) — ~1,400 plotted markers need it. Do **not** size
-  markers by student count.
+- **Initial view:** Poland, `[52.0, 19.2]` at zoom 6, `minZoom: 5`. Not
+  fit-to-bounds over the markers: no markers exist until the viewport resolves to
+  a powiat, and the choropleth needs a viewport before it can decide what is in
+  focus. It is also where the breadcrumb's "Polska" root returns to — there is no
+  country polygon to fit against.
+- **Markers:** fixed-size coloured circles, colour from §4, drawn **only at the
+  deepest rung** and only for the focused powiat (a median of 27 schools, up to
+  377). Cluster them (Leaflet.markercluster) and do **not** size markers by
+  student count.
 - **Cluster colour:** the cluster's circle is coloured by the **mean of its
   children's scores** for the currently-selected (metric, subject), mapped
-  through the same 5-class scale from §4. This lets the user see "this area is
-  broadly red / green" at low zoom without expanding the cluster. Note this is
-  intentionally a mean of `composite_min` values when that subject is selected —
-  conceptually a "mean of mins", which is fine for a quick area read.
+  through the same 3-class scale from §4. This lets the user see "this cluster is
+  broadly red / green" without expanding it. Note this is intentionally a mean of
+  `composite_min` values when that subject is selected — conceptually a "mean of
+  mins", which is fine for a quick local read. It is **not** how a region's
+  colour is computed (§4): clusters are a marker-rendering convenience, region
+  aggregates are exported data.
 - **No numeric ranks on the map.** Colour only. (Rationale in §7.)
 - **Toggles:**
   - Subject: Polish / Maths / English / composite_min → recolours markers.
   - Metric: mean / median / diff_mean / unit_norm_diff_mean → recolours markers.
-  - Both work instantly from `schools-base.json`.
+  - Reference point: national / voivodeship / powiat / gmina → recolours markers
+    and reloads nothing (the loaded shard already carries every level its metric
+    has — see `metadata.levels`, §2d).
+    Disabled above the school rung, and for `mean`/`median`, with a note saying
+    why in each case (§4).
+  - Metric and subject changes recolour from the loaded shard and repaint the
+    choropleth from the loaded region file; only a metric change needs a new
+    shard fetch.
 - **Filters:**
   - **Public / private** (`is_public` == "Tak" / "Nie"). Important — see §7.
   - **Score threshold:** "show only schools scoring above X" for the current
-    (metric, subject). Use `metadata.slider_ranges[metric]` for the slider:
+    (metric, subject). Use `slider_ranges[baselineLevel][metric]` for the slider:
     `min`/`max` as hard bounds, `p1`/`p99` as sensible default handle positions,
     `step` as the increment.
     - **Reset the threshold when the user switches metric.** The scales differ
@@ -279,14 +487,17 @@ assuming 0.
   nearby schools. Fire the geocode **only on submit** (Enter / button), one
   request per submit — no search-as-you-type (Nominatim policy; see §3).
 - **Find a school (typeahead):** a *separate* box from the address search,
-  searching **our own `schools-base.json`** by name + town as the user types.
+  searching **our own `schools-index.json`** by name + town as the user types.
   This is **not** geocoding — it's a local substring filter over data already in
   the browser, so the Nominatim "no auto-complete" rule (§3) does **not** apply.
   Matching is diacritic-insensitive (NFD strip + explicit `ł→l`; "slupica" finds
   "Słupica"), capped to 15 results, keyboard-navigable (↑/↓/Enter/Esc). Picking a
-  school zooms its cluster open and opens the popup (reuses the `?school=` focus
-  path). Schools without coordinates are listed with a "(not on map)" tag and
-  hand off to the ranking (`ranking.html?school=<rspo>`), which selects them.
+  school flies to it and opens its popup (reuses the `?school=` focus path).
+  Because the index knows all 12,889 schools but the map holds one powiat's
+  markers, picking a school usually means the marker does not exist yet: record
+  it as pending and open the popup once that powiat's markers are built.
+  Schools without coordinates are listed with a "(not on map)" tag and hand off
+  to the ranking (`ranking.html?school=<rspo>`), which selects them.
 - **Popup (on marker click):** show the rich base stats this school has —
   name, public/private, town + street, n_years, and for the selected metric the
   per-subject score / rank / pct plus composite_min. Show a warning badge if
@@ -320,7 +531,7 @@ assuming 0.
     - **`removeOutsideVisibleBounds: false` on the markercluster group.** By
       default markercluster removes markers outside the buffered viewport;
       removing a marker closes its open popup, so panning the map to read a
-      popup closed it. With canvas rendering the ~1,700 markers are cheap to
+      popup closed it. With canvas rendering one powiat's markers are cheap to
       keep, so we keep them all and the popup survives a pan.
 
 ---
@@ -334,32 +545,69 @@ top nav (Mapa / Ranking), and they pass state to each other via URL params and
 localStorage (§9).
 
 A sortable, filterable **table** — this is where numeric ranks are allowed (the
-map is not). Supports both browsing the full list and searching by name or
-location — the text filter matches name, town, street, gmina **and** powiat
-(e.g. "Vizja", "STO", "powiat pruszkowski").
+map is not). A **level control** picks what is ranked: voivodeships, powiats,
+gminas or schools. The four levels are deliberately **not** symmetric, and the
+page must say so rather than leaving the user to discover it by clicking.
 
-Per school row, show (in this column order):
-- **Base rank** for the selected (metric, subject), school name, town, street,
-  public/private, n_years, score, class.
+### 6a. Region levels (voivodeship / powiat / gmina)
+
+Whole-country, straight from `regions-{level}.json` (§2c) — 2.4 / 44 / 254 KB
+gzipped, so the twenty best gminas in Poland cost nothing.
+
+Columns: **national rank**, name, parent name, `n_schools`, `n_students`, score,
+class, **percentile within the parent**.
+
+- **Rank and percentile use different denominators on purpose.** Rank is among
+  every region of that level in Poland with a score (`n_ranked`, which is smaller
+  than the row count). The percentile is among **siblings only**, blank where the
+  parent has fewer than `min_percentile_n` (8) children — today 1,042 of 2,479
+  gminas. Name both scopes in the column headers; a tooltip is not enough.
+- **Suppressed regions stay in the table**, carrying their reason (§5) rather
+  than being dropped. The table *is* the enumeration of that level's population,
+  so an omitted region reads as a region that does not exist. Sort them last
+  under every key and direction.
+- Region files carry the `base` view only, so the view / view_param / public
+  filters are disabled at these levels, with a note saying why.
+
+### 6b. School level
+
+Ranked **within one chosen powiat**, from that powiat's shard (§2d). A national
+school table would need every school's scores at every reference level in one
+file — the payload the sharding exists to avoid. So **with no powiat chosen the
+page shows a prompt**, not one powiat's worth silently presented as "the
+ranking".
+
+Per school row, in this column order:
+- **National rank** for the selected (metric, subject, view), school name, town,
+  street, public/private, n_years, score, class.
 - **LOO rank range** — min and max rank across the LOO folds, e.g. "234 (198–267)".
 - **Single-year rank range** — min and max rank across single-year views.
 - **Gmina, powiat** — placed last (administrative geography is least important,
   so it trails the score/rank/range columns); single-year range stays ahead of
   them as it carries more signal.
 
-Controls:
+**The rank is national even though the list is one powiat.** So the numbers do
+not run consecutively down the column — say that in the header help, or every
+reader will report it as a bug. There is **no percentile column at school
+level**: the useful within-parent scoping that regions get has no counterpart
+here, and a national percentile beside a one-powiat list invites a comparison the
+list does not support.
+
+This page has **no reference-point control**. It uses the stored/default level —
+which the map may have changed — so any help text must name the level *in force*,
+never "the selected reference point".
+
+### 6c. Shared controls
+
 - Metric selector and subject selector.
 - **View selector**, including **last_k** — this lets the user compare against
   external rankings. For instance, rankingedukacji.pl uses the arithmetic mean of
   the **last 3 years**, which is `metric=mean`, `view=last_k`, `view_param="3"`.
   (Their ranking also includes non-exam factors, so it won't match exactly, but
   the exam-based part is comparable.)
-- Public/private filter, name search, column sorting.
-
-Data sources for the ranking page:
-- Base ranks: from `schools-base.json` (already loaded).
-- LOO / single-year / last_k ranges: from `schools-{metric}.json` — load on
-  demand when the user opens the ranking page or picks a non-base view (§8).
+- Public/private filter, name search, column sorting. At region levels the text
+  filter matches name and parent; at school level, name, town, street, gmina
+  **and** powiat (e.g. "Vizja", "STO", "powiat pruszkowski").
 
 **Schools without coordinates** (lat/lon null) are excluded from the map but
 **must still appear** in the ranking page, marked e.g. "📍✗ brak lokalizacji",
@@ -401,24 +649,36 @@ The data has real uncertainty and the UI must not overstate precision.
 
 ## 8. Data loading strategy
 
-All data is under `data/` relative to `index.html` — fetch
-`data/schools-base.json` and `data/schools-{metric}.json`.
+The export totals ~385 MB. **Nothing may load "all the data"** — every fetch is
+scoped to what the current viewport or selection needs.
 
-- **On page load:** fetch `data/schools-base.json` only (~0.4 MB gzipped). The map,
-  both toggles, all three filters, popups' base stats, and base ranks in the
-  ranking page all work from this.
-- **Year-by-year history** (single_year / last_k / loo) and **non-base ranking
-  views** require the per-metric files (`data/schools-{metric}.json`, ~0.8 MB
-  gzipped each, ~3 MB for all four). **Do not prefetch these automatically** — on
-  a fresh visit that would burn ~3 MB of mobile data. Instead gate them behind a
-  **visible control**, e.g. a checkbox/button: "Pokaż szczegółową historię
-  (pobiera ~3 MB)". Once the user opts in, fetch the needed file(s) once and keep
-  them in memory for the session.
-- Browser HTTP caching (ETag) covers repeat visits from the same browser for
-  free; incognito / a different device re-downloads, which is why the opt-in
-  matters.
-- You may load just the currently-selected metric's file rather than all four, if
-  that's simpler — but loading all four on opt-in is also fine (~3 MB total).
+- **On page load:** `data/schools-index.json` (~1.8 MB raw) and `data/scale.json`
+  (~6.6 KB). Together they give identity, search, the `?school=` deep link and
+  every colour anchor.
+- **Per region level, on demand:** `data/regions-{level}.json` when the map (or
+  the ranking's level control) first reaches that level. Cached for the session.
+- **Per region in view, on demand:** the geometry file for the region being drawn
+  — `geo/kraj.json`, `geo/woj/{ww}.json` or `geo/pow/{wwpp}.json` (§2e). Never
+  the whole `geo/` tree.
+- **Per (powiat, metric), on demand:** `data/powiat/{teryt4}-{metric}.json`, once
+  the viewport resolves to a powiat or the user picks one in the ranking. This is
+  the big one — median 0.14 MB, up to 4.3 MB — so fetch exactly the one needed
+  and cache it.
+
+**Cache the promise, not the resolved value.** `zoomend` and `moveend` both fire
+in one interaction, so the same key is routinely requested twice before the first
+fetch lands; caching the resolved value lets both requests through, which for a
+shard means downloading megabytes twice.
+
+**One exception on rejections.** Geometry fetches must *drop* a failed promise
+before rethrowing: they fire from `zoomend`/`moveend`, where panning away and
+back **is** the natural retry, and a cached rejection would leave that region
+permanently unrendered for the rest of the session. Region and shard fetches fire
+rarely and on deliberate action, so they keep their cached rejections.
+
+Browser HTTP caching (ETag) covers repeat visits from the same browser for free;
+incognito / a different device re-downloads, which is why the per-powiat scoping
+matters even more than it looks.
 
 ---
 
@@ -432,6 +692,9 @@ via URL. Visiting the same URL from another browser must reproduce the same view
 **`index.html`** (map):
 - `metric` — one of `mean`, `median`, `diff_mean`, `unit_norm_diff_mean`.
 - `subject` — one of `polski`, `matematyka`, `angielski`, `composite_min`.
+- `baseline` — the reference level: `national`, `voivodeship`, `powiat`, `gmina`.
+- `gradient` — `0` to force the 3 flat classes (the param appears only when off,
+  since gradient is the default).
 - `public` — `tak` (show only public), `nie` (show only private), or omitted (all).
 - `threshold` — number; minimum score for the current (metric, subject). Schools
   with score below this are hidden.
@@ -441,6 +704,8 @@ via URL. Visiting the same URL from another browser must reproduce the same view
 
 **`ranking.html`** (table):
 - `metric`, `subject` — same as above.
+- `level` — `voivodeship`, `powiat`, `gmina` or omitted (`school`, the default).
+- `region` — the 4-digit powiat TERYT whose schools are listed; school level only.
 - `view` — `base`, `last_k`, `single_year`, or `loo`.
 - `view_param` — for non-base views: year (e.g. `2023`) or k (e.g. `3`).
 - `public` — same as above.
@@ -458,8 +723,9 @@ On page load, for each setting independently:
 
 1. **URL param wins** if present and valid. The tab is then "sealed" — see below.
 2. Otherwise **localStorage** value, if present.
-3. Otherwise the **built-in default** (`unit_norm_diff_mean`, `composite_min`,
-   no filters, `pl`).
+3. Otherwise the **built-in default** (`mean`, `composite_min`, baseline
+   `voivodeship`, no filters, `pl`). Note the app's default metric is `mean`
+   while the *primary* metric is `unit_norm_diff_mean` — see §4.
 
 After load, the tab writes its resolved state into its URL immediately (via
 `history.replaceState`), so a reload of this tab preserves what the user is
@@ -482,9 +748,10 @@ When the user changes a setting:
 
 ### What is persisted in localStorage
 
-- `metric`, `subject`, `lang` — the user's preferred view (carries across visits).
-- `history_optin` — boolean; if the user has clicked "Pokaż szczegółową historię"
-  before, remember the consent so they don't have to re-click on every visit.
+- `metric`, `subject`, `lang`, `baseline`, `gradient`, `advanced_metrics` — the
+  user's preferred view (carries across visits).
+- `rank_level`, `rank_region` — the ranking page's own level and powiat.
+  Namespaced because the map has no equivalent and must not pick them up.
 
 Filters (`public`, `threshold`, `min_years`, `q`, `sort`) and the selected
 school are *not* persisted across visits — they are URL-only. Visiting fresh
@@ -519,49 +786,66 @@ hiding most schools.
 ## 11. Repository placement
 
 ```
-compare-primary-schools-mazowieckie/
+szkolomierz/
 ├── docs/                       # GitHub Pages serves this
 │   ├── index.html              # the map page
 │   ├── ranking.html            # the ranking page
-│   ├── app.js                  # shared code (or split as you like)
+│   ├── help.html               # the bilingual methodology / help page
+│   ├── methodology.html        # redirect stub kept for links shared before the rename
+│   ├── app.js                  # shared: loading, colour, URL state, i18n, charts
+│   ├── map.js                  # the map page only
+│   ├── ranking.js              # the ranking page only
+│   ├── help.js                 # the help page only
 │   ├── style.css               # shared styles
-│   └── data/                   # the notebook writes these directly — do not edit by hand
-│       ├── schools-base.json
-│       ├── schools-mean.json
-│       ├── schools-median.json
-│       ├── schools-diff_mean.json
-│       └── schools-unit_norm_diff_mean.json
+│   ├── data/                   # the notebook writes these directly — do not edit by hand
+│   │   ├── schools-index.json
+│   │   ├── scale.json
+│   │   ├── regions-voivodeship.json
+│   │   ├── regions-powiat.json
+│   │   ├── regions-gmina.json
+│   │   └── powiat/{teryt4}-{metric}.json   × 4 × 380
+│   └── geo/                    # scripts/fetch_geometry.py writes these
+│       ├── kraj.json
+│       ├── woj/{ww}.json       × 16
+│       └── pow/{wwpp}.json     × 380
 └── output/                     # xlsx for analysts (not served by the site)
 ```
 
 The notebook generates the JSON straight into `docs/data/`, so there is no copy
-step — the app fetches `data/schools-base.json` etc. relative to `index.html`
-(and the same relative path works from `ranking.html` since they sit
-side-by-side). Put your two HTML files, JS, and CSS at the `docs/` root
-(alongside the `data/` folder). The HTML pages share `app.js` and `style.css`
-so common code (loading `schools-base.json`, colour mapping, URL state, i18n)
-lives in one place.
+step — the app fetches `data/schools-index.json` etc. relative to `index.html`
+(and the same relative paths work from `ranking.html` and `help.html`, since they
+sit side-by-side). The pages share `app.js` and `style.css`, so common code
+(loading, colour mapping, URL state, i18n, the small line charts) lives in one
+place; each page's own logic lives in its own file.
 
 ---
 
 ## 12. Suggested build order
 
-1. Static page + Leaflet + Carto Positron tiles, load `data/schools-base.json`, plot
-   markers coloured by the default (unit_norm_diff_mean, composite_min).
-2. Subject + metric toggles (recolour from base).
-3. Popup with base stats + warning badge for `n_years < 3`.
-4. Filters: public/private, score threshold (using slider_ranges), min n_years.
-5. Clustering (with cluster colour = mean of children) + address search + zoom.
-6. Ranking page (`ranking.html`) from base ranks (sortable/filterable table, name search).
-7. URL state & persistence (§9): wire up `history.replaceState` + localStorage
-   for both pages, plus the cross-page nav that carries metric/subject/language
-   through.
-8. On-demand loading (§8): opt-in fetch of per-metric files; add year-by-year
-   history (sparkline + table) to popups and LOO/single-year ranges + last_k
-   view to the ranking page.
-9. The LOO-range warning badge (needs a metric file loaded).
-10. Polish/English toggle.
-11. Mobile layout pass.
+1. Static page + Leaflet + Carto Positron tiles, load `data/schools-index.json`
+   and `data/scale.json`, open on Poland at zoom 6.
+2. The zoom ladder (§5.0): `levelForZoom`, point-in-polygon focus, geometry
+   fetched per region in view, the choropleth from `regions-{level}.json`.
+3. Region tooltips, including the three neutral-fill reasons; the breadcrumb; the
+   click-never-lands-below-its-rung clamp.
+4. School markers at the deepest rung: fetch the focused powiat's shard, join to
+   the index, colour by §4.
+5. Subject + metric toggles, then the reference-point selector (recolour from the
+   loaded shard; disabled above the school rung and for `mean`/`median`).
+6. Popup with base stats + warning badge for `n_years < 3`.
+7. Filters: public/private, score threshold (using `slider_ranges[level][metric]`),
+   min n_years.
+8. Clustering (cluster colour = mean of children) + address search + "find a
+   school" typeahead over the index.
+9. Ranking page (`ranking.html`): region levels from `regions-{level}.json`
+   first — they are whole-country and small — then school level behind a powiat
+   picker.
+10. URL state & persistence (§9): `history.replaceState` + localStorage on both
+    pages, plus the cross-page nav that carries metric/subject/baseline/language.
+11. Year-by-year history (sparkline + table) in popups; LOO/single-year ranges and
+    the last_k view in the ranking; the LOO-range warning badge.
+12. Polish/English toggle.
+13. Mobile layout pass.
 
-Build incrementally; steps 1–7 give a fully useful, shareable map and ranking
-from a single 0.4 MB download.
+Build incrementally; steps 1–4 already give a working national choropleth that
+drills down to real schools, on ~1.8 MB plus one shard.
