@@ -84,7 +84,8 @@ const POLAND_VIEWBOX = '14.0,55.0,24.3,48.9';
 //
 // 3 classes by distance from the per-(metric,subject) centre, boundary ±0.33σ:
 //   A = good   (z >  +0.33σ)
-//   B = medium (±0.33σ — the "muddy middle"; kept flat yellow, honest)
+//   B = medium (±0.33σ — the "muddy middle"; a class, not a flat colour:
+//              the gradient still shades every score inside it)
 //   C = weak   (z <  −0.33σ)
 // Index 0=weak(C) … 2=good(A). The ±0.33σ band is wider than the multi-year
 // base score's own noise (~0.12σ from LOO), so the three buckets are
@@ -123,21 +124,30 @@ function textOn(hex) {
   return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.5 ? '#222' : '#fff';
 }
 
-// Continuous colour: flat yellow in B (±0.33σ, muddy middle); A ramps
-// yellow→green→satGreen out to p99; C ramps yellow→red→satRed out to p1;
-// saturates beyond p1/p99. p1/p99 are the robust extremes (not min/max), so one
-// outlier school can't stretch the scale and wash everyone else out.
+// Continuous colour from p1 to p99, with yellow at the centre: above it the
+// ramp runs yellow→green→satGreen out to p99, below it yellow→red→satRed out to
+// p1, saturating beyond either. p1/p99 are the robust extremes (not min/max),
+// so one outlier school can't stretch the scale and wash everyone else out.
+//
+// The ±0.33σ middle band used to render flat yellow — the "muddy middle" rule.
+// The cost of that was invisible until the reference-level control existed: a
+// school inside the band could not change colour for ANY reason, so switching
+// the reference point left most of the map identical even though the scores
+// under it had moved (measured: 348 of Warszawa's 377 schools keep their class
+// between the voivodeship and national levels, and every one of those in band B
+// rendered the same yellow at both). Every score now maps to its own colour.
+//
+// The A/B/C letters are unaffected: classIndex3 still cuts at ±0.33σ, the legend
+// still names three classes, and the flat-colour mode (gradient toggle off) is
+// untouched. What changes is only that the gradient no longer has a plateau.
 function gradient3Colour(score, centre, sigma, p1, p99) {
   if (score == null || sigma == null || sigma === 0) return COLOURS.missing;
-  const lo = centre - CLASS_BOUND * sigma;
-  const hi = centre + CLASS_BOUND * sigma;
-  if (score >= lo && score <= hi) return COLOURS.yellow;
-  if (score > hi) {
-    const t = Math.min(1, (score - hi) / Math.max(1e-9, p99 - hi));
+  if (score >= centre) {
+    const t = Math.min(1, (score - centre) / Math.max(1e-9, p99 - centre));
     return t <= 0.5 ? hexLerp(COLOURS.yellow, COLOURS.green, t / 0.5)
                     : hexLerp(COLOURS.green, COLOURS.satGreen, (t - 0.5) / 0.5);
   }
-  const t = Math.min(1, (lo - score) / Math.max(1e-9, lo - p1));
+  const t = Math.min(1, (centre - score) / Math.max(1e-9, centre - p1));
   return t <= 0.5 ? hexLerp(COLOURS.yellow, COLOURS.red, t / 0.5)
                   : hexLerp(COLOURS.red, COLOURS.satRed, (t - 0.5) / 0.5);
 }
@@ -487,7 +497,7 @@ const I18N = {
     sectionLegend: 'Legenda',
     sectionSettings: 'Ustawienia',
     gradientToggle: 'Gradient koloru',
-    gradientHelp: 'Płynne przejście koloru w klasach A i C (im dalej od średniej, tym mocniej, aż do 1.–99. percentyla). Środek (B) pozostaje jednolicie żółty.',
+    gradientHelp: 'Płynne przejście koloru: im dalej od średniej, tym mocniejszy odcień, aż do 1. i 99. percentyla. Każdy wynik ma swój odcień, także w środkowej klasie B.',
     labelSubject: 'Przedmiot',
     labelMetric: 'Metryka',
     labelBaseline: 'Punkt odniesienia',
@@ -512,7 +522,7 @@ const I18N = {
     legendGood: 'Powyżej średniej (> +0.33σ)',
     legendMedium: 'W okolicy średniej (±0.33σ)',
     legendWeak: 'Poniżej średniej (< −0.33σ)',
-    legendGradientNote: 'W klasach A i C kolor jest ciągły — im dalej od średniej, tym mocniejszy, aż do 1. i 99. percentyla. Dlatego na mapie widać więcej odcieni niż trzy. Klasa B zostaje jednolicie żółta.',
+    legendGradientNote: 'Kolor jest ciągły — im dalej od średniej, tym mocniejszy, aż do 1. i 99. percentyla. Dlatego na mapie widać więcej odcieni niż trzy: dwie szkoły w tej samej klasie mogą się różnić odcieniem, jeśli różnią się wynikiem.',
     metric_mean: 'Średnia',
     metric_median: 'Mediana',
     metric_diff_mean: 'Różnica od średniej',
@@ -680,7 +690,7 @@ const I18N = {
     sectionLegend: 'Legend',
     sectionSettings: 'Settings',
     gradientToggle: 'Colour gradient',
-    gradientHelp: 'Smooth colour within classes A and C (stronger the further from average, up to the 1st/99th percentile). The middle (B) stays solid yellow.',
+    gradientHelp: 'Smooth colour: the further from average, the stronger the shade, up to the 1st and 99th percentile. Every score has its own shade, including inside the middle class B.',
     labelSubject: 'Subject',
     labelMetric: 'Metric',
     labelBaseline: 'Reference point',
@@ -702,7 +712,7 @@ const I18N = {
     legendGood: 'Above average (> +0.33σ)',
     legendMedium: 'Around average (±0.33σ)',
     legendWeak: 'Below average (< −0.33σ)',
-    legendGradientNote: 'Within classes A and C the colour is continuous — the further from average, the stronger, up to the 1st and 99th percentile. That is why the map shows more than three shades. Class B stays a flat yellow.',
+    legendGradientNote: 'The colour is continuous — the further from average, the stronger, up to the 1st and 99th percentile. That is why the map shows more than three shades: two schools in the same class can differ in shade if their scores differ.',
     metric_mean: 'Mean',
     metric_median: 'Median',
     metric_diff_mean: 'Difference from mean',

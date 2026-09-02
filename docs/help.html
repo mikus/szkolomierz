@@ -347,7 +347,8 @@
         <p><strong>Średnia i Mediana nie zmieniają się od tego wyboru.</strong> To surowy
           wynik procentowy w skali 0–100 — nie ma w nim żadnej grupy odniesienia, którą
           dałoby się podmienić. Zmienia się tylko to, co odejmujemy, a tu nie odejmujemy
-          niczego.</p>
+          niczego. Dlatego przy tych dwóch metrykach lista jest nieaktywna — zamiast
+          pozwalać ją zmienić i nie zrobić nic.</p>
         <p>Wybór dotyczy <strong>wyłącznie widoku szkół</strong>. Wyżej, gdy mapa koloruje
           regiony, o porównaniu decyduje drabinka z sekcji <a href="#levels">Poziomy
           mapy</a> — region zawsze porównujemy z jednostką nadrzędną — więc lista jest
@@ -366,7 +367,9 @@
           looking at.</p>
         <p><strong>Mean and Median do not change with this choice.</strong> They are raw
           0–100 percentage scores with no reference population to swap out. The choice only
-          changes what gets subtracted, and here nothing is subtracted.</p>
+          changes what gets subtracted, and here nothing is subtracted. So under those two
+          metrics the control is disabled, rather than letting you change it and doing
+          nothing.</p>
         <p>It applies to the <strong>school view only</strong>. Higher up, where the map
           colours regions, the ladder in <a href="#levels">The map's levels</a> decides
           instead — a region is always compared with its parent — so the control is
@@ -445,9 +448,11 @@
         </ul>
         <p>Etykiety są celowo neutralne („powyżej / w okolicy / poniżej średniej", nie
           „dobra / słaba") — szkoła tuż za granicą nie zasługuje na ocenę, której dane nie
-          udźwigną. Domyślnie kolor jest <strong>gradientem</strong>: B zostaje żółte, a A i C
-          płynnie przechodzą w ciemną zieleń lub czerwień, im dalej od środka — aż do 1.
-          i 99. percentyla. W ustawieniach mapy można przełączyć na 3 płaskie klasy.</p>
+          udźwigną. Domyślnie kolor jest <strong>gradientem</strong>: przechodzi płynnie od
+          żółtego w środku do ciemnej zieleni lub czerwieni, im dalej od niego — aż do 1.
+          i 99. percentyla. Każdy wynik ma więc swój odcień, także wewnątrz klasy B, dzięki
+          czemu zmiana punktu odniesienia jest widoczna na mapie. W ustawieniach mapy można
+          przełączyć na 3 płaskie klasy.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Colour and classes</h2>
@@ -460,9 +465,11 @@
         </ul>
         <p>The labels are deliberately neutral ("above / around / below average", not "good /
           weak") — a school just past a boundary does not deserve a verdict the data cannot
-          support. By default the colour is a <strong>gradient</strong>: B stays yellow, while A and C
-          shade smoothly into deep green or red the further from the centre — out to the 1st
-          and 99th percentile. Map settings let you switch to 3 flat classes.</p>
+          support. By default the colour is a <strong>gradient</strong>: it shades smoothly from
+          yellow at the centre into deep green or red the further from it — out to the 1st and
+          99th percentile. Every score therefore has its own shade, class B included, which is
+          what makes a change of reference point visible on the map. Map settings let you
+          switch to 3 flat classes.</p>
       </div>
     </section>
 

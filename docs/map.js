@@ -268,6 +268,19 @@
     // just opened for the searched-for school, and the popupclose handler then
     // cleared state.selectedSchool and dropped ?school= from the URL.
     if (key === renderedSchoolsKey || key === renderingSchoolsKey) return;
+    // Past this point a rebuild WILL happen, and it tears every marker down —
+    // which closes any open popup, whereupon the popupclose handler clears
+    // state.selectedSchool. So the school has to be captured here, before the
+    // teardown, rather than restored after it: by then there is nothing left to
+    // read. Handing it to pendingSchool routes the reopen through buildSchools'
+    // own openPendingSchool, which is the path a ?school= deep link already
+    // takes, cluster guard included.
+    //
+    // This covers a metric change and a reference-level change, the two inputs
+    // in the key above. A subject change is not in the key and so does not
+    // rebuild: its popup survives, and onSubjectChange's reopenSelectedPopup
+    // refreshes it in place instead.
+    if (state.selectedSchool != null) pendingSchool = state.selectedSchool;
     renderingSchoolsKey = key;
     try {
       await buildSchools(powiat, key);
@@ -560,9 +573,16 @@
 
   function syncSelectorAvailability(level) {
     const applies = CHILD_OF[level] === null;
-    baselineSelect.disabled = !applies;
+    // Two independent reasons this control can do nothing, and it is disabled
+    // for both rather than only annotated for one. A live-looking selector that
+    // changes nothing when used reads as a broken page — which is exactly what
+    // it was reported as — and the raw-metric case is the worse of the two,
+    // because `mean` is the DEFAULT metric, so it is the first thing a reader
+    // reaches for this control on.
+    const raw = RAW_METRICS.includes(state.metric);
+    baselineSelect.disabled = !applies || raw;
     baselineNote.textContent = !applies ? t('baselineFollowsZoom')
-      : RAW_METRICS.includes(state.metric) ? t('baselineRawMetric')
+      : raw ? t('baselineRawMetric')
       : '';
   }
 
@@ -710,6 +730,14 @@
   }
 
   function refreshFilters() {
+    // clearLayers closes any open popup, and the popupclose handler nulls
+    // state.selectedSchool — so the selection has to be read BEFORE the clear,
+    // not after, or every caller reads null. Remembering it here rather than in
+    // each caller is what makes a metric or subject change keep the popup: both
+    // call this before renderLevel, so by the time the rebuild's own capture
+    // runs there is nothing left for it to find.
+    const keep = state.selectedSchool;
+
     clusterGroup.clearLayers();
     const visible = [];
     for (const s of loadedSchools) {
@@ -719,6 +747,16 @@
     }
     clusterGroup.addLayers(visible);
     updateFilterSummary(visible.length);
+
+    // Reopen on the marker that survived the clear. Where the school is not in
+    // the cluster — a rebuild is about to replace these markers, or the current
+    // filters exclude it — hand it to pendingSchool instead, which openPendingSchool
+    // picks up after the next build. Nothing is forced open: a school the filters
+    // exclude stays closed, same as the deep-link path.
+    if (keep == null || state.selectedSchool != null) return;
+    const marker = markersByRspo.get(keep);
+    if (marker && clusterGroup.hasLayer(marker)) marker.openPopup();
+    else pendingSchool = keep;
   }
 
   function updateFilterSummary(nVisible) {

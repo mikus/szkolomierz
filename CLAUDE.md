@@ -320,9 +320,9 @@ old 5-class scheme (extra ±1.5σ "saturated" cutoffs) was dropped — ±1.5σ w
 arbitrary and median-angielski left class A empty (centre + 1.5σ > 100).
 
 A **gradient toggle** (map "Ustawienia", default **on**; ranking class column
-always gradient) renders a continuous colour instead of 3 flat ones: B stays flat
-yellow (muddy middle, §7), A ramps yellow→green and C ramps yellow→red out to the
-**1st / 99th percentile** of the actual score distribution (robust to outliers,
+always gradient) renders a continuous colour instead of 3 flat ones: it ramps from
+yellow at the centre out to green above and red below, to the **1st / 99th
+percentile** of the actual score distribution (robust to outliers,
 so one extreme school can't stretch the scale).
 
 **p1/p99 are exported, not computed in the browser.** They used to be derived
