@@ -52,7 +52,8 @@ Two further rules follow, and both are load-bearing:
 - **Small populations are withheld, not shown** (`suppression.py`,
   `aggregate.py`): a score needs a reference population of at least
   `MIN_REFERENCE_N = 5` schools *and* a parent with more than one child; a
-  percentile needs `MIN_PERCENTILE_N = 8` siblings. The two gate different
+  percentile needs `MIN_PERCENTILE_N = 8` siblings *with a score* — the ones
+  actually ranked, not every child polygon. The two gate different
   populations and must not be conflated — see `aggregate.py`'s module docstring.
 
 ---

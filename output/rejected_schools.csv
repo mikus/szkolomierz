@@ -179,6 +179,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 110041,SZKOŁA PODSTAWOWA W POMLEWIE IM.BŁ.KSIĘDZA JERZEGO POPIEŁUSZKI,2021,"polski, matematyka, angielski",5.0,,,5.0,,,5.0,,
 113999,SZKOŁA PODSTAWOWA W NOWEJ WSI PRZYWIDZKIEJ,2021,"polski, matematyka, angielski",7.0,,,7.0,,,7.0,,
 28577,SZKOŁA PODSTAWOWA IM. KSIĘDZA PRAŁATA JÓZEFA WALĄGA W KOŹLINACH,2021,"polski, matematyka, angielski",9.0,,,9.0,,,9.0,,
+5959,PIERWSZA SZKOŁA SPOŁECZNA PODSTAWOWA IM.DZIECI ZJEDNOCZONEJ EUROPY,2021,"polski, matematyka, angielski",,,,,,,1.0,,
 196351,SZKOŁA PODSTAWOWA DLA DOROSŁYCH W GDYNI,2021,"polski, matematyka, angielski",8.0,,,8.0,,,8.0,,
 70780,SZKOŁA PODSTAWOWA IM. JANA PAWŁA II W PROKOWIE,2021,"polski, matematyka, angielski",6.0,,,6.0,,,6.0,,
 70773,PUBLICZNA SZKOŁA PODSTAWOWA W POMIECZYŃSKIEJ HUCIE,2021,"polski, matematyka, angielski",9.0,,,9.0,,,9.0,,
@@ -388,6 +389,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 263540,SZKOŁA PODSTAWOWA IM. ADAMA MICKIEWICZA W KOCIERZU MOSZCZANICKIM,2021,"polski, matematyka, angielski",5.0,,,5.0,,,5.0,,
 263543,SZKOŁA PODSTAWOWA IM. GÓRALI ŻYWIECKICH W OKRAJNIKU,2021,"polski, matematyka, angielski",7.0,,,7.0,,,7.0,,
 17087,SZKOŁA PODSTAWOWA W PEWLI MAŁEJ,2021,"polski, matematyka, angielski",7.0,,,7.0,,,6.0,,
+268885,NIEPUBLICZNA SZKOŁA PODSTAWOWA MISTRZOSTWA SPORTOWEGO IM. JANA PAWŁA II W KOSZARAWIE WRAZ Z INTERNATEM W ŻYWCU,2021,"polski, matematyka",,,,,,,43.0,25.0,32.18604651162791
 14017,SZKOŁA PODSTAWOWA POMNIK 1000-LECIA NR 1235 IM.BOHATERÓW II WOJNY ŚWIATOWEJ W WOSKRZENICACH DUŻYCH,2021,angielski,10.0,62.0,62.8,10.0,56.0,50.8,9.0,,
 14024,SZKOŁA PODSTAWOWA IM.KS.STANISŁAWA BRZÓSKI W DOKUDOWIE,2021,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 14016,SZKOŁA PODSTAWOWA IM.JANINY PORAZIŃSKIEJ W STYRZYŃCU,2021,"polski, matematyka, angielski",7.0,,,7.0,,,7.0,,
@@ -549,6 +551,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 88707,SZKOŁA PODSTAWOWA IM.MARII KUNCEWICZOWEJ W RZECZYCY,2021,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 268420,SZKOŁA PODSTAWOWA SPECJALNA W MŁODZIEŻOWYM OŚRODKU SOCJOTERAPII W ALBRECHTÓWCE,2021,"polski, matematyka, angielski",7.0,,,7.0,,,7.0,,
 72969,SZKOŁA PODSTAWOWA W STARYM POŻOGU,2021,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
+263710,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ZESPOLE SZKÓŁ AGROBIZNESU IM. MACIEJA RATAJA W KLEMENTOWICACH,2021,"polski, matematyka",,,,,,,19.0,29.0,45.68421052631579
 68622,SPOŁECZNA SZKOŁA PODSTAWOWA IM CHRYSTIANA PIOTRA AIGNERA W PUŁAWACH,2021,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 87636,SPECJALNA SZKOŁA PODSTAWOWA NR 13 W MŁODZIEŻOWYM OŚRODKU WYCHOWAWCZYM W PUŁAWACH,2021,"polski, matematyka, angielski",5.0,,,5.0,,,5.0,,
 129140,"NIEPUBLICZNA  INTEGRACYJNA SZKOŁA PODSTAWOWA ""EDU TERAPEUTICA""",2021,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -3108,6 +3111,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 66311,SZKOŁA PODSTAWOWA W GRÓDKU SZLACHECKIM,2022,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 103519,PUBLICZNA SZKOŁA PODSTAWOWA W JEZIORZE,2022,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 88707,SZKOŁA PODSTAWOWA IM.MARII KUNCEWICZOWEJ W RZECZYCY,2022,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+263710,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ZESPOLE SZKÓŁ AGROBIZNESU IM. MACIEJA RATAJA W KLEMENTOWICACH,2022,"polski, matematyka",,,,,,,16.0,68.0,63.625
 71102,SZKOŁA PODSTAWOWA W LISIOWÓLCE,2022,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 268348,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ZWIARTOWIE,2022,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 8751,SZKOŁA PODSTAWOWA W PASIEKACH,2022,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -3159,6 +3163,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 3693,PUBLICZNA SZKOŁA PODSTAWOWA W MOSTKACH-SOKALACH,2022,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 61628,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ŻOHATYNIE,2022,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 41868,SZKOŁA PODSTAWOWA IM. PIOTRA MICHAŁOWSKIEGO W BOLESTRASZYCACH,2022,angielski,6.0,72.5,72.83333333333333,6.0,80.0,70.0,3.0,,
+262781,NIEPUBLICZNA SZKOŁA PODSTAWOWA MISTRZOSTWA SPORTOWEGO W HADLACH SZKLARSKICH,2022,"polski, matematyka, angielski",,,,,,,2.0,,
 48854,SZKOŁA PODSTAWOWA W ULANICY,2022,angielski,5.0,31.0,41.8,5.0,32.0,45.6,4.0,,
 17129,SZKOŁA PODSTAWOWA IM. 21 BRYGADY STRZELCÓW PODHALAŃSKICH W BRZEZÓWCE,2022,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 133268,SZKOŁA PODSTAWOWA SPECJALNA NR 32 W RZESZOWIE,2022,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -3666,6 +3671,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 61628,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ŻOHATYNIE,2023,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 28268,PUBLICZNA SZKOŁA PODSTAWOWA IM. MARII KONOPNICKIEJ W KNIAŻYCACH,2023,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 130188,SZKOŁA PODSTAWOWA IM. SYBIRAKÓW W BACHOWIE,2023,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+262781,NIEPUBLICZNA SZKOŁA PODSTAWOWA MISTRZOSTWA SPORTOWEGO W HADLACH SZKLARSKICH,2023,"polski, matematyka",,,,,,,5.0,20.0,48.4
 20368,SZKOŁA PODSTAWOWA W RUDCE IM. IGNACEGO KRASICKIEGO RUDKA 79 37-530 SIENIAWA,2023,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 105723,SZKOŁA PODSTAWOWA W JAGIELLE,2023,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 478877,SZKOŁA PODSTAWOWA W ULANICY,2023,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -4013,6 +4019,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 5130,SZKOŁA PODSTAWOWA W KRZEMIENIEWIE,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 34753,SZKOŁA PODSTAWOWA W STARYM GRONOWIE,2024,polski,4.0,,,5.0,36.0,35.2,5.0,36.0,45.0
 15253,SZKOŁA PODSTAWOWA NR 60 W GDAŃSKU,2024,"polski, matematyka",4.0,,,4.0,,,12.0,63.5,60.5
+86063,ELEMENTARY INTERNATIONAL SCHOOL OF GDANSK/MIĘDZYNARODOWA SZKOŁA PODSTAWOWA W GDAŃSKU,2024,"polski, matematyka",,,,,,,5.0,85.0,86.2
 9117,CENTRUM KSZTAŁCENIA ZAWODOWEGO I USTAWICZNEGO NR 1 SZKOŁA PODSTAWOWA DLA DOROSŁYCH W GDAŃSKU,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 133139,ZESPÓŁ SZKÓŁ OGÓLNOKSZTAŁCĄCYCH NR 6 SZKOŁA PODSTAWOWA MISTRZOSTWA SPORTOWEGO NR 94 IM. HANZY W GDAŃSKU,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 272459,NIEPUBLICZNA SZKOŁA PODSTAWOWA ŻYRAFIA OSADA,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -4105,6 +4112,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 12352,SZKOŁA PODSTAWOWA IM. ŚW. KRÓLOWEJ JADWIGI W MIĘDZYBRODZIU ŻYWIECKIM,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 122201,ZESPÓŁ SZKOLNO-PRZEDSZKOLNY -SZKOŁA PODSTAWOWA NR2 W PEWLI WIELKIEJ,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 56502,SZKOŁA PODSTAWOWA NR 1 W PEWLI WIELKIEJ,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
+268885,NIEPUBLICZNA SZKOŁA PODSTAWOWA MISTRZOSTWA SPORTOWEGO IM. JANA PAWŁA II WRAZ Z INTERNATEM W ŻYWCU,2024,"polski, matematyka, angielski",,,,,,,2.0,,
 14024,SZKOŁA PODSTAWOWA IM.KS.STANISŁAWA BRZÓSKI W DOKUDOWIE,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 14026,SZKOŁA PODSTAWOWA IM.WANDY CHOTOMSKIEJ W ORTELU KSIĄŻĘCYM DRUGIM,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 24411,SZKOŁA PODSTAWOWA IM. KS. KARD. STEFANA WYSZYŃSKIEGO W SZÓSTCE,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -4113,6 +4121,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 7218,SZKOŁA PODSTAWOWA W MOTWICY,2024,"polski, matematyka, angielski",4.0,,,4.0,,,3.0,,
 59698,SZKOŁA PODSTAWOWA IM.JULIANA URSYNA NIEMCEWICZA W NEPLACH,2024,angielski,6.0,72.0,66.16666666666667,6.0,74.0,60.666666666666664,4.0,,
 121584,NIEPUBLICZNA SZKOŁA PODSTAWOWA,2024,"polski, matematyka, angielski",4.0,,,4.0,,,3.0,,
+9947,SZKOŁA PODSTAWOWA W BEREZÓWCE,2024,"polski, matematyka, angielski",,,,,,,,,
 478973,SZKOŁA PODSTAWOWA W HUSZCZY,2024,"polski, matematyka, angielski",3.0,,,3.0,,,2.0,,
 43700,SZKOŁA PODSTAWOWA IM. HETMANA JANA ZAMOYSKIEGO W BUKOWINIE,2024,"polski, matematyka, angielski",3.0,,,3.0,,,4.0,,
 43701,SAMORZĄDOWA SZKOŁA PODSTAWOWA IM. JANA PAWŁA II W GOŹDZIE LIPIŃSKIM,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
@@ -4167,6 +4176,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 88709,SPOŁECZNA SZKOŁA PODSTAWOWA W SKOWIESZYNKU,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 268420,SZKOŁA PODSTAWOWA SPECJALNA W MŁODZIEŻOWYM OŚRODKU SOCJOTERAPII W ALBRECHTÓWCE,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 93027,ZESPÓŁ PLACÓWEK OŚWIATOWYCH W KLEMENTOWICACH SZKOŁA PODSTAWOWA,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
+263710,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ZESPOLE SZKÓŁ AGROBIZNESU IM. MACIEJA RATAJA W KLEMENTOWICACH,2024,"polski, matematyka",,,,,,,8.0,74.0,62.875
 129140,"NIEPUBLICZNA INTEGRACYJNA SZKOŁA PODSTAWOWA ""EDU TERAPEUTICA""",2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 263256,SZKOŁA PODSTAWOWA W WOLI CHOMEJOWEJ,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 478712,SZKOŁY ŚW. TOMASZA Z AKWINU - SZKOŁA PODSTAWOWA,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -4537,6 +4547,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 7976,SZKOŁA PODSTAWOWA IM. STEFANA ŻEROMSKIEGO W NIEGOSŁAWICACH,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 7974,SAMORZĄDOWA SZKOŁA PODSTAWOWA IM. ADAMA MICKIEWICZA W LUBCZY,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 3344,SZKOŁA PODSTAWOWA IM. BATALIONÓW CHŁOPSKICH W CZARNOCINIE,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+7420,SZKOŁA PODSTAWOWA NR 12 IM. BOHATERÓW WESTERPLATTE W KIELCACH,2024,"polski, matematyka",,,,,,,20.0,54.5,57.75
 72339,SZKOŁA PODSTAWOWA W WOLI SZCZYGIEŁKOWEJ,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 119637,SZKOŁA PODSTAWOWA W ŚNIADCE,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 478984,SZKOŁA PODSTAWOWA W LEŚNEJ,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -4614,6 +4625,8 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 4750,SZKOŁA PODSTAWOWA W BRODACH,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 72847,SZKOŁA PODSTAWOWA SPECJALNA W ZESPOLE SZKÓŁ SPECJALNYCH IM. KAWALERÓW MALTAŃSKICH W ZABORZE PRZY CENTRUM LECZENIA DZIECI I MŁODZIEŻY,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 50841,SZKOŁA PODSTAWOWA IM. BOHATERÓW POWSTANIA WARSZAWSKIEGO W OŁOBOKU,2024,angielski,10.0,48.0,37.7,10.0,28.0,23.6,4.0,,
+196429,SZKOŁA PODSTAWOWA NR 1 IM. MIKOŁAJA KOPERNIKA W ŚWIEBODZINIE,2024,"polski, matematyka, angielski",,,,,,,1.0,,
+196430,SZKOŁA PODSTAWOWA NR 3 IM. CZESŁAWA NIEMENA W ŚWIEBODZINIE,2024,"polski, matematyka",,,,,,,5.0,62.0,55.2
 52480,SZKOŁA PODSTAWOWA IM. PIERWSZYCH OSADNIKÓW W GOZDNICY,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 80271,SZKOŁA PODSTAWOWA IM. JANA PAWŁA II W CHICHACH,2024,"polski, matematyka, angielski",4.0,,,4.0,,,1.0,,
 274861,NIEPUBLICZNA SZKOŁA PODSTAWOWA W WIECHLICACH,2024,angielski,16.0,13.0,13.375,16.0,24.0,24.75,,,
@@ -4640,6 +4653,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 21291,SZKOŁA PODSTAWOWA IM.J.H.DĄBROWSKIEGO,2024,"polski, matematyka, angielski",1.0,,,1.0,,,,,
 43977,NIEPUBLICZNA SZKOŁA PODSTAWOWA W BACHORZEWIE,2024,angielski,5.0,49.0,58.4,5.0,32.0,44.0,2.0,,
 91921,NIEPUBLICZNA SZKOŁA PODSTAWOWA IM. JANA PAWŁA II W SIEDLEMINIE,2024,"polski, matematyka",4.0,,,4.0,,,5.0,38.0,49.2
+83911,NIEPUBLICZNA SZKOŁA PODSTAWOWA IM. JANA HEWELIUSZA W POTARZYCY,2024,"polski, matematyka, angielski",,,,,,,4.0,,
 22785,SZKOŁA PODSTAWOWA IM. ARKADEGO FIEDLERA W SŁAWOSZEWIE Z SIEDZIBĄ W PARZEWIE,2024,angielski,11.0,51.0,52.72727272727273,11.0,32.0,34.90909090909091,1.0,,
 118844,SZKOŁA PODSTAWOWA IM. POLSKI NIEPODLEGŁEJ W RYCHNOWIE,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 21585,PUBLICZNA SZKOŁA PODSTAWOWA STOWARZYSZENIA PRZYJACIÓŁ SZKÓŁ KATOLICKICHH,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
@@ -4693,8 +4707,10 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 91131,SZKOŁA PODSTAWOWA W KARMINIE,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 91157,SZKOŁA PODSTAWOWA W GALEWIE,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 129789,SZKOŁA PODSTAWOWA IM. POWSTAŃCÓW WIELKOPOLSKICH W KUCHARACH,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
+86024,SZKOŁA PODSTAWOWA SPECJALNA NR 113,2024,"polski, matematyka, angielski",,,,,,,1.0,,
 124175,SZKOŁA PODSTAWOWA MONTESSORI INTERNATIONAL SCHOOL,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 124811,SZKOŁA PODSTAWOWA NR 98 W ZAKŁADZIE POPRAWCZYM W POZNANIU,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
+133659,SZKOŁA PODSTAWOWA NR 2 Z ODDZIAŁAMI DWUJĘZYCZNYMI,2024,"polski, matematyka",,,,,,,5.0,51.0,54.8
 131479,NIEPUBLICZNA SZKOŁA PODSTAWOWA O!MEGA,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 28584,EUREKA SZKOŁA PODSTAWOWA,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 277113,"NIEPUBLICZNA SZKOŁA PODSTAWOWA ""OTWARTE DRZWI - PREMIUM""",2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
@@ -4762,6 +4778,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 86624,SZKOŁA PODSTAWOWA SPECJALNA NR 17,2024,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 264084,NIEPUBLICZNA OGÓLNOKSZTAŁCĄCA SZKOŁA MUZYCZNA I STOPNIA PROMYK IM. IGNACEGO JANA PADEREWSKIEGO W SZCZECINIE,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 278305,SZKOŁA PODSTAWOWA SAIL INTERNATIONAL SCHOOL,2024,"polski, matematyka",4.0,,,4.0,,,5.0,85.0,88.2
+266102,SZKOŁA PODSTAWOWA NR 2 IM.TARASA SZEWCZENKI W BIAŁYM BORZE,2024,"polski, matematyka",,,,,,,11.0,51.0,52.81818181818182
 268378,SZKOŁA PODSTAWOWA IM. JULIANA TUWIMA W DRZONOWIE,2024,angielski,5.0,56.0,59.6,5.0,32.0,40.8,,,
 8393,SZKOŁA PODSTAWOWA IM.KAWALERÓW ORDERU UŚMIECHU,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 60077,SZKOŁA PODSTAWOWA IM. MARII KONOPNICKIEJ W IWINIE,2024,angielski,5.0,58.0,56.6,5.0,12.0,17.6,1.0,,
@@ -4887,6 +4904,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 30653,PUBLICZNA SZKOŁA PODSTAWOWA IM.KS.BONAWENTURY STACHURY W ZBIJOWIE MAŁYM,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 90079,PUBLICZNA SZKOŁA PODSTAWOWA IM. TADEUSZA KOŚCIUSZKI W CIEPŁEJ,2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 128471,NIEPUBLICZNA SZKOŁA PODSTAWOWA,2024,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
+481102,NIEPUBLICZNA SZKOŁA PODSTAWOWA NR 99,2024,"polski, matematyka, angielski",,,,,,,1.0,,
 80253,"""WONDERFUL YEARS SCHOOL"" PRYWATNA SZKOŁA PODSTAWOWA",2024,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 275570,SZKOŁA PODSTAWOWA BULLERBYN,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 129946,NIEPUBLICZNA INTEGRACYJNA SZKOŁA PODSTAWOWA IM. ACHILLESA RATTI,2024,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
@@ -5570,6 +5588,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 277113,"NIEPUBLICZNA SZKOŁA PODSTAWOWA ""OTWARTE DRZWI - PREMIUM""",2025,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 106433,SZKOŁA PODSTAWOWA IM.MIKOŁAJA KOPERNIKA W IWNIE,2025,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 128236,SZKOŁA PODSTAWOWA IM.ŚW.FILIPA NERI,2025,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+73171,SZKOŁA PODSTAWOWA IM. AGNIESZKI BARTOL W CHOJNIE,2025,"polski, matematyka, angielski",,,,,,,1.0,,
 129669,SZKOŁA PODSTAWOWA W SARBICACH,2025,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 272318,KATOLICKA NIEPUBLICZNA SZKOŁA PODSTAWOWA IM. ŚW. TERESY OD DZIECIĄTKA JEZUS W TURKU,2025,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 265052,NIEPUBLICZNA SZKOŁA PODSTAWOWA W WOLSZTYNIE ZAKŁADU DOSKONALENIA ZAWODOWEGO W ZIELONEJ GÓRZE,2025,angielski,9.0,20.0,20.11111111111111,9.0,13.0,13.222222222222221,,,
@@ -5823,6 +5842,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 34394,SZKOŁA PODSTAWOWA W UNIECHOWIE,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 15431,SZKOŁA PODSTAWOWA NR 57 IM. GEN. WŁADYSŁAWA ANDERSA W GDAŃSKU,2026,"polski, matematyka",3.0,,,3.0,,,21.0,45.0,50.09523809523809
 9117,CENTRUM KSZTAŁCENIA ZAWODOWEGO I USTAWICZNEGO NR 1 SZKOŁA PODSTAWOWA DLA DOROSŁYCH W GDAŃSKU,2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
+278300,PUBLICZNA SZKOŁA PODSTAWOWA HEVELIUS W GDAŃSKU,2026,"polski, matematyka",,,,,,,21.0,44.0,46.61904761904762
 196351,SZKOŁA PODSTAWOWA DLA DOROSŁYCH W GDYNI,2026,"polski, matematyka, angielski",2.0,,,2.0,,,3.0,,
 53128,SZKOŁA PODSTAWOWA W SZARŁACIE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 269073,SZKOŁA PODSTAWOWA MEGAMOCNI W GOWIDLINIE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -5910,6 +5930,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 90781,SPOŁECZNA TERAPEUTYCZNA SZKOŁA PODSTAWOWA IM. H. CH. ANDERSENA W LUBLINIE,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 91772,SPECJALNY OŚRODEK SZKOLNO-WYCHOWAWCZY DLA DZIECI I MŁODZIEŻY NIEPEŁNOSPRAWNEJ IM.PROF.Z.SĘKOWSKIEJ W LUBLINIE SZKOŁA PODSTAWOWA SPECJALNA NR 54,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 132251,NIEPUBLICZNA SZKOŁA PODSTAWOWA ŚWIĘTEGO JANA BOSKO W LUBLINIE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+480504,PUBLICZNA SZKOŁA PODSTAWOWA GALILEO W LUBLINIE,2026,"polski, matematyka",,,,,,,12.0,17.0,33.41666666666666
 76029,PUBLICZNA SZKOŁA PODSTAWOWA W CHRUŚLANKACH JÓZEFOWSKICH,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 22431,PUBLICZNA SZKOŁA PODSTAWOWA W ZAKRZOWIE,2026,"polski, matematyka, angielski",2.0,,,2.0,,,3.0,,
 130372,SZKOŁA PODSTAWOWA IM. UNITÓW PODLASKICH W DAWIDACH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -5917,6 +5938,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 103519,PUBLICZNA SZKOŁA PODSTAWOWA W JEZIORZE,2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 478847,SZKOŁA PODSTAWOWA W GRÓDKU SZLACHECKIM,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 268420,SZKOŁA PODSTAWOWA SPECJALNA W MŁODZIEŻOWYM OŚRODKU SOCJOTERAPII W ALBRECHTÓWCE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+263710,NIEPUBLICZNA SZKOŁA PODSTAWOWA W ZESPOLE SZKÓŁ AGROBIZNESU IM. MACIEJA RATAJA W KLEMENTOWICACH,2026,"polski, matematyka",,,,,,,7.0,44.0,46.14285714285715
 87568,SZKOŁA PODSTAWOWA IM. EWY SZELBURG-ZAREMBINY W DRZEWCACH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 15549,SZKOŁA PODSTAWOWA W ŻAKOWOLI POPRZECZNEJ,2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 40714,Z.O.SZKOŁA PODSTAWOWA IM. KS. LUCJANA NIEDZIELAKA W POLSKOWOLI,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -5960,6 +5982,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 130970,NIEPUBLICZNA SZKOŁA PODSTAWOWA DA VINCI'S INTERNATIONAL PRIMARY SCHOOL Z ODDZIAŁAMI DWUJĘZYCZNYMI,2026,"polski, matematyka",4.0,,,4.0,,,13.0,96.0,92.46153846153847
 122914,NIEPUBLICZNA SZKOŁA PODSTAWOWA ZACZAROWANA PLANETA,2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 263679,NIEPUBLICZNA SZKOŁA PODSTAWOWA LOGOS,2026,"polski, matematyka",4.0,,,4.0,,,5.0,98.0,93.6
+483431,NIEPUBLICZNA SZKOŁA PODSTAWOWA SZKOŁA KINGDOM W KRAKOWIE,2026,"polski, matematyka, angielski",,,,,,,2.0,,
 133507,PRYWATNA SZKOŁA PODSTAWOWA NR 5,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 43462,"SZKOŁA PODSTAWOWA, IM. ŚW. FLORIANA W GLISNEM",2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 103691,SZKOŁA PODSTAWOWA IM.MARII KONOPNICKIEJ W ROZTOCE,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
@@ -6127,6 +6150,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 16889,SZKOŁA PODSTAWOWA W STACHLEWIE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 52422,SZKOŁA PODSTAWOWA IM. FRANCISZKA KUJAWIŃSKIEGO W GÓRKACH DUŻYCH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 29890,SZKOŁA PODSTAWOWA SPECJALNA NR 105,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
+133445,"SZKOŁA PODSTAWOWA ""EDUKACJA I SPORT"" W ŁODZI",2026,"polski, matematyka",,,,,,,9.0,60.0,60.55555555555556
 272796,NIEPUBLICZNA SZKOŁA PODSTAWOWA Z ASPI-RACJAMI,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 128130,SPOŁECZNA SZKOŁA PODSTAWOWA W SŁABKOWICACH,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 196372,SZKOŁA PODSTAWOWA W JARZĄBKACH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -6344,6 +6368,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 40200,PUBLICZNA SZKOŁA PODSTAWOWA IM 19 PUŁKU UŁANÓW WOŁYŃSKICH W SKRZESZEWIE,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 84202,SZKOŁA PODSTAWOWA IM. J. KOCHANOWSKIEGO Z ODDZIAŁEM PRZEDSZKOLNYM,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 263810,PUBLICZNA SZKOŁA PODSTAWOWA SPECJALNA W SZYDŁOWCU,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
+484167,NIEPUBLICZNA SZKOŁA PODSTAWOWA NOWA SZKOŁA,2026,"polski, matematyka",,,,,,,49.0,62.0,55.71428571428572
 34229,PRYWATNA SZKOŁA PODSTAWOWA NR 114,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 52991,NIEPUBLICZNA SZKOŁA PODSTAWOWA WARSAW MONTESSORI SCHOOL,2026,"polski, matematyka",4.0,,,4.0,,,8.0,97.0,96.75
 264822,"SPOŁECZNA SZKOŁA PODSTAWOWA FUNDACJI ""ALTEREDU""",2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
@@ -6360,6 +6385,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 478731,SZKOŁA PODSTAWOWA DOBRATU IM. TOSI KOZŁOWSKIEJ,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 480997,IZABELIŃSKA SZKOŁA MONTESSORI,2026,"polski, matematyka, angielski",1.0,,,1.0,,,1.0,,
 131373,SZKOŁA PODSTAWOWA SIÓSTR RODZINY MARYI,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+482727,"NIEPUBLICZNA SZKOŁA PODSTAWOWA ""PUSH SCHOOL WARSAW"" W MARKACH",2026,"polski, matematyka",,,,,,,23.0,67.0,59.95652173913044
 89967,"SZKOŁA PODSTAWOWA IM. BOHATERÓW LEŚNEJ PLACÓWKI AK ""MROWISKO"" W KNUROWCU",2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 484328,"SZKOŁA PODSTAWOWA IM. HM. PPOR. AK ""ZOŚKI"" T. ZAWADZKIEGO W SIECZYCHACH",2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 29894,SZKOŁA PODSTAWOWA IM. CICHOCIEMNYCH SPADOCHRONIARZY ARMII KRAJOWEJ W ŁOSINNIE,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
@@ -6379,6 +6405,7 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 50475,SZKOŁA PODSTAWOWA WALISZOWSKIEGO STOWARZYSZENIA EDUKACYJNEGO,2026,"polski, matematyka, angielski",4.0,,,4.0,,,1.0,,
 4076,NIEPUBLICZNA SZKOŁA PODSTAWOWA W DZIKOWCU,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
 483017,SZKOŁA PODSTAWOWA W WOLIBORZU,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
+133562,SZKOŁA PODSTAWOWA NR 5 W LEGNICY,2026,"polski, matematyka",,,,,,,19.0,36.0,45.10526315789474
 44439,SZKOŁA PODSTAWOWA IM. ŚWIĘTEGO FLORIANA W RADOSTOWIE ŚREDNIM,2026,angielski,9.0,56.0,49.77777777777778,9.0,20.0,26.66666666666667,4.0,,
 3580,PUBLICZNA SZKOŁA PODSTAWOWA IM. BŁOGOSŁAWIONEGO KSIĘDZA ALOJSA ANDRICKIEGO W RZĄSINACH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 90027,SZKOŁA PODSTAWOWA SPECJALNA PRZY MŁODZIEŻOWYM OŚRODKU SOCJOTERAPII W LWÓWKU ŚLĄSKIM,2026,angielski,6.0,5.5,6.166666666666667,6.0,13.0,13.33333333333333,2.0,,
@@ -6388,7 +6415,9 @@ rspo,school_name,year,missing_subjects,n_polski,median_polski,mean_polski,n_mate
 6292,SZKOŁA PODSTAWOWA W CZATKOWICACH,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 265515,SZKOŁA PODSTAWOWA IM. JANA ADAMA DE GARNIER W GŁĘBOWICACH,2026,"polski, matematyka, angielski",3.0,,,3.0,,,3.0,,
 20491,POLSKO-NIEMIECKA SZKOŁA PODSTAWOWA,2026,"polski, matematyka, angielski",4.0,,,4.0,,,3.0,,
+484300,AUTORSKA SZKOŁA PODSTAWOWA SMILE.EDU,2026,"polski, matematyka",,,,,,,13.0,25.0,36.07692307692308
 118415,NIEPUBLICZNA SZKOŁA PODSTAWOWA MONTESSORI WE WROCŁAWIU,2026,"polski, matematyka, angielski",2.0,,,2.0,,,2.0,,
+484170,NIEPUBLICZNA SZKOŁA PODSTAWOWA INTEGRA,2026,"polski, matematyka",,,,,,,27.0,89.0,65.48148148148148
 131750,INTEGRACYJNA SZKOŁA PODSTAWOWA ALTO,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 81391,SZKOŁA PODSTAWOWA SPECJALNA NR 101,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,
 7094,SZKOŁA PODSTAWOWA IM.POLSKIEGO CZERWONEGO KRZYŻA W OPOLNIE ZDROJU,2026,"polski, matematyka, angielski",4.0,,,4.0,,,4.0,,

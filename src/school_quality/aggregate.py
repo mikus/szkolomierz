@@ -129,3 +129,17 @@ def region_percentile_publishable(sibling_count: int) -> bool:
     of itself for `mean`, which is a number the map would happily colour.
     """
     return sibling_count >= MIN_PERCENTILE_N
+
+
+def sibling_percentiles(scores):
+    """Percentiles of one parent's children among themselves, or all None.
+
+    The gate counts the siblings that HAVE a score, not every child the
+    geometry lists: rank_and_percentile ranks only the scored ones, so they are
+    the population whose size sets the percentile's granularity. A powiat of
+    nine gminas, two of them empty, ranks seven.
+    """
+    scored = sum(1 for s in scores if s is not None and not math.isnan(s))
+    if not region_percentile_publishable(scored):
+        return [None] * len(scores)
+    return rank_and_percentile(scores)[1]

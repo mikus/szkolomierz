@@ -663,8 +663,10 @@ def compute_region_level(
             by_parent: dict[Teryt, list[int]] = defaultdict(list)
             for index, parent in enumerate(parents):
                 by_parent[parent].append(index)
-            for parent, indexes in by_parent.items():
-                if siblings[parent] < MIN_PERCENTILE_N:
+            for indexes in by_parent.values():
+                # Only the siblings with a score are ranked, so they are the
+                # population the gate counts - not every child in the geometry.
+                if sum(scores[i] is not None for i in indexes) < MIN_PERCENTILE_N:
                     continue
                 _, group = rank_and_percentile([scores[i] for i in indexes])
                 for index, percentile in zip(indexes, group):
@@ -1524,7 +1526,8 @@ def check_size_budgets(docs_data: Path, geo_dir: Path, rep: Report):
 
 def check_percentile_gate(regions, recomputed_regions, rep: Report):
     """M (spec §7.5) — a region's percentile is its position among its SIBLINGS,
-    so it is the siblings that must be numerous enough. The sibling count is
+    so it is the siblings that must be numerous enough - the ones with a score,
+    since only those are ranked. The sibling grouping is
     derived from the docs/geo key set, never from the published parent[] array:
     reading the export's own grouping back would make the check agree with itself
     however the grouping was built. Gating on a region's own school count instead
@@ -1545,15 +1548,25 @@ def check_percentile_gate(regions, recomputed_regions, rep: Report):
                 scores = published['score'][metric][subject]
                 percentiles = published['pct'][metric][subject]
                 checked += len(percentiles)
+                # Only siblings with a score are ranked, so they are what the gate
+                # counts. Counted from the RECOMPUTED scores, not the published
+                # ones, for the same reason the parent comes from the geometry.
+                scored_siblings = Counter(
+                    parent
+                    for parent, score in zip(expected['parent'], expected['score'][metric][subject])
+                    if score is not None
+                )
                 wrong = []
                 for teryt, parent, score, percentile in zip(
                     published['teryt'], expected['parent'], scores, percentiles
                 ):
-                    publishable = siblings[parent] >= MIN_PERCENTILE_N and score is not None
+                    publishable = (scored_siblings[parent] >= MIN_PERCENTILE_N
+                                   and score is not None)
                     if publishable != (percentile is not None):
                         wrong.append(
                             f'{teryt} {metric}/{subject}: pct={percentile}, '
-                            f'siblings={siblings[parent]}, score={score}'
+                            f'scored siblings={scored_siblings[parent]} '
+                            f'of {siblings[parent]}, score={score}'
                         )
                 if wrong:
                     problems.append(f'{len(wrong)} wrong {metric}/{subject}, e.g. {wrong[:2]}')

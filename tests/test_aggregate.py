@@ -8,6 +8,7 @@ from school_quality.aggregate import (
     rank_and_percentile,
     region_percentile_publishable,
     region_score_publishable,
+    sibling_percentiles,
     weighting_for,
 )
 
@@ -139,3 +140,18 @@ def test_a_percentile_ignores_the_school_count_entirely():
 
 def test_an_only_child_never_publishes_a_percentile():
     assert region_percentile_publishable(1) is False
+
+
+def test_a_percentile_counts_only_the_siblings_that_have_a_score():
+    # Nine gminas in the geometry, but two hold no scored school. The ranking
+    # runs over the seven that are left, so seven is the population the gate
+    # has to see - counting polygons would publish a 1/7-grained percentile.
+    scores = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, None, float('nan')]
+    assert sibling_percentiles(scores) == [None] * 9
+
+
+def test_eight_scored_siblings_are_enough_and_the_unscored_one_stays_blank():
+    # The real edge today: a powiat of nine gminas, one of them empty.
+    scores = [0.1, 0.2, 0.3, 0.4, None, 0.5, 0.6, 0.7, 0.8]
+    assert sibling_percentiles(scores) == rank_and_percentile(scores)[1]
+    assert sibling_percentiles(scores)[4] is None
