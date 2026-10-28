@@ -34,6 +34,15 @@
       <section class="panel-section">
         <h2 data-i18n="sectionView">Widok</h2>
 
+        <label class="field field--population is-hidden">
+          <span data-i18n="labelPopulation">Porównanie</span>
+          <select id="population-select">
+            <option value="liceum" data-i18n="populationLiceum">Licea</option>
+            <option value="technikum" data-i18n="populationTechnikum">Technika</option>
+            <option value="all" data-i18n="populationAll">Wszystkie szkoły średnie</option>
+          </select>
+        </label>
+
         <label class="field">
           <span data-i18n="labelSubject">Przedmiot</span>
           <select id="subject-select"></select>
@@ -113,6 +122,7 @@
         </ul>
         <p class="muted small" id="legend-gradient-note" data-i18n="legendGradientNote"></p>
         <p class="muted small"><a href="help.html#colour" data-i18n="helpLink">Jak liczone są wyniki? → Pomoc</a></p>
+        <p class="caveat" id="caveat-all" data-i18n="caveatAll" hidden></p>
       </section>
 
       <section class="panel-section">

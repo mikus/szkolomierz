@@ -218,6 +218,9 @@ body.page-help { display: block; height: auto; }
 .field-note { font-size: 0.8rem; line-height: 1.35; color: var(--text-muted); }
 .field-note:empty { display: none; }
 
+/* A fact the reader needs beside what the colours show (matura's caveats). */
+.caveat { font-size: 0.85rem; color: var(--text-muted); margin: 0.4rem 0; }
+
 .field select, .field input[type="text"], .field input[type="number"] {
   padding: 0.35rem 0.5rem;
   border: 1px solid var(--border);
@@ -681,17 +684,24 @@ table.ranking-table tr.detail-row > td {
   /* Level and the area cascade lead: they decide what the table ranks at all, so
      they must not auto-flow to the bottom past the explicitly placed fields
      below. The cascade reads left-to-right then down, in the order it is filled
-     in — voivodeship beside the level it qualifies, then powiat and gmina. */
-  .ranking-controls .field--level    { grid-column: 1; grid-row: 1; }
-  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 1; }
-  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 2; }
-  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 2; }
-  .ranking-controls .field--metric   { grid-column: 1; grid-row: 3; }
-  .ranking-controls .field--subject  { grid-column: 2; grid-row: 3; }
-  .ranking-controls .field--view     { grid-column: 1; grid-row: 4; }
-  .ranking-controls .field--search   { grid-column: 1; grid-row: 5; }
-  .ranking-controls .radio-group     { grid-column: 2; grid-row: 4 / span 2; }
-  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 6; }
+     in — voivodeship beside the level it qualifies, then powiat and gmina.
+     Matura's Porównanie field comes before all of them, on a row of its own:
+     it decides which schools there are to rank. */
+  .ranking-controls .field--population { grid-column: 1 / -1; grid-row: 1; }
+  /* Hidden under E8, the field leaves row 1 empty but still followed by a row
+     gap. Pull the grid up by that gap, so E8's controls sit exactly where they
+     did before the field existed. */
+  .ranking-controls:has(> .field--population.is-hidden) { margin-top: -0.45rem; }
+  .ranking-controls .field--level    { grid-column: 1; grid-row: 2; }
+  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 2; }
+  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 3; }
+  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 3; }
+  .ranking-controls .field--metric   { grid-column: 1; grid-row: 4; }
+  .ranking-controls .field--subject  { grid-column: 2; grid-row: 4; }
+  .ranking-controls .field--view     { grid-column: 1; grid-row: 5; }
+  .ranking-controls .field--search   { grid-column: 1; grid-row: 6; }
+  .ranking-controls .radio-group     { grid-column: 2; grid-row: 5 / span 2; }
+  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 7; }
   /* Grid columns are half the viewport, so the desktop min-widths would overflow. */
   .ranking-controls .field,
   .ranking-controls .field input[type="text"] { min-width: 0; }

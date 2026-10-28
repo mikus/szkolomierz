@@ -36,7 +36,10 @@
   let loadedSchools = [];
   let markersByRspo = new Map();  // rspo -> Leaflet circleMarker (one powiat's worth)
   let schoolSearchIndex = [];     // [{rspo,name,town,gminaKey,onMap,hay}] for the "find school" box
-  let indexPos = new Map();       // rspo -> row in schools-index.json (all 12,889)
+  let indexPos = new Map();       // rspo -> row in searchColumns (all 12,889)
+  // The index columns the search was built from. Not indexData: a population
+  // switch replaces that, and indexPos's rows would then name other schools.
+  let searchColumns = null;
   // A school whose popup should open as soon as its powiat's markers exist. The
   // school being searched for is usually in a powiat that is not loaded yet, so
   // opening cannot happen in the same turn as the request.
@@ -265,9 +268,11 @@
     //
     // The key holds everything this function reads to build a marker: the shard
     // is per-metric (so a metric change must rebuild — that is what makes
-    // onMetricChange's renderLevel() work at this zoom), and baselineLevel
-    // picks which block of that shard is read.
-    const key = `${powiat}|${state.metric}|${baselineLevel}`;
+    // onMetricChange's renderLevel() work at this zoom), baselineLevel picks
+    // which block of that shard is read, and the matura population picks which
+    // dataset the shard and the index come from — so a late build for the
+    // population just left can never stand.
+    const key = `${powiat}|${state.metric}|${baselineLevel}|${population}`;
     // Two halves, and the second is not redundant. One gesture fires BOTH
     // zoomend and moveend, so renderLevel runs several times over, and every one
     // of those runs reaches here before any of them has finished — so the
@@ -286,8 +291,9 @@
     // own openPendingSchool, which is the path a ?school= deep link already
     // takes, cluster guard included.
     //
-    // This covers a metric change and a reference-level change, the two inputs
-    // in the key above. A subject change is not in the key and so does not
+    // This covers a metric change and a reference-level change, two of the
+    // inputs in the key above (a population switch clears the selection
+    // itself). A subject change is not in the key and so does not
     // rebuild: its popup survives, and onSubjectChange's reopenSelectedPopup
     // refreshes it in place instead.
     if (state.selectedSchool != null) pendingSchool = state.selectedSchool;
@@ -641,9 +647,13 @@
   }
 
   async function renderLevel() {
+    // A population switch while this render awaits makes everything it would
+    // paint the previous population's; setPopulation renders again itself.
+    const renderPopulation = population;
     const level = levelForZoom(map.getZoom());
     const childLevel = CHILD_OF[level];
     const focused = await focusFor(level);
+    if (population !== renderPopulation) return;
     renderBreadcrumb(level, focused);   // immediately, from whatever names are cached
     // Not awaited: the crumb must not hold up the map, and a missing name
     // already degrades to the raw TERYT rather than blanking.
@@ -653,6 +663,7 @@
     if (childLevel === null) { await renderSchools(focused.slice(0, 4)); return; }
 
     const geo = await loadGeometryFor(level, focused);
+    if (population !== renderPopulation) return;
     if (childLevel === 'gmina' && geo.features.length === 1) {
       // 66 powiats hold exactly one gmina, where drilling in would draw a single
       // polygon identical to the outline just left. Skip that rung. `focused` is
@@ -666,6 +677,7 @@
     }
 
     const regions = await loadRegions(childLevel);
+    if (population !== renderPopulation) return;
     const idx = new Map(regions.regions.teryt.map((key, i) => [key, i]));
     const width = KEY_WIDTH[childLevel];
     const { sigma, sigma_centre } = regions.metadata;
@@ -993,6 +1005,50 @@
     if (state.selectedSchool != null) reopenSelectedPopup();
   }
 
+  // The only code that changes the comparison population (spec §7.3): the
+  // Porównanie select calls it. Resolves true once `p` is the loaded dataset and
+  // the map has re-rendered; false when a later call superseded this one, or
+  // the switch failed and the map stayed on the population it had.
+  async function setPopulation(p) {
+    const select = document.getElementById('population-select');
+    select.value = p;
+    state.population = p;
+    syncURL();
+    writePref('population', p);
+    let ok;
+    try {
+      ok = await activateDataset(p);
+    } catch (e) {
+      // D17: back to the population still loaded — unless a later switch has
+      // already asked for another, which then owns the select and the URL.
+      if (state.population === p) {
+        state.population = population;
+        select.value = population;
+        syncURL();
+        writePref('population', population);
+      }
+      reportRenderFailure(e);
+      return false;
+    }
+    if (!ok) return false;
+    state.selectedSchool = null;
+    pendingSchool = null;
+    map.closePopup();
+    // Empty the map now: left up, the previous population's markers would sit
+    // there recoloured on the new scale until the rebuild lands.
+    clusterGroup.clearLayers();
+    markersByRspo.clear();
+    loadedSchools = [];
+    renderedSchoolsKey = renderingSchoolsKey = null;
+    state.threshold = null;   // syncThresholdSlider resets it to the new range's minimum
+    applyDataset();
+    syncURL();
+    recolourAll();
+    refreshFilters();
+    await renderLevel();
+    return true;
+  }
+
   function reopenSelectedPopup() {
     const marker = markersByRspo.get(state.selectedSchool);
     if (marker) marker.setPopupContent(renderPopup(marker._school));
@@ -1055,7 +1111,7 @@
   // empty at page open — so the box could only find a school already on screen,
   // which is the one case the reader does not need it for.
   function buildSchoolSearchIndex() {
-    const c = indexData.schools;
+    const c = searchColumns = indexData.schools;
     indexPos = new Map();
     schoolSearchIndex = c.rspo.map((rspo, i) => {
       indexPos.set(rspo, i);
@@ -1096,7 +1152,7 @@
   function focusSchool(rspo) {
     const i = indexPos.get(rspo);
     if (i == null) return;
-    const c = indexData.schools;
+    const c = searchColumns;
     if (!c.on_map[i]) return;   // no coordinates; callers route those to the ranking
     state.selectedSchool = rspo;
     syncURL();
@@ -1256,6 +1312,8 @@
     myr.value = state.minYears;
     document.getElementById('min-years-display').textContent = state.minYears;
     fillDataYears();
+    document.getElementById('population-select').value = population;
+    document.getElementById('caveat-all').hidden = population !== 'all';
   }
 
   function wireControls() {
@@ -1265,6 +1323,13 @@
 
     subjectSel.addEventListener('change', e => onSubjectChange(e.target.value));
     metricSel .addEventListener('change', e => onMetricChange(e.target.value));
+
+    if (EXAM_CONFIG.populations) {
+      document.querySelector('.field--population').classList.remove('is-hidden');
+      document.getElementById('population-select').addEventListener('change', (e) => {
+        setPopulation(e.target.value).catch(reportRenderFailure);
+      });
+    }
 
     fillBaselineSelect();
     baselineSelect.addEventListener('change', () => {

@@ -20,6 +20,17 @@
 
   <main>
     <div class="ranking-controls">
+      <!-- Matura only: which schools are compared. Hidden under E8; wireControls
+           shows it. -->
+      <div class="field field--population is-hidden">
+        <label for="population-select" data-i18n="labelPopulation">Porównanie</label>
+        <select id="population-select">
+          <option value="liceum" data-i18n="populationLiceum">Licea</option>
+          <option value="technikum" data-i18n="populationTechnikum">Technika</option>
+          <option value="all" data-i18n="populationAll">Wszystkie szkoły średnie</option>
+        </select>
+      </div>
+
       <div class="field field--level">
         <span>
           <label for="level-select" data-i18n="labelRankLevel">Poziom rankingu</label><span
@@ -127,6 +138,7 @@
       </details>
     </div>
 
+    <p class="caveat" id="caveat-all" data-i18n="caveatAll" hidden></p>
     <div class="ranking-table-wrap">
       <table class="ranking-table" id="ranking-table"></table>
     </div>

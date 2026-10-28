@@ -115,8 +115,12 @@
   // flight. Anything that is not the current key counts as "not loaded".
   let loadedKey = null;
 
+  // The matura dataset (`population`, app.js) is part of the key, so rows for a
+  // population the user has switched away from are discarded when they land.
   function populationKey() {
-    return state.level === 'school' ? `school|${state.region}|${state.metric}` : state.level;
+    return state.level === 'school'
+      ? `${population}|school|${state.region}|${state.metric}`
+      : `${population}|${state.level}`;
   }
 
   function populationLoaded() { return loadedKey === populationKey(); }
@@ -1192,6 +1196,12 @@
     // listener below. A class rather than `hidden`, which .field's display: flex
     // would override.
     if (!HAS_GMINA) document.querySelector('.field--gmina').classList.add('is-hidden');
+    if (EXAM_CONFIG.populations) {
+      document.querySelector('.field--population').classList.remove('is-hidden');
+      document.getElementById('population-select').addEventListener('change', (e) => {
+        setPopulation(e.target.value).catch((err) => console.error('population switch failed', err));
+      });
+    }
 
     fillLevelSelect(levelSel);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
@@ -1332,6 +1342,43 @@
     // The view parameters are the dataset's years: a liceum last_k of 3 does
     // not exist where the data starts a year later.
     updateViewParamField();
+    document.getElementById('population-select').value = population;
+    document.getElementById('caveat-all').hidden = population !== 'all';
+  }
+
+  // Sets the matura comparison population (D18) — not this page's "population"
+  // of populationKey and refreshPopulation, which is the rows the table ranks.
+  // The only code that changes it; resolves true once `p` is the loaded dataset
+  // and the table has been asked for its rows, false when superseded or failed.
+  async function setPopulation(p) {
+    const select = document.getElementById('population-select');
+    select.value = p;
+    state.population = p;
+    syncURL();
+    writePref('population', p);
+    let ok;
+    try {
+      ok = await activateDataset(p);
+    } catch (e) {
+      // D17: back to the population still loaded — unless a later switch has
+      // already asked for another, which then owns the select and the URL.
+      if (state.population === p) {
+        state.population = population;
+        select.value = population;
+        syncURL();
+        writePref('population', population);
+      }
+      console.error('population switch failed', e);
+      populationError = true;
+      renderAll();
+      return false;
+    }
+    if (!ok) return false;
+    state.selectedSchool = null;
+    applyDataset();
+    syncURL();
+    refreshPopulation();
+    return true;
   }
 
   function wireNavLinks() {
