@@ -10,8 +10,9 @@ that the notebook reads.
 
 Workflow
 --------
-1. Reads the schools and their addresses from docs/data/schools-index.json
-   (which the analysis notebook produces).
+1. Reads the schools and their addresses from every index in SCHOOL_INDEXES
+   (E8's, and matura's liceum and technikum ones, which the notebooks produce),
+   deduplicated by RSPO.
 2. Reads the existing cache data/school_coords.csv (if present).
 3. For each school:
    - if the RSPO already exists in the cache AND its address is unchanged,
@@ -61,7 +62,18 @@ from urllib.request import Request, urlopen
 
 # ── Paths (relative to project root; script lives in scripts/) ──────────────
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-SCHOOLS_INDEX_JSON = PROJECT_ROOT / 'docs' / 'data' / 'schools-index.json'
+# Every school the map shows, E8 first. One cache serves both exams, so planning,
+# --force and the unmapped report all run over the union: a run over one exam
+# alone would drop the other's schools from the triage list, and with --force
+# (which starts from an empty cache) wipe their coordinates. A school in two
+# indexes keeps the first one's row - for the 37 music and ballet schools that
+# teach both levels, E8's address, already geocoded. Matura's all/ index is left
+# out: it adds no school of its own and lacks the 44 licea whose only year is 2023.
+SCHOOL_INDEXES = [
+    PROJECT_ROOT / 'docs' / 'data' / 'schools-index.json',
+    PROJECT_ROOT / 'docs' / 'data' / 'matura' / 'liceum' / 'schools-index.json',
+    PROJECT_ROOT / 'docs' / 'data' / 'matura' / 'technikum' / 'schools-index.json',
+]
 COORDS_CSV = PROJECT_ROOT / 'data' / 'school_coords.csv'
 UNMAPPED_CSV = PROJECT_ROOT / 'data' / 'school_coords_unmapped.csv'
 # The PRG voivodeship polygons the map already ships. Committed, so the accept
@@ -309,28 +321,32 @@ def load_existing_cache(path: Path) -> list[dict]:
         return list(csv.DictReader(f))
 
 
-def load_schools(path: Path) -> list[dict]:
-    """Load schools (rspo, teryt, miejscowosc, ulica_nr) from schools-index.json.
+def load_schools(paths: list[Path]) -> list[dict]:
+    """Load schools (rspo, teryt, miejscowosc, ulica_nr) from every index, once each.
 
-    The index is columnar — parallel arrays under 'schools', one element per
+    Each index is columnar — parallel arrays under 'schools', one element per
     school — so the columns this script needs are zipped back into rows.
     strict=True because a length mismatch between them would otherwise truncate
-    silently, dropping schools off the end of the shortest column.
+    silently, dropping schools off the end of the shortest column. A school
+    listed by several indexes keeps the row of the first (see SCHOOL_INDEXES).
 
     `teryt` is the gmina code the exam data assigns the school; its first two
     digits are the voivodeship both geocoding routes are gated on.
     """
-    if not path.exists():
-        raise FileNotFoundError(
-            f'{path} not found. Run the analysis notebook first to generate it.'
-        )
-    columns = json.loads(path.read_text(encoding='utf-8'))['schools']
-    return [
-        {'rspo': rspo, 'teryt': teryt, 'miejscowosc': miejscowosc, 'ulica_nr': ulica_nr}
+    schools: dict[int, dict] = {}
+    for path in paths:
+        if not path.exists():
+            raise FileNotFoundError(
+                f'{path} not found. Run the notebook that writes it first.'
+            )
+        columns = json.loads(path.read_text(encoding='utf-8'))['schools']
         for rspo, teryt, miejscowosc, ulica_nr in zip(
             columns['rspo'], columns['teryt'], columns['miejscowosc'], columns['ulica_nr'],
-            strict=True)
-    ]
+            strict=True,
+        ):
+            schools.setdefault(rspo, {'rspo': rspo, 'teryt': teryt,
+                                      'miejscowosc': miejscowosc, 'ulica_nr': ulica_nr})
+    return list(schools.values())
 
 
 def write_cache(path: Path, rows: list[dict]) -> None:
@@ -719,7 +735,7 @@ def main() -> None:
 
     if args.report_only:
         emit_post_run_reports(
-            load_schools(SCHOOLS_INDEX_JSON),
+            load_schools(SCHOOL_INDEXES),
             load_existing_cache(COORDS_CSV),
             UNMAPPED_CSV,
             SHARED_COORD_WARN_THRESHOLD,
@@ -728,8 +744,8 @@ def main() -> None:
 
     user_agent = resolve_user_agent(args.contact)
 
-    schools = load_schools(SCHOOLS_INDEX_JSON)
-    print(f'Loaded {len(schools):,} schools from {SCHOOLS_INDEX_JSON.name}')
+    schools = load_schools(SCHOOL_INDEXES)
+    print(f'Loaded {len(schools):,} schools from {len(SCHOOL_INDEXES)} indexes')
 
     existing_rows = [] if args.force else load_existing_cache(COORDS_CSV)
     print(

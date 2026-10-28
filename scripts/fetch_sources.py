@@ -1,8 +1,12 @@
-"""Download the pinned CIE source files into data/egzamin-osmoklasisty/.
+"""Download the pinned CIE source files of one exam into its data directory.
 
 Run from the repo root:
     uv run python scripts/fetch_sources.py
     uv run python scripts/fetch_sources.py --dry-run
+    uv run python scripts/fetch_sources.py --exam matura
+
+--exam e8 (the default) writes to data/egzamin-osmoklasisty/ with EDITION_PINS;
+--exam matura writes to data/egzamin-maturalny/ with MATURA_EDITION_PINS.
 
 Existing files are left alone unless --force is given: the xlsx are the
 project's input data and re-downloading them is how you would accidentally
@@ -19,9 +23,14 @@ from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / 'src'))
 
-from school_quality.sources import MANIFEST_URL, resolve_school_files
+from school_quality.sources import EXAM_KEYS, MANIFEST_URL, resolve_school_files
 
 USER_AGENT = 'szkolomierz/1.0 (+https://github.com/mikus/szkolomierz)'
+
+DATA_DIRS = {
+    'e8': Path('data/egzamin-osmoklasisty'),
+    'matura': Path('data/egzamin-maturalny'),
+}
 
 
 def fetch(url: str) -> bytes:
@@ -32,17 +41,21 @@ def fetch(url: str) -> bytes:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--data-dir', type=Path, default=Path('data/egzamin-osmoklasisty'))
+    parser.add_argument('--exam', choices=sorted(EXAM_KEYS), default='e8')
+    parser.add_argument('--data-dir', type=Path, default=None,
+                        help='default: data/egzamin-osmoklasisty (e8), '
+                             'data/egzamin-maturalny (matura)')
     parser.add_argument('--dry-run', action='store_true', help='list what would be fetched')
     parser.add_argument('--force', action='store_true', help='re-download files already present')
     args = parser.parse_args()
+    data_dir = DATA_DIRS[args.exam] if args.data_dir is None else args.data_dir
 
     manifest = json.loads(fetch(MANIFEST_URL).decode('utf-8'))
-    resolved = resolve_school_files(manifest)
+    resolved = resolve_school_files(manifest, exam=EXAM_KEYS[args.exam])
     print(f'{len(resolved)} pinned school-level files')
 
     for item in resolved:
-        target = args.data_dir / item['local_name']
+        target = data_dir / item['local_name']
         if target.exists() and not args.force:
             print(f'  have    {item["local_name"]}')
             continue
