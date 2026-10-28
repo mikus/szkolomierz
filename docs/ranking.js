@@ -229,8 +229,10 @@
       key: r.teryt[i],
       name: r.name[i],
       parent: parentLevel ? nameOf(parentLevel, r.parent[i]) : null,
-      n_schools: r.n_schools[i],
-      n_students: r.n_students[i],
+      // A matura file counts, per subject, the schools with a result and their
+      // takers (spec §6.4); its presence decides, so E8 rows are unchanged.
+      n_schools: r.n_scored ? r.n_scored[subject][i] : r.n_schools[i],
+      n_students: r.n_takers ? Math.round(r.n_takers[subject][i]) : r.n_students[i],
       score,
       rank: r.rank[metric][subject][i],
       pct: r.pct[metric][subject][i],
@@ -310,7 +312,10 @@
       gmina: school.gmina,
       powiat: school.powiat,
       pub: isPublic(school),
-      n_years: school.n_years,
+      // The subject's own years (spec §6.2): the Lata cell, its warning and its
+      // sort all follow the selected subject.
+      n_years: subjectYears(school, subject),
+      pass_rate: school.pass_rate?.[String(latestYear())] ?? null,
       hasCoords: school.lat != null && school.lon != null,
       score: viewScore,
       rank: viewRank,
@@ -389,6 +394,9 @@
       { key: 'street',     label: t('colStreet'),      num: false },
       { key: 'pub',        label: t('colPublic'),      num: false, width: '5rem' },
       { key: 'n_years',    label: t('colNYears'),      num: true,  width: '4rem' },
+      // Positional with schoolRowHTML's cells: add both or neither.
+      ...(EXAM === 'matura'
+        ? [{ key: 'pass_rate', label: t('colPassRate', latestYear()), num: true }] : []),
       { key: 'score',       label: t('colScore'),       num: true },
       { key: 'classLetter', label: t('colClass'),       num: true,  width: '4rem' },
       { key: 'looMinR',     label: t('colLOORange'),    num: true,  help: 'helpLOORange' },
@@ -644,20 +652,36 @@
       : '—';
   }
 
+  function latestYear() {
+    return Math.max(...scaleData.metadata.years_in_data);
+  }
+
+  // The selected view's ranked population (matura's n_ranked, D10): base's for
+  // the base view, the view parameter's otherwise — never base's for every view.
+  // Undefined under E8, and for a view nobody is ranked in.
+  function viewRankedN() {
+    const bySubject = scaleData.metadata.n_ranked?.[baselineLevel]?.[state.metric]?.[state.subject];
+    return state.view === 'base' ? bySubject?.base : bySubject?.[state.view]?.[String(state.viewParam)];
+  }
+
   function schoolRowHTML(r, colspan) {
+    const n = viewRankedN();
+    // r.rank stays a number, for the sort; only the cell carries "z n".
+    const rankCell = r.rank != null && n != null ? t('rankOfN', r.rank, n) : (r.rank ?? '—');
     const offMap = !r.hasCoords ? ` <span class="off-map" title="${t('offMap')}">📍✗</span>` : '';
     const looCell = (r.looMinR != null) ? `${r.looMinR}–${r.looMaxR}` : '—';
     const syCell  = (r.singleMinR != null) ? `${r.singleMinR}–${r.singleMaxR}` : '—';
     const pubLabel = r.pub ? t('publicYesShort') : t('publicNoShort');
     const selected = (r.rspo === state.selectedSchool);
     const mainRow = `<tr data-rspo="${r.rspo}"${selected ? ' class="highlight"' : ''}>
-        <td class="num">${r.rank ?? '—'}</td>
+        <td class="num">${rankCell}</td>
         ${selectionRankCellHTML(r)}
         <td>${escapeHTML(r.name)}${offMap}</td>
         <td>${escapeHTML(r.town || '')}</td>
         <td>${escapeHTML(r.street || '')}</td>
         <td>${pubLabel}</td>
         <td class="num">${r.n_years}${r.n_years < 3 ? ` <span class="warn-icon" title="${escapeHTML(t('warnShortHistory'))}">⚠️</span>` : ''}</td>
+        ${EXAM === 'matura' ? `<td class="num">${fmtPassRate(r.pass_rate)}</td>` : ''}
         <td class="num">${fmtScoreHTML(r.score, state.metric)}</td>
         <td class="num class-cell">${classCellHTML(r)}</td>
         <td class="num">${looCell}</td>
@@ -872,7 +896,10 @@
 
     const inArea = selectionRows();
     const filtered = sortRows(filterRows(inArea));
-    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, inArea.length);
+    // At school level M counts the area's schools with a result in the subject:
+    // an extended subject is sat at some schools only. Every E8 school has one.
+    const total = state.level === 'school' ? inArea.filter(r => r.n_years > 0).length : inArea.length;
+    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, total);
     renderTable(filtered);
     if (state.level === 'school' && state.selectedSchool != null) {
       const tr = document.querySelector(`tr[data-rspo="${state.selectedSchool}"]`);
@@ -1270,6 +1297,7 @@
       state.subject = subjectSel.value;
       writePref('subject', state.subject);
       syncURL();
+      syncExtendedCaveat();
       renderAll();
     });
 
@@ -1344,6 +1372,13 @@
     updateViewParamField();
     document.getElementById('population-select').value = population;
     document.getElementById('caveat-all').hidden = population !== 'all';
+    syncExtendedCaveat();
+  }
+
+  // Caveat 2 (spec §7.6): whenever the selected subject is an extended one.
+  function syncExtendedCaveat() {
+    document.getElementById('caveat-extended').hidden =
+      !scaleData.metadata.subject_groups?.extended?.includes(state.subject);
   }
 
   // Sets the matura comparison population (D18) — not this page's "population"
@@ -1403,11 +1438,33 @@
   // ---------------------------------------------------------------------------
   // Bootstrap
 
+  // The type of matura school `rspo` ('liceum' or 'technikum'), or null when
+  // neither index has it (a stale or hand-edited link).
+  async function findSchoolType(rspo) {
+    const indexes = await Promise.all(['liceum', 'technikum'].map((p) => loadIndex(datasetPath(p, 'schools-index.json'))));
+    for (const index of indexes) {
+      const i = index.schools.rspo.indexOf(rspo);
+      if (i >= 0) return index.schools.type[i];
+    }
+    return null;
+  }
+
   async function main() {
     resolveInitialState();
     setLang(state.lang);
     try {
+      // A matura ?school= may name a school outside the population asked for
+      // (the other type, or a liceum missing from all/). Look it up in the
+      // licea and technika indexes — loaded only for such a link (D15) — and
+      // open its own population instead, before anything renders.
+      const linked = EXAM_CONFIG.populations && state.selectedSchool != null
+        ? await findSchoolType(state.selectedSchool) : null;
       await activateDataset(state.population);
+      if (linked && !indexData.schools.rspo.includes(state.selectedSchool)) {
+        state.population = linked;
+        writePref('population', state.population);   // as setPopulation would
+        await activateDataset(state.population);
+      }
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
@@ -1429,6 +1486,12 @@
     // ?region= before anything is fetched for it, and the two files behind it are
     // 6.9 KB + 118 KB and needed at every level anyway.
     await syncRegionSelects().catch(e => console.error('region lists unavailable', e));
+    // A linked ?sort= may name a column this exam, level or area does not have
+    // (D16); the column list is final only now.
+    if (!currentColumnKeys().includes(state.sortKey)) {
+      state.sortKey = 'rank';
+      state.sortDir = 'asc';
+    }
 
     syncURL();
     // Unawaited, so the page stays usable for the whole download; renderAll runs
