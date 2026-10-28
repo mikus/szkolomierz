@@ -189,29 +189,6 @@
   // ---------------------------------------------------------------------------
   // Row construction
 
-  // How many regions share each parent, per level — the second arm of the
-  // suppression gate (a region that is its parent's ONLY CHILD is compared
-  // against itself). Derived from regions.parent, which ships in the file.
-  //
-  // A near-twin of map.js's siblingCountsFor. Sharing it would be a MOVE, not an
-  // addition — app.js gains the function only if map.js loses its copy — and that
-  // means editing a freshly landed file this task does not own, with no JS test
-  // layer to catch a slip. Hence the copy. What will actually drift is not the
-  // counting but the reason ladder built on it (buildRegionRow below vs
-  // map.js's regionTooltip): change one branch and the map and the table start
-  // explaining the same suppressed gmina differently.
-  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
-
-  function siblingCountsFor(regions) {
-    const level = regions.metadata.level;
-    if (!siblingCache.has(level)) {
-      const counts = new Map();
-      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
-      siblingCache.set(level, counts);
-    }
-    return siblingCache.get(level);
-  }
-
   // For one region, a flat object with the fields we sort/render. Unlike the
   // map, this page DOES render suppressed regions — a table enumerating a
   // population must not silently omit 69 of its 2,479 gminas — so a null score
@@ -245,11 +222,9 @@
       classTextColour: classColour ? textOn(classColour) : null,
       suppressed: score == null,
       // Say WHICH reason. A single "—" with no explanation is what makes a table
-      // feel broken, and a wrong explanation is worse than none.
-      reasonKey: score != null ? null
-        : r.n_schools[i] === 0 ? 'regionNoSchools'
-        : siblingCountsFor(regionData).get(r.parent[i]) <= 1 ? 'regionOnlyChild'
-        : 'regionTooSmall',
+      // feel broken, and a wrong explanation is worse than none. The same
+      // function words the map's tooltip, so the two cannot drift apart.
+      reasonKey: score != null ? null : regionNullReason(regionData, i, subject),
     };
   }
 
@@ -961,9 +936,11 @@
     // for is derived from this file. 118 KB, and cached for the session.
     const powiatRegions = await loadRegions('powiat');
     const powiats = powiatsFor(region, powiatRegions);
+    // Both paths are built from `population` in this one synchronous step, so
+    // the index always belongs to the same dataset as the shards.
     const [shards, index] = await Promise.all([
       loadShards(powiats, metric, onProgress),
-      loadIndex(),
+      loadIndex(datasetPath(population, 'schools-index.json')),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve the gmina column and makes the name search match on it.
       // Same deal as map.js's buildSchools: one 0.77 MB fetch a session, and
@@ -1004,6 +981,11 @@
         powiat: nameOf('powiat', col.powiat[i]),
         is_public: col.is_public[i],
         n_years: col.n_years[i],
+        // Matura-only index fields (spec §6.2); undefined under E8.
+        subject_years: col.subject_years?.[i],
+        type: col.type?.[i],
+        pass_rate: col.pass_rate?.[i],
+        subject_takers: col.subject_takers?.[i],
         lat: col.lat[i],
         lon: col.lon[i],
         scores,
@@ -1331,7 +1313,7 @@
     resolveInitialState();
     setLang(state.lang);
     try {
-      await Promise.all([loadIndex(), loadScale()]);
+      await activateDataset(resolvePopulation());
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';

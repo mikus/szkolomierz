@@ -297,7 +297,9 @@
   async function buildSchools(powiat, key) {
     const [shard, index] = await Promise.all([
       loadShard(powiat, state.metric),
-      loadIndex(),
+      // Built from `population` here, before the await: indexData may name
+      // another population by the time this resolves.
+      loadIndex(datasetPath(population, 'schools-index.json')),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve a gmina's display name. This is the only place that
       // file is fetched, and two callers depend on it having been: the
@@ -348,6 +350,11 @@
         ulica_nr: col.ulica_nr[i],
         is_public: col.is_public[i],
         n_years: col.n_years[i],
+        // Matura-only index fields (spec §6.2); undefined under E8.
+        subject_years: col.subject_years?.[i],
+        type: col.type?.[i],
+        pass_rate: col.pass_rate?.[i],
+        subject_takers: col.subject_takers?.[i],
         lat: col.lat[i],
         lon: col.lon[i],
         scores,
@@ -496,25 +503,6 @@
     return best;
   }
 
-  // How many regions share each parent, per level. The suppression gate has two
-  // arms (scripts/validate_export.py check_reference_gate): a region whose parent
-  // holds fewer than MIN_REFERENCE_N schools, and a region that is its parent's
-  // ONLY CHILD — compared against itself. They are different facts about a
-  // region and the tooltip must not conflate them; on today's data every
-  // suppressed cell is the second kind, so a single "too small" message is
-  // wrong for all of them. Derived from regions.parent, which ships in the file.
-  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
-
-  function siblingCountsFor(regions) {
-    const level = regions.metadata.level;
-    if (!siblingCache.has(level)) {
-      const counts = new Map();
-      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
-      siblingCache.set(level, counts);
-    }
-    return siblingCache.get(level);
-  }
-
   function regionTooltip(regions, i, feature) {
     if (i == null) return escapeHTML(feature.properties.JPT_NAZWA_ || '');
     const r = regions.regions;
@@ -525,9 +513,7 @@
       // Say WHICH reason: no schools at all, nothing to compare against, or no
       // usable comparison group. A single grey with no explanation is what makes
       // a choropleth feel broken — and a wrong explanation is worse than none.
-      const onlyChild = siblingCountsFor(regions).get(r.parent[i]) <= 1;
-      lines.push(t(r.n_schools[i] === 0 ? 'regionNoSchools'
-        : onlyChild ? 'regionOnlyChild' : 'regionTooSmall'));
+      lines.push(t(regionNullReason(regions, i, state.subject)));
     } else {
       const n = r.n_ranked[state.metric][state.subject];
       lines.push(`${score.toFixed(2)}${rank == null ? '' : ` (${rank}/${n})`}`);
@@ -1410,7 +1396,7 @@
     setLang(state.lang);
     initMap();
     try {
-      await Promise.all([loadIndex(), loadScale()]);
+      await activateDataset(resolvePopulation());
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';

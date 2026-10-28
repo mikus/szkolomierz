@@ -60,6 +60,52 @@ const DEFAULTS = {
   baseline: 'voivodeship',   // the level the map used before this change
 };
 
+// The two exams this app serves (matura spec §7.1). `regionLevels` is the only
+// place the deepest region level is stated: the zoom ladder, the ranking levels,
+// the area-select depth and the gmina gate are all derived from it. A matura
+// population's first entry is its default (resolvePopulation).
+const EXAMS = {
+  e8: {
+    dataBase: 'data/',
+    populations: null,                    // one dataset
+    referenceLevels: ['national', 'voivodeship', 'powiat', 'gmina'],
+    regionLevels: ['voivodeship', 'powiat', 'gmina'],
+    prefPrefix: '',                       // E8 keeps its bare, pre-matura keys
+    helpAnchors: '',                      // the nav's help link: plain help.html
+  },
+  matura: {
+    dataBase: 'data/matura/',
+    populations: ['liceum', 'technikum', 'all'],
+    referenceLevels: ['national', 'voivodeship'],
+    regionLevels: ['voivodeship', 'powiat'],
+    prefPrefix: 'matura_',
+    helpAnchors: '#matura',
+  },
+};
+
+// Read once, here. A link without `exam` is E8, so every link shared before
+// matura existed keeps working; the toggle reloads the page rather than
+// switching in place, so the exam never changes under a running page.
+const EXAM = getURLParams().get('exam') === 'matura' ? 'matura' : 'e8';
+const EXAM_CONFIG = EXAMS[EXAM];
+
+// Preferences that mean something different per exam, stored under the exam's
+// prefix (spec §7.2). Everything else (lang, metric, advanced_metrics,
+// gradient) is shared.
+const SCOPED_PREF_KEYS = ['subject', 'baseline', 'rank_level', 'rank_region', 'population'];
+
+// The comparison population to load: URL > this exam's stored pref > the
+// exam's first population. E8 has a single dataset, whose population is null.
+function resolvePopulation() {
+  const populations = EXAM_CONFIG.populations;
+  if (!populations) return null;
+  const url = getURLParams().get('population');
+  if (populations.includes(url)) return url;
+  const stored = readPrefs().population;
+  if (populations.includes(stored)) return stored;
+  return populations[0];
+}
+
 const COLOURS = {
   satRed:   '#d6604d',
   red:      '#f4a582',
@@ -159,7 +205,7 @@ function colourFor(score, centre, sigma, p1, p99, gradient) {
   return gradient ? gradient3Colour(score, centre, sigma, p1, p99) : CLASS3_FLAT[i];
 }
 
-const REFERENCE_LEVEL_KEYS = ['national', 'voivodeship', 'powiat', 'gmina'];
+const REFERENCE_LEVEL_KEYS = EXAM_CONFIG.referenceLevels;
 
 // What a SCHOOL is compared against (spec §6.2). Shared rather than per-page:
 // index.html and ranking.html both load app.js and both colour by these anchors.
@@ -308,30 +354,68 @@ function subjectLegendHTML(subjects) {
 // the same key can be requested twice before the first fetch lands. Caching the
 // resolved value would let both requests through — up to 4.3 MB for a powiat
 // shard, 0.77 MB for regions-gmina.json.
+//
+// Every dataset cache is keyed by the file's PATH, which names the exam and the
+// matura population (datasetPath), so one population's payload can never answer
+// for another's.
 let indexData = null, scaleData = null;
-const regionCache = new Map();   // level       -> Promise<payload>
-const shardCache  = new Map();   // "1425|mean" -> Promise<payload>
-const NAME_CACHE  = new Map();   // level       -> Map(teryt -> name)
+// The comparison population whose files indexData and scaleData hold: 'liceum',
+// 'technikum' or 'all' under matura, null under E8. An app.js global like
+// baselineLevel, because loadShard builds its path from it. Only
+// activateDataset assigns it.
+let population = null;
+const datasetCache = new Map();  // path -> Promise<payload>: schools-index.json, scale.json
+const regionCache = new Map();   // path -> Promise<payload>
+const shardCache  = new Map();   // path -> Promise<payload>, e.g. "data/powiat/1425-mean.json"
+const NAME_CACHE  = new Map();   // level -> Map(teryt -> name); names agree across datasets
 
-async function loadIndex() {
-  if (indexData) return indexData;
-  const res = await fetch('data/schools-index.json');
-  if (!res.ok) throw new Error(`schools-index.json: HTTP ${res.status}`);
-  indexData = await res.json();
-  return indexData;
+// `file` relative to the exam's data directory, inside the population's own
+// directory under matura: datasetPath('technikum', 'scale.json') is
+// 'data/matura/technikum/scale.json', datasetPath(null, 'scale.json') 'data/scale.json'.
+function datasetPath(p, file) {
+  return EXAM_CONFIG.dataBase + (p ? p + '/' : '') + file;
 }
 
-async function loadScale() {
-  if (scaleData) return scaleData;
-  const res = await fetch('data/scale.json');
-  if (!res.ok) throw new Error(`scale.json: HTTP ${res.status}`);
-  scaleData = await res.json();
-  return scaleData;
+// schools-index.json and scale.json. They never assign the globals —
+// activateDataset does, once both have landed.
+function loadDatasetFile(path) {
+  if (!datasetCache.has(path)) {
+    const file = path.slice(path.lastIndexOf('/') + 1);
+    datasetCache.set(path, fetch(path).then((r) => {
+      if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+      return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      datasetCache.delete(path);
+      throw e;
+    }));
+  }
+  return datasetCache.get(path);
+}
+
+function loadIndex(path) { return loadDatasetFile(path); }
+function loadScale(path) { return loadDatasetFile(path); }
+
+let datasetToken = 0;
+
+// The only writer of indexData, scaleData and population. Resolves true once
+// all three name `p`'s dataset; false, assigning nothing, when a later call
+// started before this one's files arrived.
+async function activateDataset(p) {
+  const token = ++datasetToken;
+  const [index, scale] = await Promise.all([
+    loadIndex(datasetPath(p, 'schools-index.json')),
+    loadScale(datasetPath(p, 'scale.json')),
+  ]);
+  if (token !== datasetToken) return false;
+  indexData = index; scaleData = scale; population = p;
+  return true;
 }
 
 async function loadRegions(level) {
-  if (!regionCache.has(level)) {
-    regionCache.set(level, fetch('data/regions-' + level + '.json').then((r) => {
+  const path = datasetPath(population, 'regions-' + level + '.json');
+  if (!regionCache.has(path)) {
+    regionCache.set(path, fetch(path).then((r) => {
       if (!r.ok) throw new Error(`regions-${level}.json: HTTP ${r.status}`);
       return r.json();
     }).then((payload) => {
@@ -342,11 +426,41 @@ async function loadRegions(level) {
       return payload;
     }).catch((e) => {
       // Drop the failed promise before rethrowing — see loadGeometryFor.
-      regionCache.delete(level);
+      regionCache.delete(path);
       throw e;
     }));
   }
-  return regionCache.get(level);
+  return regionCache.get(path);
+}
+
+// How many regions share each parent, per level. The suppression gate has two
+// arms (scripts/validate_export.py check_reference_gate): a region whose parent
+// holds fewer than MIN_REFERENCE_N schools, and a region that is its parent's
+// ONLY CHILD — compared against itself. They are different facts about a
+// region and the tooltip must not conflate them; on today's data every
+// suppressed cell is the second kind, so a single "too small" message is
+// wrong for all of them. Derived from regions.parent, which ships in the file.
+const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
+
+function siblingCountsFor(regions) {
+  const level = regions.metadata.level;
+  if (!siblingCache.has(level)) {
+    const counts = new Map();
+    for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
+    siblingCache.set(level, counts);
+  }
+  return siblingCache.get(level);
+}
+
+// Why region `i` has no score for `subject`, as an I18N key — decided here, once,
+// for both the map's tooltip and the ranking's row (spec §7.4). First match wins.
+// Only matura region files carry `n_scored`, so E8 never reaches the second arm.
+function regionNullReason(regions, i, subject) {
+  const r = regions.regions;
+  if (r.n_schools[i] === 0) return 'regionNoSchools';
+  if (r.n_scored?.[subject]?.[i] === 0) return 'regionNoScored';
+  if (siblingCountsFor(regions).get(r.parent[i]) <= 1) return 'regionOnlyChild';
+  return 'regionTooSmall';
 }
 
 // Region display names, filled by loadRegions as each level lands. Here rather
@@ -361,18 +475,18 @@ function nameOf(level, teryt) {
 }
 
 async function loadShard(powiat, metric) {
-  const key = powiat + '|' + metric;
-  if (!shardCache.has(key)) {
-    shardCache.set(key, fetch('data/powiat/' + powiat + '-' + metric + '.json').then((r) => {
+  const path = datasetPath(population, 'powiat/' + powiat + '-' + metric + '.json');
+  if (!shardCache.has(path)) {
+    shardCache.set(path, fetch(path).then((r) => {
       if (!r.ok) throw new Error(`${powiat}-${metric}.json: HTTP ${r.status}`);
       return r.json();
     }).catch((e) => {
       // Drop the failed promise before rethrowing — see loadGeometryFor.
-      shardCache.delete(key);
+      shardCache.delete(path);
       throw e;
     }));
   }
-  return shardCache.get(key);
+  return shardCache.get(path);
 }
 
 // Every shard under one selection, fetched concurrently. A voivodeship-wide
@@ -435,18 +549,32 @@ async function loadGeometryFor(level, focused) {
 
 const STORAGE_KEY = 'schools-app-prefs';
 
-function readPrefs() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
+function readRawPrefs() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
 }
 
+// The exam's view of the stored preferences: scoped keys read from the exam's
+// prefix, and a scoped key the exam has never stored reads as absent - never as
+// the other exam's value. Shared keys (lang, metric, advanced_metrics, gradient)
+// pass through.
+function readPrefs() {
+  const raw = readRawPrefs();
+  const prefix = EXAM_CONFIG.prefPrefix;
+  if (!prefix) return raw;
+  const view = { ...raw };
+  for (const key of SCOPED_PREF_KEYS) {
+    if ((prefix + key) in raw) view[key] = raw[prefix + key]; else delete view[key];
+  }
+  return view;
+}
+
+// Changes and saves the RAW object: saving readPrefs()'s view would copy one
+// exam's values into the other's keys.
 function writePref(key, value) {
-  const prefs = readPrefs();
-  if (value == null) delete prefs[key]; else prefs[key] = value;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs)); } catch {}
+  const raw = readRawPrefs();
+  const stored = SCOPED_PREF_KEYS.includes(key) ? EXAM_CONFIG.prefPrefix + key : key;
+  if (value == null) delete raw[stored]; else raw[stored] = value;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(raw)); } catch {}
 }
 
 function getURLParams() {
@@ -967,3 +1095,14 @@ function fmtScoreHTML(score, metric) {
 }
 
 function isPublic(s) { return s.is_public === 'Tak'; }
+
+// How many of the school's years have a result in `subject` (matura spec §6.2):
+// an extended subject's own count, which only a matura index carries; otherwise
+// the school's years, which is what every basic subject, the composite and every
+// E8 subject have.
+function subjectYears(s, subject) {
+  if (scaleData?.metadata.subject_groups?.extended?.includes(subject)) {
+    return s.subject_years?.[subject] ?? 0;
+  }
+  return s.n_years;
+}
