@@ -711,7 +711,7 @@
     // Zoomed back out to regions: whatever school was being navigated to is no
     // longer what the user is looking at, and leaving it armed would pop a
     // popup open the next time any powiat renders.
-    pendingSchool = null;
+    dropPendingSchool();
     regionLayer = L.geoJSON(geo, {
       // colourFor with gradient=false and zero anchors is deliberate: regions
       // use the three flat classes. The continuous ramp stays a school-level
@@ -1092,7 +1092,7 @@
     refreshFilters();
     // A school still waiting for its powiat was asked for under the old subject.
     // A forced one passed the filters above, so its popup survives the switch.
-    pendingSchool = null;
+    dropPendingSchool();
     renderLevel();   // repaint the choropleth for the new subject; see onMetricChange
     if (state.selectedSchool != null) reopenSelectedPopup();
   }
@@ -1247,6 +1247,16 @@
   // Past disableClusteringAtZoom (14), so the marker stands on its own and its
   // popup can open without a cluster having to spiderfy first.
   const SCHOOL_ZOOM = 14;
+
+  // Forget a school waiting for its powiat. A forced school goes with it unless
+  // it is still the selection: forced lasts as long as the selection (spec
+  // §7.4), and a school parked here because a rebuild elsewhere closed its popup
+  // is no longer selected — left forced, it would pass every filter for the rest
+  // of the session the next time its powiat is drawn.
+  function dropPendingSchool() {
+    pendingSchool = null;
+    if (forcedSchool !== state.selectedSchool) forcedSchool = null;
+  }
 
   function openPendingSchool() {
     if (pendingSchool == null) return;
