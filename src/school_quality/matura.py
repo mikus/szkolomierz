@@ -240,3 +240,12 @@ def assert_population_exclusions(population: str, short_subjects: set[str]) -> N
             f'POPULATION_EXCLUSIONS: short but not excluded {unexpected}; excluded but '
             f'not short {no_longer_short}. Decide by hand.'
         )
+
+
+def region_display_name(name: str) -> str:
+    """E8's spelling of a region name, so a region reads the same in both exams and every
+    population (spec §5.7: names are display, identity is the TERYT). CIE's matura files
+    give powiat names in lower case and the polygon fallback prefixes `powiat `; this drops
+    that prefix and capitalises the first letter of every space- or hyphen-separated word."""
+    name = name.removeprefix('powiat ')
+    return re.sub(r'(^|[ -])(\w)', lambda m: m.group(1) + m.group(2).upper(), name)

@@ -30,6 +30,7 @@ from school_quality.matura import (
     export_subjects,
     in_population,
     passing_coverage,
+    region_display_name,
     school_type,
     subject_groups,
     unsuffixed_subjects,
@@ -410,3 +411,15 @@ def test_an_exclusion_mismatch_names_both_differences():
 def test_exclusions_for_an_unknown_population_raise():
     with pytest.raises(ValueError, match='unknown population'):
         assert_population_exclusions('technika', set())
+
+
+@pytest.mark.parametrize(('source', 'expected'), [
+    ('bolesławiecki', 'Bolesławiecki'),
+    ('powiat suwalski', 'Suwalski'),
+    ('golubsko-dobrzyński', 'Golubsko-Dobrzyński'),
+    ('łódzki wschodni', 'Łódzki Wschodni'),
+    ('Jelenia Góra', 'Jelenia Góra'),
+    ('Mazowieckie', 'Mazowieckie'),
+])
+def test_region_display_name_matches_e8s_spelling(source, expected):
+    assert region_display_name(source) == expected
