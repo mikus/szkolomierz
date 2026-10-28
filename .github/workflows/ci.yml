@@ -56,3 +56,5 @@ jobs:
       # the pipeline, which is what makes it a check rather than a restatement.
       - name: Validate the published export against source
         run: uv run python scripts/validate_export.py
+      - name: Validate the matura export against source
+        run: uv run python scripts/validate_export.py --exam matura

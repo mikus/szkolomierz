@@ -76,6 +76,17 @@ Checks
      and shard are all TERYT-keyed, so a marker 600 km from the school it names
      is invisible to every other check in this file.
 
+Matura (--exam matura) runs A-Q over each comparison population's directory,
+docs/data/matura/{liceum,technikum,all}/, with that population's subjects and its
+two reference and two region levels, and adds:
+  R. Rejected rows == output/matura/rejected_schools.csv, by year and reason.
+  S. One type per school; each type's yearly school count within ±10%.
+  T. The index's type, pass_rate, subject_years and subject_takers == the source.
+  U. scale.json's n_ranked == the size of every recomputed view.
+  V. Every subject has source data each year; the subject lists are the
+     validator's own; every scale entry is complete, finite, with sigma > 0.
+  W. At least 99% of each population's schools have coordinates.
+
 M and N gate on two different populations, and conflating them is the easiest
 way to break this map. Both derive their populations independently — the
 siblings from the docs/geo key set, the parent's schools from the source rows —
@@ -86,6 +97,7 @@ Usage
   uv run python scripts/validate_export.py
   uv run python scripts/validate_export.py --data-dir data/egzamin-osmoklasisty \
       --docs-data docs/data --geo-dir docs/geo
+  uv run python scripts/validate_export.py --exam matura
 Exit code 0 if everything passes, 1 otherwise.
 """
 
@@ -101,8 +113,9 @@ import sys
 import unicodedata
 from collections import Counter, defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass
 from pathlib import Path
-from typing import TypedDict
+from typing import NamedTuple, TypedDict
 
 import numpy as np
 import pandas as pd
@@ -113,7 +126,7 @@ from scipy import stats
 Rspo = int
 Year = int
 Teryt = str  # a region key: 2 digits (voivodeship), 4 (powiat), 6 (gmina)
-Subject = str  # 'polski' | 'matematyka' | 'angielski' | 'composite_min'
+Subject = str  # 'polski' | 'matematyka' | 'angielski' | 'composite_min' | matura 'chemia_r' …
 Metric = str  # 'mean' | 'median' | 'diff_mean' | 'unit_norm_diff_mean'
 Level = str  # 'national' | 'voivodeship' | 'powiat' | 'gmina'
 ViewKind = str  # 'base' | 'loo' | 'single_year' | 'last_k'
@@ -131,8 +144,11 @@ class ScoreCell(TypedDict):
     pct: float
 
 
-CORE_SUBJECTS = ['polski', 'matematyka', 'angielski']
-ALL_SUBJECTS = CORE_SUBJECTS + ['composite_min']
+# The three subjects composite_min is the minimum of: E8's subjects, and matura's
+# basic level. Deliberately not a subject list to loop over - each dataset's
+# subjects are its Profile's, and a loop over this one would silently skip every
+# matura extended subject.
+COMPOSITE_INPUTS = ['polski', 'matematyka', 'angielski']
 EXPORT_METRICS = ['mean', 'median', 'diff_mean', 'unit_norm_diff_mean']
 # The metrics whose score is a distance from a reference population. Only these
 # vary by reference level, and only these are ever suppressed.
@@ -140,13 +156,12 @@ REFERENCED_METRICS = ['diff_mean', 'unit_norm_diff_mean']
 WEIGHTED_METRICS = set(REFERENCED_METRICS)  # the rest use a plain mean
 YEAR_FILE_RE = re.compile(r'^\d{4}')
 
-REFERENCE_LEVELS = ['national', 'voivodeship', 'powiat', 'gmina']
 PRIMARY_REFERENCE_LEVEL = 'voivodeship'
 # How many TERYT digits identify a region at each level; national is the whole
 # country, so its key is the empty prefix.
 REFERENCE_WIDTH = {'national': 0, 'voivodeship': 2, 'powiat': 4, 'gmina': 6}
-# The three levels the map draws as polygons, and what each is measured against.
-REGION_LEVELS = ['voivodeship', 'powiat', 'gmina']
+# What each region level is measured against. Which levels a dataset draws is its
+# Profile's (E8: voivodeship, powiat, gmina).
 PARENT_WIDTH = {'voivodeship': 0, 'powiat': 2, 'gmina': 4}
 PARENT_REFERENCE_LEVEL = {'voivodeship': 'national', 'powiat': 'voivodeship',
                           'gmina': 'powiat'}
@@ -163,14 +178,27 @@ MIN_PERCENTILE_N = 8
 EXPECTED_VOIVODESHIPS = 16
 
 # Spec §5.7, in gzipped KiB. Budgets are a gate, not guidance.
-FILE_BUDGETS_KB = {
+E8_FILE_BUDGETS_KB = {
     'regions-voivodeship.json': 50,
     'regions-powiat.json': 300,
     'regions-gmina.json': 1500,
     'schools-index.json': 550,
     'scale.json': 20,
 }
-SHARD_BUDGET_KB = 1024
+E8_SHARD_BUDGET_KB = 1024
+# Matura spec §9.1: the largest of the three populations, measured on the
+# 2023-2026 export (index 195, powiat regions 135, voivodeship regions 8, scale 3,
+# largest shard 355 - Warsaw, diff_mean, liceum), plus the 30-40% one more year of
+# views adds (3n - 1 views a school), rounded up. The index holds no views: it was
+# measured before geocoding (with coordinates for every school, about 225) and
+# grows about 10% a year, which this budget covers for about three years.
+MATURA_FILE_BUDGETS_KB = {
+    'regions-voivodeship.json': 15,
+    'regions-powiat.json': 200,
+    'schools-index.json': 300,
+    'scale.json': 10,
+}
+MATURA_SHARD_BUDGET_KB = 512
 GEOMETRY_BUDGET_KB = 250
 # Level 6 is what the measurements in §5.7 were taken at, and what a static host
 # serves; level 9 would flatter the files by a few per cent.
@@ -193,6 +221,35 @@ N_COL, MEAN_COL, MEDIAN_COL = 'liczba zdajacych', 'wynik sredni (%)', 'mediana (
 TERYT_COL = 'kod teryt gminy'
 
 
+@dataclass(frozen=True)
+class Profile:
+    """One dataset under validation: E8, or one matura comparison population.
+
+    Everything that differs between datasets lives here and is set in main(); the
+    checks read it rather than module constants, so none can silently apply E8's
+    subjects or levels to another dataset.
+    """
+
+    name: str
+    docs_data: Path
+    subjects: tuple[Subject, ...]  # every exported subject, composite_min included
+    reference_levels: tuple[Level, ...]
+    region_levels: tuple[Level, ...]
+    slider_subjects: tuple[Subject, ...]  # whose base scores span the value slider
+    file_budgets_kb: dict[str, int]
+    shard_budget_kb: int
+    # Matura's extended subjects are sat at some schools only (spec §5.5 b, §6.4):
+    # a region weights each school by that subject's own takers, and the region
+    # files carry n_scored / n_takers. E8 weights every subject by the school's
+    # largest cohort, and changing that would change E8's published bytes.
+    sparse_subjects: bool = False
+
+    @property
+    def source_subjects(self) -> tuple[Subject, ...]:
+        """The subjects read from the source xlsx: all but the composite."""
+        return tuple(subject for subject in self.subjects if subject != 'composite_min')
+
+
 def source_level(metric: Metric, level: Level) -> Level:
     """Which reference level a metric's score is actually computed at.
 
@@ -203,16 +260,18 @@ def source_level(metric: Metric, level: Level) -> Level:
     return PRIMARY_REFERENCE_LEVEL if metric not in WEIGHTED_METRICS else level
 
 
-def shard_levels(metric: Metric) -> list[Level]:
+def shard_levels(profile: Profile, metric: Metric) -> list[Level]:
     """Which level keys a metric's shards must carry (spec §5.4).
 
     Derived from the metric, not read from the file: `metadata.levels` is the
     export's claim about itself, and a claim checked against itself is no check.
-    A difference metric genuinely differs by level, so all four are published; a
+    A difference metric genuinely differs by level, so every level is published; a
     raw metric would publish one block four times over, so it publishes the
     primary level alone and names it. Check D holds the file to this.
     """
-    return list(REFERENCE_LEVELS) if metric in REFERENCED_METRICS else [PRIMARY_REFERENCE_LEVEL]
+    if metric in REFERENCED_METRICS:
+        return list(profile.reference_levels)
+    return [PRIMARY_REFERENCE_LEVEL]
 
 
 # ── xlsx reading (independent re-implementation of the notebook loader) ───────
@@ -281,7 +340,8 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
     if not files:
         sys.exit(f'No source xlsx files (matching ^\\d{{4}}) in {data_dir}')
 
-    needed = [(subject, col) for subject in CORE_SUBJECTS for col in (N_COL, MEAN_COL, MEDIAN_COL)]
+    needed = [(subject, col) for subject in COMPOSITE_INPUTS
+              for col in (N_COL, MEAN_COL, MEDIAN_COL)]
     meta_needed = [('meta', 'rspo'), ('meta', 'wojewodztwo - nazwa'), ('meta', TERYT_COL)]
     per_file_frames = []
     for path in files:
@@ -301,7 +361,7 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
             'teryt': sheet[('meta', TERYT_COL)].map(normalise_teryt),
             'year': year,
         }
-        for subject in CORE_SUBJECTS:
+        for subject in COMPOSITE_INPUTS:
             column_data[f'n_{subject}'] = pd.to_numeric(sheet[(subject, N_COL)], errors='coerce')
             column_data[f'mean_{subject}'] = pd.to_numeric(
                 sheet[(subject, MEAN_COL)], errors='coerce'
@@ -313,7 +373,7 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
 
     df = pd.concat(per_file_frames, ignore_index=True)
     keep = df['rspo'].notna() & df['n_polski'].notna() & (df['n_polski'] > 0)
-    for subject in CORE_SUBJECTS:
+    for subject in COMPOSITE_INPUTS:
         keep &= df[f'mean_{subject}'].notna() & df[f'median_{subject}'].notna()
     df = df[keep]
 
@@ -325,7 +385,7 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
             'teryt': record['teryt'],
             'wojewodztwo': record['wojewodztwo'],
         }
-        for subject in CORE_SUBJECTS:
+        for subject in COMPOSITE_INPUTS:
             row[subject] = {
                 'n': float(record[f'n_{subject}']),
                 'mean': float(record[f'mean_{subject}']),
@@ -334,30 +394,215 @@ def read_clean_rows(data_dir: Path) -> list[dict]:
         rows.append(row)
     return rows
 
+# ── matura source (EM2023), restated independently of the pipeline ─────────
+#
+# Matura spec §2.3, §3.1, §4.2 and §5.2, written out again rather than imported:
+# the header rule, the population rule and the subject list are each something a
+# pipeline bug could get wrong, and only a second statement of them can disagree.
+
+MATURA_DATA_DIR = Path('data/egzamin-maturalny')
+MATURA_DOCS_DATA = Path('docs/data/matura')
+MATURA_REJECTED_SCHOOLS = Path('output/matura/rejected_schools.csv')
+TECHNIKUM_FIRST_YEAR = 2024
+MATURA_BASIC_BAND = 'egzaminy obowiazkowe'
+MATURA_EXTENDED_BAND = 'egzaminy dodatkowe'
+MATURA_WHOLE_EXAM = ('.', 'dla calego egzaminu dojrzalosci')
+MATURA_N, MATURA_MEAN, MATURA_MEDIAN = 'liczba zdajacych', 'sredni wynik (%)', 'mediana (%)'
+MATURA_PASS_RATE = 'zdawalnosc (%)'
+# key -> normalised source subject. Exact `(m)` names only: the unsuffixed namesake
+# is maths sat in Lithuanian, a different exam, and `(m22)`-style names are civics.
+MATURA_BASIC = {
+    'polski': 'jezyk polski poziom podstawowy (m)',
+    'matematyka': 'matematyka poziom podstawowy (m)',
+    'angielski': 'jezyk angielski poziom podstawowy (m)',
+}
+MATURA_EXTENDED = {
+    'angielski_r': 'jezyk angielski poziom rozszerzony (m)',
+    'matematyka_r': 'matematyka poziom rozszerzony (m)',
+    'polski_r': 'jezyk polski poziom rozszerzony (m)',
+    'biologia_r': 'biologia poziom rozszerzony (m)',
+    'chemia_r': 'chemia poziom rozszerzony (m)',
+    'fizyka_r': 'fizyka poziom rozszerzony (m)',
+    'geografia_r': 'geografia poziom rozszerzony (m)',
+    'historia_r': 'historia poziom rozszerzony (m)',
+    'informatyka_r': 'informatyka poziom rozszerzony (m)',
+    'historia_sztuki_r': 'historia sztuki poziom rozszerzony (m)',
+    'niemiecki_r': 'jezyk niemiecki poziom rozszerzony (m)',
+}
+# Restated decisions, not recomputed rules (spec §4.2): the >= 100-licea rule and
+# the >= 2-base-score rule are asserted in the notebook only, so a recount here
+# could not catch an outcome that changed with the data.
+MATURA_EXCLUSIONS = {'technikum': frozenset({'historia_sztuki_r'})}
+# Spec §5.2: the types each comparison population holds, and its first year.
+MATURA_POPULATIONS = {
+    'liceum': (frozenset({'liceum'}), None),
+    'technikum': (frozenset({'technikum'}), TECHNIKUM_FIRST_YEAR),
+    'all': (frozenset({'liceum', 'technikum'}), TECHNIKUM_FIRST_YEAR),
+}
+# Spec §9.1: each type's school count in its first year, measured 2026-10-05.
+# Rule 7 fixes each type's first year, so these never move.
+MATURA_FIRST_YEAR_SCHOOLS = {'liceum': (2023, 2115), 'technikum': (2024, 1700)}
+MATURA_COUNT_DRIFT = 0.10
+# Matura spec §9.1. E8 reaches 99.98%; check Q alone passes "0 of 0" on an index
+# nobody has geocoded.
+MATURA_COORDINATE_FLOOR = 0.99
+
+
+def matura_header_keys(top: pd.DataFrame) -> list[tuple[str, str, str]]:
+    """(band, subject, measure) for every column, from an EM2023 sheet's 3 header rows.
+
+    The meta columns are the ones before the first band cell, keyed ('meta', '',
+    name). Band and subject are forward-filled across their merged cells, the
+    subject restarting with each band; the band stays in the key because some
+    subject names occur in two bands. A measure's leading '* ' is dropped. A
+    column whose three cells are all empty is keyed ('', '', '') and never read;
+    any other repeated key exits, since one of its columns would be unreachable.
+    """
+    keys: list[tuple[str, str, str]] = []
+    band, subject = None, ''
+    for column in range(top.shape[1]):
+        raw_band, raw_subject, raw_measure = (
+            clean_header_value(top.iat[row, column]) for row in range(3)
+        )
+        if not (raw_band or raw_subject or raw_measure):
+            keys.append(('', '', ''))
+            continue
+        if raw_band:
+            band, subject = normalize_text(raw_band), ''
+        if raw_subject:
+            subject = normalize_text(raw_subject)
+        measure = normalize_text(raw_measure).lstrip('* ')
+        keys.append(('meta', '', measure) if band is None else (band, subject, measure))
+    repeated = sorted(key for key, count in Counter(keys).items()
+                      if count > 1 and key != ('', '', ''))
+    if repeated:
+        sys.exit(f'repeated header keys: {repeated[:3]}')
+    return keys
+
+
+def classify_matura_row(typ, rodzaj, year: Year, has_basic_means: bool) -> str:
+    """Spec §3.1: 'liceum', 'technikum', or the reason the row is rejected.
+
+    Rules 1-6 in order type the row or reject it, and rule 6 raises: an unknown
+    category is a source change to look at, not a row to drop. A typed row is
+    then rejected by rule 7 (a technikum before 2024) before rule 8 (a basic mean
+    missing); reversed, the 9 technika of 2023 would land under rule 8.
+    """
+    typ = normalize_text(typ) if isinstance(typ, str) else ''
+    rodzaj = normalize_text(rodzaj) if isinstance(rodzaj, str) else ''
+    if not rodzaj:
+        return 'oke_pseudo_row'
+    if typ == 'branzowa':
+        return 'branzowa_ii'
+    if typ == 'liceum' and rodzaj == 'dla doroslych':
+        return 'adult_liceum'
+    if typ == 'liceum' and rodzaj in ('dla mlodziezy', 'nie dotyczy'):
+        kind = 'liceum'
+    elif typ == 'technikum' and rodzaj == 'dla mlodziezy':
+        kind = 'technikum'
+    else:
+        raise ValueError(f'unknown school category: typ={typ!r}, rodzaj={rodzaj!r}')
+    if kind == 'technikum' and year < TECHNIKUM_FIRST_YEAR:
+        return 'technikum_2023'
+    if not has_basic_means:
+        return 'missing_basic_subject'
+    return kind
+
+
+def read_matura_rows(data_dir: Path) -> tuple[list[dict], Counter]:
+    """Every EM2023 population row, and the rejected rows counted by (year, reason).
+
+    A row is {'rspo', 'year', 'type', 'teryt', 'wojewodztwo', 'pass_rate',
+    <subject key>: {'n', 'mean', 'median'}}. A subject key is present only where
+    the source published that subject's mean: CIE withholds it below 5 takers, so
+    an empty mean is absence, not error.
+    """
+    files = sorted(
+        p for p in data_dir.glob('*.xlsx')
+        if not p.name.startswith('.') and YEAR_FILE_RE.match(p.name)
+    )
+    if not files:
+        sys.exit(f'No source xlsx files (matching ^\\d{{4}}) in {data_dir}')
+    subjects = ({key: (MATURA_BASIC_BAND, name) for key, name in MATURA_BASIC.items()}
+                | {key: (MATURA_EXTENDED_BAND, name) for key, name in MATURA_EXTENDED.items()})
+    meta = {name: ('meta', '', name) for name in (
+        'rspo szkoly', 'wojewodztwo - nazwa', TERYT_COL, 'typ placowki', 'rodzaj placowki')}
+    numeric = [(*MATURA_WHOLE_EXAM, MATURA_PASS_RATE)] + [
+        (band, name, measure) for band, name in subjects.values()
+        for measure in (MATURA_N, MATURA_MEAN, MATURA_MEDIAN)
+    ]
+    rows: list[dict] = []
+    rejects: Counter = Counter()
+    for path in files:
+        year = int(YEAR_FILE_RE.match(path.name).group(0))
+        try:
+            sheet = pd.read_excel(path, sheet_name='SAS', header=None)
+        except ValueError as exc:
+            sys.exit(f"Cannot read sheet 'SAS' in {path.name}: {exc}")
+        data = sheet.iloc[3:].reset_index(drop=True)
+        data.columns = pd.MultiIndex.from_tuples(matura_header_keys(sheet.iloc[:3]))
+        missing = [key for key in [*meta.values(), *numeric] if key not in data.columns]
+        if missing:
+            sys.exit(f'{path.name}: expected columns not found: {missing}')
+        column = {key: pd.to_numeric(data[key], errors='raise').tolist() for key in numeric}
+        rspo = pd.to_numeric(data[meta['rspo szkoly']], errors='raise').tolist()
+        typ, rodzaj = data[meta['typ placowki']].tolist(), data[meta['rodzaj placowki']].tolist()
+        teryt, region = data[meta[TERYT_COL]].tolist(), data[meta['wojewodztwo - nazwa']].tolist()
+        for i in range(len(data)):
+            has_basic = all(
+                not math.isnan(column[(MATURA_BASIC_BAND, name, MATURA_MEAN)][i])
+                for name in MATURA_BASIC.values()
+            )
+            outcome = classify_matura_row(typ[i], rodzaj[i], year, has_basic)
+            if outcome not in ('liceum', 'technikum'):
+                rejects[(year, outcome)] += 1
+                continue
+            pass_rate = column[(*MATURA_WHOLE_EXAM, MATURA_PASS_RATE)][i]
+            row = {
+                'rspo': int(rspo[i]), 'year': year, 'type': outcome,
+                'teryt': normalise_teryt(teryt[i]), 'wojewodztwo': str(region[i]).strip(),
+                'pass_rate': None if math.isnan(pass_rate) else float(pass_rate),
+            }
+            for key, (band, name) in subjects.items():
+                mean = column[(band, name, MATURA_MEAN)][i]
+                if math.isnan(mean):
+                    continue
+                n, median = column[(band, name, MATURA_N)][i], column[(band, name, MATURA_MEDIAN)][i]
+                if math.isnan(n) or math.isnan(median):
+                    sys.exit(f'{path.name}: rspo {row["rspo"]} {key} has a mean but n={n}, '
+                             f'median={median}')
+                row[key] = {'n': float(n), 'mean': float(mean), 'median': float(median)}
+            rows.append(row)
+    return rows, rejects
+
 
 # ── independent metric / view / rank recomputation ──────────────────────────
 
 
 def compute_reference_stats(
-    rows: list[dict], level: Level
-) -> tuple[dict[tuple[Year, Teryt], dict[Subject, float]], dict[tuple[Year, Teryt], int]]:
-    """(year, region) -> {subject: mean of school means}, and (year, region) -> n.
+    rows: list[dict], level: Level, subjects: tuple[Subject, ...]
+) -> tuple[dict[tuple[Year, Teryt], dict[Subject, float]],
+           dict[tuple[Year, Teryt], dict[Subject, int]]]:
+    """(year, region) -> {subject: mean of school means}, and the same -> {subject: n}.
 
     The mean is the per-year reference that diff_mean / unit_norm_diff_mean
     subtract off; n is the size of that reference population, which spec §4.3
-    gates a school's difference score on.
+    gates a school's difference score on. n counts the schools with a published
+    mean in THAT subject (matura spec §5.5 a): a row carries a subject only where
+    the source published its mean, so counting rows would be the region's size,
+    which differs as soon as a subject is not sat everywhere. On E8 every row
+    carries all three subjects and the two agree.
     """
     width = REFERENCE_WIDTH[level]
-    grouped: dict[tuple, dict[Subject, list]] = defaultdict(
-        lambda: {subject: [] for subject in CORE_SUBJECTS}
-    )
+    grouped: dict[tuple, dict[Subject, list]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
         bucket = grouped[(row['year'], row['teryt'][:width])]
-        for subject in CORE_SUBJECTS:
-            bucket[subject].append(row[subject]['mean'])
+        for subject in subjects:
+            if subject in row:
+                bucket[subject].append(row[subject]['mean'])
     reference_mean, reference_n = {}, {}
     for key, bucket in grouped.items():
-        reference_n[key] = len(bucket['polski'])
+        reference_n[key] = {subject: len(values) for subject, values in bucket.items()}
         reference_mean[key] = {
             subject: math.fsum(values) / len(values) for subject, values in bucket.items()
         }
@@ -365,24 +610,27 @@ def compute_reference_stats(
 
 
 def compute_per_year_values(
-    rows: list[dict], level: Level
+    rows: list[dict], level: Level, subjects: tuple[Subject, ...]
 ) -> dict[tuple[Rspo, Subject], dict[Year, dict[str, float]]]:
     """(rspo, subject) -> year -> {'n', 'mean', 'median', 'diff_mean',
     'unit_norm_diff_mean', 'reference_n'} for valid rows (n > 0), with the
     difference metrics measured against `level`'s per-year reference.
     unit_norm uses the signed ceiling/floor normalisation to [-1, +1]."""
-    reference_mean, reference_n = compute_reference_stats(rows, level)
+    reference_mean, reference_n = compute_reference_stats(rows, level, subjects)
     width = REFERENCE_WIDTH[level]
     per_year_by_school_subject: dict[tuple, dict[Year, dict]] = defaultdict(dict)
     for row in rows:
         year = row['year']
         group = (year, row['teryt'][:width])
         references, population = reference_mean[group], reference_n[group]
-        for subject in CORE_SUBJECTS:
-            n = row[subject]['n']
+        for subject in subjects:
+            cell = row.get(subject)
+            if cell is None:  # no published mean in this subject this year
+                continue
+            n = cell['n']
             if not n > 0:  # NaN-safe: NaN > 0 is False
                 continue
-            mean = row[subject]['mean']
+            mean = cell['mean']
             reference = references[subject]
             diff_mean = mean - reference
             if diff_mean >= 0:
@@ -392,10 +640,10 @@ def compute_per_year_values(
             per_year_by_school_subject[(row['rspo'], subject)][year] = {
                 'n': n,
                 'mean': mean,
-                'median': row[subject]['median'],
+                'median': cell['median'],
                 'diff_mean': diff_mean,
                 'unit_norm_diff_mean': diff_mean / denom,
-                'reference_n': population,
+                'reference_n': population[subject],
             }
     return per_year_by_school_subject
 
@@ -421,12 +669,12 @@ def aggregate_across_years(
     return math.fsum(values) / len(values)
 
 
-def compute_view_scores(rows: list[dict]) -> ViewScores:
+def compute_view_scores(profile: Profile, rows: list[dict]) -> ViewScores:
     """(level, metric, subject, view_kind, param) -> {rspo: score}.
 
     Each school's views use only its own years: base (all), loo (one excluded,
     >= 2 years), single_year (each), last_k (most recent k, k = 2..n-1).
-    composite_min = min over the 3 core subjects, for the schools present in all
+    composite_min = min over COMPOSITE_INPUTS, for the schools present in all
     three for that view. A difference score whose smallest per-year reference
     population is under MIN_REFERENCE_N is withheld (spec §4.3), which is why the
     gmina level carries far fewer cells than the national one.
@@ -436,8 +684,9 @@ def compute_view_scores(rows: list[dict]) -> ViewScores:
     """
     view_key_to_rspo_scores: dict[tuple, dict[Rspo, float]] = defaultdict(dict)
 
-    for level in REFERENCE_LEVELS:
-        per_year_by_school_subject = compute_per_year_values(rows, level)
+    for level in profile.reference_levels:
+        per_year_by_school_subject = compute_per_year_values(
+            rows, level, profile.source_subjects)
         metrics = EXPORT_METRICS if level == PRIMARY_REFERENCE_LEVEL else REFERENCED_METRICS
         for metric in metrics:
             for (rspo, subject), year_to_values in per_year_by_school_subject.items():
@@ -467,25 +716,23 @@ def compute_view_scores(rows: list[dict]) -> ViewScores:
             view_params = {
                 (view_kind, param)
                 for (lvl, met, sub, view_kind, param) in view_key_to_rspo_scores
-                if lvl == level and met == metric and sub in CORE_SUBJECTS
+                if lvl == level and met == metric and sub in COMPOSITE_INPUTS
             }
             for view_kind, param in view_params:
                 per_subject = {
                     subject: view_key_to_rspo_scores.get(
                         (level, metric, subject, view_kind, param), {}
                     )
-                    for subject in CORE_SUBJECTS
+                    for subject in COMPOSITE_INPUTS
                 }
-                shared_rspos = (
-                    set(per_subject['polski'])
-                    & set(per_subject['matematyka'])
-                    & set(per_subject['angielski'])
+                shared_rspos = set.intersection(
+                    *(set(per_subject[subject]) for subject in COMPOSITE_INPUTS)
                 )
                 composite = view_key_to_rspo_scores[
                     (level, metric, 'composite_min', view_kind, param)
                 ]
                 for rspo in shared_rspos:
-                    composite[rspo] = min(per_subject[s][rspo] for s in CORE_SUBJECTS)
+                    composite[rspo] = min(per_subject[s][rspo] for s in COMPOSITE_INPUTS)
     return dict(view_key_to_rspo_scores)
 
 
@@ -494,17 +741,40 @@ def compute_students_per_school(rows: list[dict]) -> dict[Rspo, int]:
 
     The export stores, per base view, the MEDIAN students per year of the subject
     behind that view, and weights a region by the largest of them — so this is
-    the maximum over the three core subjects of that school's median cohort.
+    the maximum over COMPOSITE_INPUTS of that school's median cohort.
     """
     per_school: dict[Rspo, dict[Subject, list]] = defaultdict(lambda: defaultdict(list))
     for row in rows:
-        for subject in CORE_SUBJECTS:
+        for subject in COMPOSITE_INPUTS:
             n = row[subject]['n']
             if n > 0:
                 per_school[row['rspo']][subject].append(n)
     return {
         rspo: max(int(round(float(np.median(counts)))) for counts in by_subject.values())
         for rspo, by_subject in per_school.items()
+    }
+
+
+def compute_subject_takers(
+    rows: list[dict], subjects: tuple[Subject, ...]
+) -> dict[Subject, dict[Rspo, int]]:
+    """subject -> rspo -> the school's median takers per year over its years with a
+    published mean in that subject (matura spec §5.5 b, §6.4).
+
+    A school is listed under a subject only if it has such a year, so the keys are
+    also the schools that count as having a result in it - the population the
+    region gate (§5.5 c) and n_scored count. On E8 every school is under every
+    subject.
+    """
+    counts: dict[Subject, dict[Rspo, list]] = defaultdict(lambda: defaultdict(list))
+    for row in rows:
+        for subject in subjects:
+            cell = row.get(subject)
+            if cell is not None:
+                counts[subject][row['rspo']].append(cell['n'])
+    return {
+        subject: {rspo: int(round(float(np.median(values)))) for rspo, values in by_school.items()}
+        for subject, by_school in counts.items()
     }
 
 
@@ -583,6 +853,7 @@ class RecomputedLevel(TypedDict):
     members: dict[Teryt, list[Rspo]]
     siblings: dict[Teryt, int]
     parent_schools: dict[Teryt, int]
+    parent_scored: dict[Subject, dict[Teryt, int]]
     n_schools: list[int]
     n_students: list[int]
     score: dict[Metric, dict[Subject, list]]
@@ -590,13 +861,17 @@ class RecomputedLevel(TypedDict):
     pct: dict[Metric, dict[Subject, list]]
     n_ranked: dict[Metric, dict[Subject, int]]
     has_scored_member: dict[Metric, dict[Subject, list[bool]]]
+    n_scored: dict[Subject, list[int]]
+    n_takers: dict[Subject, list[int]]
 
 
 def compute_region_level(
+    profile: Profile,
     level: Level,
     geometry: set[Teryt],
     teryt_by_rspo: dict[Rspo, str],
     students_by_rspo: dict[Rspo, int],
+    subject_takers: dict[Subject, dict[Rspo, int]],
     view_key_to_rspo_scores: ViewScores,
 ) -> RecomputedLevel:
     """Rebuild one regions-{level}.json from the geometry and the source rows.
@@ -606,6 +881,11 @@ def compute_region_level(
     is measured against the level ABOVE it, so its schools' scores are read at
     PARENT_REFERENCE_LEVEL — taking primary-level scores for every level would
     put all 16 voivodeships at ~0 by construction.
+
+    A difference score needs >= MIN_REFERENCE_N schools with a mean in the
+    subject in its parent (matura spec §5.5 c) - on E8, every school. On a sparse
+    profile, schools are weighted by the subject's own takers; composite_min, which
+    has none, by students_by_rspo, the largest basic cohort.
     """
     width = REFERENCE_WIDTH[level]
     parent_width = PARENT_WIDTH[level]
@@ -621,40 +901,59 @@ def compute_region_level(
     for region, parent in zip(regions, parents):
         parent_schools[parent] += len(members[region])
 
+    takers = {**subject_takers, 'composite_min': students_by_rspo}
+    n_scored: dict[Subject, list[int]] = {}
+    n_takers: dict[Subject, list[int]] = {}
+    parent_scored: dict[Subject, dict[Teryt, int]] = {}
+    for subject in profile.subjects:
+        by_school = takers.get(subject, {})
+        n_scored[subject] = [sum(rspo in by_school for rspo in members[region])
+                             for region in regions]
+        n_takers[subject] = [sum(by_school.get(rspo, 0) for rspo in members[region])
+                             for region in regions]
+        scored_in_parent: Counter = Counter()
+        for parent, count in zip(parents, n_scored[subject]):
+            scored_in_parent[parent] += count
+        parent_scored[subject] = dict(scored_in_parent)
+
     result: RecomputedLevel = {
         'regions': regions,
         'parent': parents,
         'members': members,
         'siblings': dict(siblings),
         'parent_schools': dict(parent_schools),
+        'parent_scored': parent_scored,
         'n_schools': [len(members[region]) for region in regions],
         'n_students': [
             sum(students_by_rspo.get(rspo, 0) for rspo in members[region]) for region in regions
         ],
         'score': {}, 'rank': {}, 'pct': {}, 'n_ranked': {}, 'has_scored_member': {},
+        'n_scored': n_scored, 'n_takers': n_takers,
     }
 
     for metric in EXPORT_METRICS:
         for field in ('score', 'rank', 'pct', 'n_ranked', 'has_scored_member'):
             result[field][metric] = {}
         weighted = metric in WEIGHTED_METRICS
-        for subject in ALL_SUBJECTS:
+        for subject in profile.subjects:
             reference = source_level(metric, PARENT_REFERENCE_LEVEL[level])
             base_scores = view_key_to_rspo_scores.get(
                 (reference, metric, subject, 'base', None), {}
             )
+            weights = takers.get(subject, {}) if profile.sparse_subjects else students_by_rspo
             scores: list = []
             scored_member: list[bool] = []
             for region, parent in zip(regions, parents):
                 rspos = members[region]
                 raw = aggregate_region(
                     [base_scores.get(rspo) for rspo in rspos],
-                    [students_by_rspo.get(rspo, 0) for rspo in rspos],
+                    [weights.get(rspo, 0) for rspo in rspos],
                     weighted,
                 )
                 scored_member.append(raw is not None)
                 publishable = not weighted or (
-                    siblings[parent] > 1 and parent_schools[parent] >= MIN_REFERENCE_N
+                    siblings[parent] > 1
+                    and parent_scored[subject].get(parent, 0) >= MIN_REFERENCE_N
                 )
                 scores.append(None if raw is None or not publishable else round(raw, 4))
 
@@ -683,7 +982,7 @@ def compute_region_level(
 # ── JSON loading (streamed; the shards do not fit in memory together) ────────
 
 
-def load_json_exports(docs_data: Path) -> tuple[dict, dict, dict[Level, dict]]:
+def load_json_exports(profile: Profile) -> tuple[dict, dict, dict[Level, dict]]:
     """Load the three small served files. Returns (scale, index_columns, regions).
 
     The powiat shards are NOT loaded here: they total about 334 MB, and every
@@ -694,9 +993,11 @@ def load_json_exports(docs_data: Path) -> tuple[dict, dict, dict[Level, dict]]:
             sys.exit(f'Missing {path}')
         return json.loads(path.read_text(encoding='utf-8'))
 
+    docs_data = profile.docs_data
     scale = read(docs_data / 'scale.json')
     index = read(docs_data / 'schools-index.json')
-    regions = {level: read(docs_data / f'regions-{level}.json') for level in REGION_LEVELS}
+    regions = {level: read(docs_data / f'regions-{level}.json')
+               for level in profile.region_levels}
     shard_dir = docs_data / 'powiat'
     if not shard_dir.is_dir():
         sys.exit(f'Missing {shard_dir}')
@@ -863,7 +1164,7 @@ def values_disagree(published, recomputed, tol: float) -> bool:
 # ── checks ───────────────────────────────────────────────────────────────────
 
 
-def check_subjects_vs_xlsx(rows, docs_data: Path, rep: Report):
+def check_subjects_vs_xlsx(profile: Profile, rows, rep: Report):
     """A — the single-year scores of the 'mean'/'median' metrics must equal the
     mean/median read straight from the xlsx (ties the JSON to the raw source).
     These two carry one level key each (shard_levels), so every cell is read
@@ -873,15 +1174,16 @@ def check_subjects_vs_xlsx(rows, docs_data: Path, rep: Report):
     stats_by_metric = defaultdict(lambda: [0, 0.0])  # metric -> [checked, max_diff]
     mismatches = defaultdict(list)
     for level, metric, subject, view_kind, param, rspo, cell in iter_json_views(
-        docs_data, metrics=['mean', 'median']
+        profile.docs_data, metrics=['mean', 'median']
     ):
-        if view_kind != 'single_year' or subject not in CORE_SUBJECTS:
+        if view_kind != 'single_year' or subject not in profile.source_subjects:
             continue
         row = rspo_year_to_row.get((rspo, param))
-        if row is None:
+        source = None if row is None else row.get(subject)
+        if source is None:
             mismatches[metric].append(f'rspo={rspo} {subject} {param}: no such row in the xlsx')
             continue
-        expected = row[subject][metric]
+        expected = source[metric]
         stats_by_metric[metric][0] += 1
         stats_by_metric[metric][1] = max(stats_by_metric[metric][1], abs(cell['score'] - expected))
         if not within_tolerance(cell['score'], expected, SCORE_TOL):
@@ -951,7 +1253,7 @@ def check_aggregates(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: 
             )
 
 
-def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Report):
+def check_completeness(profile: Profile, view_key_to_rspo_scores: ViewScores, rep: Report):
     """C — the JSON and the recomputation must contain exactly the same score
     cells. Counted per view key rather than as two sets of tuples: the export has
     ~6.9M cells and materialising both sides would need gigabytes."""
@@ -959,7 +1261,9 @@ def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep
     matched: Counter = Counter()
     problems: list[str] = []
     json_only = 0
-    for level, metric, subject, view_kind, param, rspo, cell in iter_json_views(docs_data):
+    for level, metric, subject, view_kind, param, rspo, cell in iter_json_views(
+        profile.docs_data
+    ):
         json_key = (level, metric, subject, view_kind, param)
         recomputed = view_key_to_rspo_scores.get(
             (source_level(metric, level), metric, subject, view_kind, param), {}
@@ -978,8 +1282,8 @@ def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep
     # Only the levels the metric's shards carry: expecting a `mean` cell under
     # 'national' would report every school as missing from a file that is right.
     for metric in EXPORT_METRICS:
-        for level in shard_levels(metric):
-            for subject in ALL_SUBJECTS:
+        for level in shard_levels(profile, metric):
+            for subject in profile.subjects:
                 for key, scores in view_key_to_rspo_scores.items():
                     if key[:3] != (source_level(metric, level), metric, subject):
                         continue
@@ -1000,7 +1304,7 @@ def check_completeness(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep
         rep.ok(f'identical cell sets ({total:,} score cells)')
 
 
-def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
+def check_index_shard_join(profile: Profile, index: dict, rep: Report):
     """D — schools-index.json and the shards describe one population, and the
     index's `powiat` column is the only thing that tells the app which shard to
     fetch. Identity no longer lives in the shards, so this join is the sole
@@ -1015,6 +1319,7 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
     for rspo, powiat in zip(index['rspo'], index['powiat']):
         index_by_powiat[powiat].add(int(rspo))
 
+    docs_data = profile.docs_data
     problems: list[str] = []
     for powiat in sorted(index_by_powiat):
         for metric in EXPORT_METRICS:
@@ -1036,7 +1341,7 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
         # blank the map for whoever had that reference point chosen. And since
         # metadata.levels is what the frontend resolves the level from, it has
         # to name exactly the keys the schools below it really have.
-        expected_levels = shard_levels(metric)
+        expected_levels = shard_levels(profile, metric)
         checked += 1 + len(shard_rspos)
         if metadata.get('levels') != expected_levels:
             problems.append(f'{powiat}-{metric}.json: metadata.levels is '
@@ -1065,10 +1370,11 @@ def check_index_shard_join(index: dict, docs_data: Path, rep: Report):
                f'levels metadata.levels names ({checked:,} shard comparisons)')
 
 
-def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Report):
+def check_ranks(profile: Profile, view_key_to_rspo_scores: ViewScores, rep: Report):
     """E — per view population, the stored rank/pct must match rankdata over the
     recomputed (full-precision) scores, accepting any order among near-ties (see
-    acceptable_rank_range). The population is checked by counting rather than by
+    acceptable_rank_range). A view ranking fewer than MIN_PERCENTILE_N schools
+    publishes no percentile at all (matura spec §5.5 d). The population is checked by counting rather than by
     building sets, for the same memory reason as check C."""
     rep.section('E. Ranks/percentiles match rankdata over the recomputed scores')
     scores_ascending = {
@@ -1077,7 +1383,9 @@ def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Repor
     seen: Counter = Counter()
     rank_fail = pct_fail = total = ambiguous = missing = 0
     examples: list[str] = []
-    for level, metric, subject, view_kind, param, rspo, cell in iter_json_views(docs_data):
+    for level, metric, subject, view_kind, param, rspo, cell in iter_json_views(
+        profile.docs_data
+    ):
         if cell['score'] is None:
             continue
         key = (source_level(metric, level), metric, subject, view_kind, param)
@@ -1098,7 +1406,16 @@ def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Repor
                     f'json_rank={cell["rank"]} not in [{rank_lo},{rank_hi}]'
                 )
             continue
-        if not (pct_lo - PCT_TOL <= cell['pct'] <= pct_hi + PCT_TOL):
+        if len(scores_ascending[key]) < MIN_PERCENTILE_N:
+            if cell['pct'] is not None:
+                pct_fail += 1
+                if len(examples) < 5:
+                    examples.append(
+                        f'{level}/{metric}/{subject}/{view_kind}/{param} rspo={rspo}: '
+                        f'pct={cell["pct"]} in a view ranking {len(scores_ascending[key])}'
+                    )
+            continue
+        if cell['pct'] is None or not (pct_lo - PCT_TOL <= cell['pct'] <= pct_hi + PCT_TOL):
             pct_fail += 1
             if len(examples) < 5:
                 examples.append(
@@ -1107,13 +1424,14 @@ def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Repor
                 )
 
     pop_fail = 0
-    for level in REFERENCE_LEVELS:
+    for level in profile.reference_levels:
         for key, scores in view_key_to_rspo_scores.items():
             # `level not in shard_levels` is not "nothing to check": it is the
             # export deliberately not repeating a raw metric under a level it
             # does not vary by. Counting it would demand a population that the
             # file is right to omit.
-            if level not in shard_levels(key[1]) or key[0] != source_level(key[1], level):
+            if (level not in shard_levels(profile, key[1])
+                    or key[0] != source_level(key[1], level)):
                 continue
             json_key = (level, key[1], key[2], key[3], key[4])
             if seen[json_key] != len(scores):
@@ -1137,12 +1455,15 @@ def check_ranks(view_key_to_rspo_scores: ViewScores, docs_data: Path, rep: Repor
         )
 
 
-def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, rep: Report):
+def check_metadata(profile: Profile, scale, regions, view_key_to_rspo_scores,
+                   recomputed_regions, rep: Report):
     """F — recompute the colour-scale parameters and compare them to scale.json
     and to the region files' own metadata. sigma = std (sample) of base scores at
     that reference level; centre = mean for mean/median and composite_min, 0 for
     the diff metrics; p1/p99 from the ROUNDED base scores by position, and
-    slider_ranges (min/max/p1/p99) from the unrounded composite_min distribution.
+    slider_ranges (min/max/p1/p99) from the unrounded base scores of the profile's
+    slider subjects pooled (E8: composite_min; matura: every subject, spec §6.3).
+    A missing published slider entry fails.
     These drive the map's colours and value filter, so a wrong one would
     mis-colour the map silently."""
     rep.section('F. Colour-scale metadata (scale.json + the region files)')
@@ -1150,11 +1471,11 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
     slider_ranges = scale['metadata'].get('slider_ranges', {})
     mismatches, n = [], 0
 
-    for level in REFERENCE_LEVELS:
+    for level in profile.reference_levels:
         for metric in EXPORT_METRICS:
             reference = source_level(metric, level)
             published_metric = school_scale.get(level, {}).get(metric, {})
-            for subject in ALL_SUBJECTS:
+            for subject in profile.subjects:
                 base = view_key_to_rspo_scores.get((reference, metric, subject, 'base', None), {})
                 values = np.array(list(base.values()))
                 if len(values) < 2:
@@ -1185,11 +1506,15 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
                         )
 
         for metric in EXPORT_METRICS:
-            base = view_key_to_rspo_scores.get(
-                (source_level(metric, level), metric, 'composite_min', 'base', None), {}
-            )
-            values = np.array(list(base.values()))
-            if len(values) == 0 or metric not in slider_ranges.get(level, {}):
+            reference = source_level(metric, level)
+            values = np.array([
+                score
+                for subject in profile.slider_subjects
+                for score in view_key_to_rspo_scores.get(
+                    (reference, metric, subject, 'base', None), {}
+                ).values()
+            ])
+            if len(values) == 0:
                 continue
             n += 1
             expected = {
@@ -1198,7 +1523,7 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
                 'p1': round(float(np.quantile(values, 0.01)), 4),
                 'p99': round(float(np.quantile(values, 0.99)), 4),
             }
-            published = slider_ranges[level][metric]
+            published = slider_ranges.get(level, {}).get(metric, {})
             for field, value in expected.items():
                 if not within_tolerance(published.get(field), value, SCORE_TOL):
                     mismatches.append(
@@ -1206,7 +1531,7 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
                         f'json={published.get(field)} recomp={value}'
                     )
 
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         metadata = regions[level]['metadata']
         if metadata.get('min_reference_n') != MIN_REFERENCE_N:
             mismatches.append(f'regions-{level} min_reference_n='
@@ -1215,7 +1540,7 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
             mismatches.append(f'regions-{level} min_percentile_n='
                               f'{metadata.get("min_percentile_n")} != {MIN_PERCENTILE_N}')
         for metric in EXPORT_METRICS:
-            for subject in ALL_SUBJECTS:
+            for subject in profile.subjects:
                 n += 1
                 values = [
                     v for v in recomputed_regions[level]['score'][metric][subject]
@@ -1241,13 +1566,13 @@ def check_metadata(scale, regions, view_key_to_rspo_scores, recomputed_regions, 
                f'match the recomputation ({n} groups)')
 
 
-def check_class_spread(scale, docs_data: Path, rep: Report):
+def check_class_spread(profile: Profile, scale, rep: Report):
     """G — bucket the published base scores into A / B / C by the map's +-0.33
     sigma rule and flag any EMPTY class: a colour the map can never show usually
     means a degenerate centre/sigma."""
     rep.section('G. Class A/B/C spread is non-degenerate (base scores, per level)')
     counts: dict[tuple, Counter] = defaultdict(Counter)
-    for level, metric, subject, view_kind, _, _, cell in iter_json_views(docs_data):
+    for level, metric, subject, view_kind, _, _, cell in iter_json_views(profile.docs_data):
         if view_kind != 'base' or cell['score'] is None:
             continue
         anchors = scale['school'].get(level, {}).get(metric, {}).get(subject)
@@ -1262,13 +1587,13 @@ def check_class_spread(scale, docs_data: Path, rep: Report):
             counts[(level, metric, subject)]['B'] += 1
 
     empty = []
-    # scale.json keeps anchors at all four levels for every metric — the app
+    # scale.json keeps anchors at every level for every metric — the app
     # reads school[baselineLevel][metric] whatever the metric is — but a raw
     # metric's scores are published at one level only, so those are the groups
     # there are base scores to bucket.
     for metric in EXPORT_METRICS:
-        for level in shard_levels(metric):
-            for subject in ALL_SUBJECTS:
+        for level in shard_levels(profile, metric):
+            for subject in profile.subjects:
                 anchors = scale['school'].get(level, {}).get(metric, {}).get(subject)
                 if not anchors or not anchors['sigma']:
                     continue
@@ -1354,7 +1679,7 @@ def check_identity_invariants(rows, index: dict, rep: Report):
                f'equal-length arrays, contract fields populated')
 
 
-def check_region_aggregates(regions, recomputed_regions, rep: Report):
+def check_region_aggregates(profile: Profile, regions, recomputed_regions, rep: Report):
     """I (spec §7.8) — every region's published aggregate must be what its own
     schools produce under §5.1's weighting, and its n_schools / n_students /
     rank / pct / n_ranked must follow from the same membership. The school-level
@@ -1366,7 +1691,7 @@ def check_region_aggregates(regions, recomputed_regions, rep: Report):
     before any score, and no other check reads them at all.
     """
     rep.section('I. Region aggregates reconcile with their schools')
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         published = regions[level]['regions']
         expected = recomputed_regions[level]
         problems: list[str] = []
@@ -1406,7 +1731,7 @@ def check_region_aggregates(regions, recomputed_regions, rep: Report):
             if wrong:
                 problems.append(f'{len(wrong)} wrong {field}, e.g. {wrong[:3]}')
         for metric in EXPORT_METRICS:
-            for subject in ALL_SUBJECTS:
+            for subject in profile.subjects:
                 for field in ('score', 'rank', 'pct'):
                     published_values = published[field][metric][subject]
                     expected_values = expected[field][metric][subject]
@@ -1429,6 +1754,20 @@ def check_region_aggregates(regions, recomputed_regions, rep: Report):
                         f'n_ranked {metric}/{subject}: json={published_n} '
                         f'recomp={expected["n_ranked"][metric][subject]}'
                     )
+        # Matura spec §6.4: how many schools, and takers, have results in each
+        # subject - what the UI shows in place of n_schools / n_students.
+        for field in ('n_scored', 'n_takers') if profile.sparse_subjects else ():
+            for subject in profile.subjects:
+                published_values = published.get(field, {}).get(subject)
+                expected_values = expected[field][subject]
+                checked += len(expected_values)
+                if published_values != expected_values:
+                    wrong = ['missing'] if published_values is None else [
+                        f'{teryt}: json={a} recomp={b}' for teryt, a, b in zip(
+                            published['teryt'], published_values, expected_values)
+                        if a != b
+                    ]
+                    problems.append(f'{field}[{subject}] wrong: {wrong[:3]}')
         rep.checked += checked
         if problems:
             rep.fail(f'{level}: {len(problems)} aggregate mismatches', problems)
@@ -1437,12 +1776,12 @@ def check_region_aggregates(regions, recomputed_regions, rep: Report):
                    f'({len(expected["regions"]):,} regions)')
 
 
-def check_geometry_join(regions, geometry: dict[Level, set], rep: Report):
+def check_geometry_join(profile: Profile, regions, geometry: dict[Level, set], rep: Report):
     """J (spec §7.9) — a region without a polygon renders as nothing and a polygon
     without a region renders as a hole, and neither is visible in the data alone.
     An exact equality, because §5.1 builds the region rows from the geometry."""
     rep.section('J. Every region has a polygon and every polygon a region')
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         published = set(regions[level]['regions']['teryt'])
         keys = geometry[level]
         rep.checked += len(published | keys)
@@ -1483,7 +1822,7 @@ def check_no_nan(docs_data: Path, rep: Report):
         rep.ok(f'all {len(paths):,} emitted files parse under a strict JSON parser')
 
 
-def check_size_budgets(docs_data: Path, geo_dir: Path, rep: Report):
+def check_size_budgets(profile: Profile, geo_dir: Path, rep: Report):
     """L (spec §7.11) — every emitted file gzipped and compared to §5.7's budget.
     A gate, not guidance: a number that cannot be met is a bug in the budget."""
     rep.section('L. Gzipped size budgets')
@@ -1502,14 +1841,15 @@ def check_size_budgets(docs_data: Path, geo_dir: Path, rep: Report):
         if size_kb > budget_kb:
             breaches.append(f'{path.name}: {size_kb:.1f} KB gzipped > {budget_kb} KB budget')
 
-    for name, budget in FILE_BUDGETS_KB.items():
+    docs_data = profile.docs_data
+    for name, budget in profile.file_budgets_kb.items():
         path = docs_data / name
         if not path.exists():
             breaches.append(f'{name}: missing')
             continue
         measure(path, budget, name)
     for path in shard_paths(docs_data):
-        measure(path, SHARD_BUDGET_KB, 'shards')
+        measure(path, profile.shard_budget_kb, 'shards')
     for path in sorted(geo_dir.rglob('*.json')):
         measure(path, GEOMETRY_BUDGET_KB, 'geometry')
 
@@ -1524,7 +1864,7 @@ def check_size_budgets(docs_data: Path, geo_dir: Path, rep: Report):
                      f'({size_kb / budget_kb:.0%})')
 
 
-def check_percentile_gate(regions, recomputed_regions, rep: Report):
+def check_percentile_gate(profile: Profile, regions, recomputed_regions, rep: Report):
     """M (spec §7.5) — a region's percentile is its position among its SIBLINGS,
     so it is the siblings that must be numerous enough - the ones with a score,
     since only those are ranked. The sibling grouping is
@@ -1533,7 +1873,7 @@ def check_percentile_gate(regions, recomputed_regions, rep: Report):
     however the grouping was built. Gating on a region's own school count instead
     would wrongly publish a percentile for the gminas of 241 of 380 powiats."""
     rep.section('M. Percentile is gated on the sibling count')
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         published = regions[level]['regions']
         expected = recomputed_regions[level]
         siblings = expected['siblings']
@@ -1544,7 +1884,7 @@ def check_percentile_gate(regions, recomputed_regions, rep: Report):
         checked = 0
         suppressed: dict[str, int] = {}
         for metric in EXPORT_METRICS:
-            for subject in ALL_SUBJECTS:
+            for subject in profile.subjects:
                 scores = published['score'][metric][subject]
                 percentiles = published['pct'][metric][subject]
                 checked += len(percentiles)
@@ -1583,15 +1923,16 @@ def check_percentile_gate(regions, recomputed_regions, rep: Report):
                      + ', '.join(f'{m}={c:,}' for m, c in suppressed.items()))
 
 
-def check_reference_gate(regions, recomputed_regions, rep: Report):
+def check_reference_gate(profile: Profile, regions, recomputed_regions, rep: Report):
     """N (spec §7.6) — a region's difference score is a distance from its PARENT's
-    mean, so it is the parent's schools that must be numerous enough, and a region
+    mean, so it is the parent's schools with a mean in that subject that must be
+    numerous enough (matura spec §5.5 c; on E8 that is every school), and a region
     that is its parent's only child is being compared against itself. Both
     populations come from the source rows and the geometry, never from the
     published n_schools[]/parent[] arrays. mean and median carry no reference
     population at all, so nothing about them may be blanked."""
     rep.section("N. Diff scores are gated on the parent's school count")
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         published = regions[level]['regions']
         expected = recomputed_regions[level]
         siblings, parent_schools = expected['siblings'], expected['parent_schools']
@@ -1604,7 +1945,7 @@ def check_reference_gate(regions, recomputed_regions, rep: Report):
         blanked = 0
         for metric in EXPORT_METRICS:
             weighted = metric in WEIGHTED_METRICS
-            for subject in ALL_SUBJECTS:
+            for subject in profile.subjects:
                 scores = published['score'][metric][subject]
                 scored_member = expected['has_scored_member'][metric][subject]
                 checked += len(scores)
@@ -1612,15 +1953,16 @@ def check_reference_gate(regions, recomputed_regions, rep: Report):
                 for teryt, parent, score, has_member in zip(
                     published['teryt'], expected['parent'], scores, scored_member
                 ):
+                    scored_in_parent = expected['parent_scored'][subject].get(parent, 0)
                     gated = weighted and (
-                        siblings[parent] <= 1 or parent_schools[parent] < MIN_REFERENCE_N
+                        siblings[parent] <= 1 or scored_in_parent < MIN_REFERENCE_N
                     )
                     should_be_null = gated or not has_member
                     if should_be_null != (score is None):
                         wrong.append(
                             f'{teryt} {metric}/{subject}: score={score}, '
                             f'siblings={siblings[parent]}, '
-                            f'parent_schools={parent_schools[parent]}, '
+                            f'parent schools with a mean={scored_in_parent}, '
                             f'has_scored_school={has_member}'
                         )
                     elif gated and score is None:
@@ -1690,7 +2032,7 @@ def describe_key_history(entries: list[tuple[Year, str]], width: int) -> str:
     )
 
 
-def check_region_key_stability(rows, index: dict, rep: Report):
+def check_region_key_stability(profile: Profile, rows, index: dict, rep: Report):
     """P (spec §7 assertion 4) — a school's region keys must not wander.
 
     Deliberately NOT a flat stability assertion at every level, because that is
@@ -1721,10 +2063,10 @@ def check_region_key_stability(rows, index: dict, rep: Report):
     for entries in history.values():
         entries.sort()
 
-    moved: dict[Level, list[str]] = {level: [] for level in REGION_LEVELS}
+    moved: dict[Level, list[str]] = {level: [] for level in profile.region_levels}
     type_digit_only = 0
     for rspo, entries in sorted(history.items()):
-        for level in REGION_LEVELS:
+        for level in profile.region_levels:
             width = REFERENCE_WIDTH[level]
             if len({teryt[:width] for _, teryt in entries}) > 1:
                 moved[level].append(f'rspo {rspo}: {describe_key_history(entries, width)}')
@@ -1740,7 +2082,7 @@ def check_region_key_stability(rows, index: dict, rep: Report):
         if published_teryt.get(rspo) != entries[-1][1]
     ]
 
-    rep.checked += len(history) * len(REGION_LEVELS) + len(history)
+    rep.checked += len(history) * len(profile.region_levels) + len(history)
     problems = []
     for level in ('voivodeship', 'powiat'):
         if moved[level]:
@@ -1755,6 +2097,8 @@ def check_region_key_stability(rows, index: dict, rep: Report):
         rep.ok(f'{len(history):,} schools: voivodeship and powiat keys constant across '
                f'years, every published teryt its newest source row')
 
+    if 'gmina' not in profile.region_levels:
+        return
     rep.note(f'schools whose gmina key changes across years: {len(moved["gmina"])}')
     for line in moved['gmina'][:10]:
         rep.note(f'  {line}')
@@ -1845,6 +2189,220 @@ def check_school_coordinates(index: dict, geo_dir: Path, rep: Report):
                  + (' …' if len(recovered) > 10 else ''))
 
 
+def check_matura_rejects(rejects: Counter, rejected_csv: Path, rep: Report):
+    """R (matura spec §3.1) — every row the population rule rejects is written out:
+    the recount by (year, reason) must equal output/matura/rejected_schools.csv."""
+    rep.section('R. Matura rejects == rejected_schools.csv, by year and reason')
+    if not rejected_csv.exists():
+        rep.fail(f'{rejected_csv} is missing')
+        return
+    published = pd.read_csv(rejected_csv, usecols=['year', 'reason'])
+    written = Counter(zip(published['year'].astype(int), published['reason'], strict=True))
+    rep.checked += len(rejects | written)
+    if written != rejects:
+        rep.fail('reject counts differ', [
+            f'{key}: recomputed {rejects.get(key, 0)}, written {written.get(key, 0)}'
+            for key in sorted(rejects | written) if rejects.get(key) != written.get(key)
+        ])
+    else:
+        by_reason = Counter()
+        for (_, reason), count in rejects.items():
+            by_reason[reason] += count
+        rep.ok(f'{sum(rejects.values()):,} rejected rows, '
+               + ', '.join(f'{reason} {count:,}' for reason, count in sorted(by_reason.items())))
+
+
+def check_matura_school_types(rows, rep: Report):
+    """S (matura spec §3.2, §9.1) — one type per RSPO across all years, and each
+    type's school count within ±10% of its previous loaded year, and in its first
+    year of the measured figure. A breach means the source or the rule changed, or
+    a year's rows were lost: look, and re-baseline only the first-year figures."""
+    rep.section('S. One type per school; school counts per type and year')
+    types: dict[Rspo, set] = defaultdict(set)
+    counts: Counter = Counter()
+    for row in rows:
+        types[row['rspo']].add(row['type'])
+        counts[(row['type'], row['year'])] += 1
+    problems = [f'rspo {rspo}: types {sorted(found)}'
+                for rspo, found in sorted(types.items()) if len(found) > 1][:5]
+    for school_type, (first_year, measured) in MATURA_FIRST_YEAR_SCHOOLS.items():
+        years = sorted(year for kind, year in counts if kind == school_type)
+        if not years or years[0] != first_year:
+            problems.append(f'{school_type}: first year {years[:1]}, expected {first_year}')
+            continue
+        previous = measured
+        for year in years:
+            count = counts[(school_type, year)]
+            if abs(count - previous) > MATURA_COUNT_DRIFT * previous:
+                problems.append(f'{school_type} {year}: {count:,} schools against {previous:,}')
+            previous = count
+    rep.checked += len(types) + len(counts)
+    if problems:
+        rep.fail('school types or counts out of line', problems)
+    else:
+        rep.ok(f'{len(types):,} schools, one type each; per year '
+               + ', '.join(f'{kind} {year} {count:,}' for (kind, year), count in sorted(counts.items())))
+
+
+def check_matura_index(profile: Profile, rows, index: dict, types: frozenset, rep: Report):
+    """T (matura spec §6.2) — the index fields matura adds, against the source.
+
+    Each school's `type` is its source type and one its population holds (with
+    check S's one type per RSPO, the liceum and technikum sets are then disjoint);
+    `pass_rate` has exactly the school's years in the population, string-keyed,
+    each the source cell or null; `subject_years` and `subject_takers` are each
+    extended subject's published-mean years and median takers.
+    """
+    rep.section('T. Index type, pass_rate, subject_years, subject_takers vs the source')
+    fields = ('type', 'pass_rate', 'subject_years', 'subject_takers')
+    absent = [field for field in fields if field not in index]
+    if absent:
+        rep.fail(f'schools-index.json lacks {absent}')
+        return
+    rows_by_school: dict[Rspo, list[dict]] = defaultdict(list)
+    for row in rows:
+        rows_by_school[row['rspo']].append(row)
+    extended = [subject for subject in profile.source_subjects
+                if subject not in COMPOSITE_INPUTS]
+    problems: dict[str, list[str]] = defaultdict(list)
+    for position, rspo in enumerate(int(r) for r in index['rspo']):
+        school_rows = rows_by_school.get(rspo, [])
+        source_types = {row['type'] for row in school_rows}
+        published_type = index['type'][position]
+        if source_types != {published_type} or published_type not in types:
+            problems['type'].append(f'rspo {rspo}: {published_type!r}, source {sorted(source_types)}')
+        expected_rates = {str(row['year']): row['pass_rate'] for row in school_rows}
+        rates = index['pass_rate'][position]
+        if set(rates) != set(expected_rates) or any(
+            values_disagree(rates[year], rate, SCORE_TOL) for year, rate in expected_rates.items()
+        ):
+            problems['pass_rate'].append(f'rspo {rspo}: {rates}, source {expected_rates}')
+        years, takers = {}, {}
+        for subject in extended:
+            counts = [row[subject]['n'] for row in school_rows if subject in row]
+            if counts:
+                years[subject] = len(counts)
+                takers[subject] = int(round(float(np.median(counts))))
+        if index['subject_years'][position] != years:
+            problems['subject_years'].append(
+                f'rspo {rspo}: {index["subject_years"][position]}, source {years}')
+        if index['subject_takers'][position] != takers:
+            problems['subject_takers'].append(
+                f'rspo {rspo}: {index["subject_takers"][position]}, source {takers}')
+    rep.checked += len(index['rspo']) * len(fields)
+    if problems:
+        rep.fail(f'{sum(map(len, problems.values()))} index values differ from the source',
+                 [f'{field}: {found[0]} ({len(found)} like it)'
+                  for field, found in problems.items()])
+    else:
+        rep.ok(f'{len(index["rspo"]):,} schools: type, pass_rate, subject_years and '
+               f'subject_takers equal the source')
+
+
+def check_n_ranked(profile: Profile, scale, view_key_to_rspo_scores: ViewScores, rep: Report):
+    """U (matura spec §6.3) — `n_ranked[level][metric][subject][view_kind]` is the
+    size of every view's ranked population, recounted from the recomputed views at
+    every level and metric (mean/median through source_level, as check F reads
+    them). Every recounted view needs an equal entry, so a missing one fails; an
+    entry no recomputed view backs must be 0 (a view with no ranked school)."""
+    rep.section('U. n_ranked recounted from the recomputed views')
+    published = scale['metadata'].get('n_ranked')
+    if not isinstance(published, dict):
+        rep.fail('scale.json has no metadata.n_ranked')
+        return
+    expected = {}
+    for level in profile.reference_levels:
+        for (reference, metric, subject, kind, param), scores in view_key_to_rspo_scores.items():
+            if reference == source_level(metric, level) and subject in profile.subjects:
+                expected[(level, metric, subject, kind, param)] = len(scores)
+    flat = {}
+    for level, by_metric in published.items():
+        for metric, by_subject in by_metric.items():
+            for subject, by_kind in by_subject.items():
+                for kind, value in by_kind.items():
+                    if kind == 'base':
+                        flat[(level, metric, subject, kind, None)] = value
+                    else:
+                        for param, n in value.items():
+                            flat[(level, metric, subject, kind, int(param))] = n
+    problems = [f'{key}: published {flat.get(key)}, recounted {n}'
+                for key, n in expected.items() if flat.get(key) != n]
+    problems += [f'{key}: published {n}, but no school ranks in it'
+                 for key, n in flat.items() if key not in expected and n != 0]
+    rep.checked += len(expected.keys() | flat.keys())
+    if problems:
+        rep.fail(f'{len(problems)} n_ranked entries wrong', problems)
+    else:
+        small = sum(1 for n in expected.values() if n < MIN_PERCENTILE_N)
+        rep.ok(f'{len(expected):,} views recounted; {small} rank fewer than '
+               f'{MIN_PERCENTILE_N} schools, and publish no percentile (check E)')
+
+
+def check_matura_coverage(profile: Profile, rows, scale, rep: Report):
+    """V (matura spec §6.1, §6.3) — the subject list and the scale are complete.
+
+    Every (year, subject) has a source population, and metadata.years_in_data is
+    exactly the population's source years (spec §9.1): `rows` are the source rows
+    before any narrowing to the published years, so an export that loses a year
+    fails here instead of shrinking the recount to match. metadata.subjects is the
+    validator's own list (its key map minus its literal exclusions), split by
+    subject_groups into the basic three plus composite_min, then the extended
+    subjects, in order. Every scale entry at every level and metric is an object
+    of finite numbers with sigma > 0: the browser treats a null or missing entry
+    as {sigma: 1, centre: 0}, which paints a raw mean of 55 saturated green. An
+    empty view, or a missing shard cell at some level or metric, is accepted.
+    """
+    rep.section('V. Subject coverage, subject lists and scale entries')
+    problems: list[str] = []
+    present = {(row['year'], subject) for row in rows for subject in profile.source_subjects
+               if subject in row}
+    years = sorted({row['year'] for row in rows})
+    problems += [f'{year} {subject}: no school with a published mean'
+                 for year in years for subject in profile.source_subjects
+                 if (year, subject) not in present]
+    metadata = scale['metadata']
+    basic = [*COMPOSITE_INPUTS, 'composite_min']
+    expected_groups = {'basic': basic, 'extended': [s for s in profile.subjects if s not in basic]}
+    for field, expected in (('subjects', list(profile.subjects)),
+                            ('subject_groups', expected_groups),
+                            ('levels', list(profile.reference_levels)),
+                            ('years_in_data', years)):
+        if metadata.get(field) != expected:
+            problems.append(f'metadata.{field} = {metadata.get(field)!r}, expected {expected!r}')
+    entries = 0
+    for level in profile.reference_levels:
+        for metric in EXPORT_METRICS:
+            for subject in profile.subjects:
+                entries += 1
+                entry = scale['school'].get(level, {}).get(metric, {}).get(subject)
+                values = ([entry.get(field) for field in ('sigma', 'sigma_centre', 'p1', 'p99')]
+                          if isinstance(entry, dict) else [None])
+                finite = all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
+                if not finite or not entry['sigma'] > 0:
+                    problems.append(f'scale {level}/{metric}/{subject}: {entry!r}')
+    rep.checked += len(years) * len(profile.source_subjects) + 4 + entries
+    if problems:
+        rep.fail(f'{len(problems)} coverage problems', problems)
+    else:
+        rep.ok(f'{len(profile.source_subjects)} subjects with data in each of {years}; '
+               f'subject lists as restated; {entries} complete scale entries')
+
+
+def check_coordinate_floor(index: dict, rep: Report):
+    """W (matura spec §9.1) — at least MATURA_COORDINATE_FLOOR of the schools have
+    coordinates, so a dataset nobody geocoded cannot pass check Q as "0 of 0"."""
+    rep.section('W. Coordinate coverage floor')
+    total = len(index['rspo'])
+    mapped = sum(lat is not None for lat in index['lat'])
+    share = mapped / total if total else 0.0
+    rep.checked += total
+    if share < MATURA_COORDINATE_FLOOR:
+        rep.fail(f'{mapped:,} of {total:,} schools have coordinates ({share:.2%}), '
+                 f'below the {MATURA_COORDINATE_FLOOR:.0%} floor')
+    else:
+        rep.ok(f'{mapped:,} of {total:,} schools have coordinates ({share:.2%})')
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -1855,16 +2413,28 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument(
+        '--exam',
+        choices=('e8', 'matura'),
+        default='e8',
+        help='which export to validate (default e8)',
+    )
+    parser.add_argument(
         '--data-dir',
-        default='data/egzamin-osmoklasisty',
         type=Path,
-        help='directory with the source xlsx files',
+        help='directory with the source xlsx files '
+             f'(default data/egzamin-osmoklasisty, or {MATURA_DATA_DIR} for matura)',
     )
     parser.add_argument(
         '--docs-data',
-        default='docs/data',
         type=Path,
-        help='directory with schools-index.json, scale.json, regions-*.json and powiat/',
+        help='directory with schools-index.json, scale.json, regions-*.json and powiat/ '
+             f'(default docs/data; for matura, {MATURA_DOCS_DATA}, holding one per population)',
+    )
+    parser.add_argument(
+        '--rejected-schools',
+        default=MATURA_REJECTED_SCHOOLS,
+        type=Path,
+        help='matura only: the rejected-rows file check R compares with',
     )
     parser.add_argument(
         '--geo-dir',
@@ -1893,11 +2463,20 @@ def filter_rows_to_json_years(all_rows: list[dict], json_years: set[Year]) -> li
     return rows
 
 
-def main():
-    args = build_parser().parse_args()
+class Validated(NamedTuple):
+    """What validate_dataset loaded and recomputed, for the checks that follow it."""
 
-    print('Loading JSON exports …')
-    scale, index_payload, region_payloads = load_json_exports(args.docs_data)
+    scale: dict
+    index: dict
+    rows: list[dict]
+    view_key_to_rspo_scores: ViewScores
+
+
+def validate_dataset(profile: Profile, source_rows: list[dict], geo_dir: Path,
+                     rep: Report) -> Validated:
+    """Checks A-Q against one dataset's JSON, recomputed from its source rows."""
+    print(f'Loading JSON exports from {profile.docs_data} …')
+    scale, index_payload, region_payloads = load_json_exports(profile)
     index = index_payload['schools']
     json_years = set(scale['metadata']['years_in_data'])
     print(
@@ -1905,49 +2484,110 @@ def main():
         f'metrics {scale["metadata"]["metrics"]}; '
         f'reference levels {list(scale["school"])}'
     )
-    for level in REGION_LEVELS:
+    for level in profile.region_levels:
         print(f'  regions-{level}.json: '
               f'{len(region_payloads[level]["regions"]["teryt"]):,} regions')
 
     print('Reading boundary geometry …')
-    geometry = {level: geometry_keys(args.geo_dir, level) for level in REGION_LEVELS}
+    geometry = {level: geometry_keys(geo_dir, level) for level in profile.region_levels}
     print('  ' + ', '.join(f'{level}: {len(keys):,}' for level, keys in geometry.items()))
 
-    print('Reading source xlsx …')
-    rows = filter_rows_to_json_years(read_clean_rows(args.data_dir), json_years)
+    rows = filter_rows_to_json_years(source_rows, json_years)
 
     print('Recomputing metrics / views / ranks / regions independently …')
-    view_key_to_rspo_scores = compute_view_scores(rows)
+    view_key_to_rspo_scores = compute_view_scores(profile, rows)
     students_by_rspo = compute_students_per_school(rows)
+    subject_takers = compute_subject_takers(rows, profile.source_subjects)
     teryt_by_rspo = latest_teryt_per_school(rows)
     recomputed_regions = {
         level: compute_region_level(
-            level, geometry[level], teryt_by_rspo, students_by_rspo, view_key_to_rspo_scores
+            profile, level, geometry[level], teryt_by_rspo, students_by_rspo,
+            subject_takers, view_key_to_rspo_scores,
         )
-        for level in REGION_LEVELS
+        for level in profile.region_levels
     }
     print(f'  {len(view_key_to_rspo_scores):,} view populations, '
           f'{sum(len(v) for v in view_key_to_rspo_scores.values()):,} school scores')
 
-    rep = Report()
-    check_subjects_vs_xlsx(rows, args.docs_data, rep)
-    check_aggregates(view_key_to_rspo_scores, args.docs_data, rep)
-    check_completeness(view_key_to_rspo_scores, args.docs_data, rep)
-    check_index_shard_join(index, args.docs_data, rep)
-    check_ranks(view_key_to_rspo_scores, args.docs_data, rep)
-    check_metadata(scale, region_payloads, view_key_to_rspo_scores, recomputed_regions, rep)
-    check_class_spread(scale, args.docs_data, rep)
+    check_subjects_vs_xlsx(profile, rows, rep)
+    check_aggregates(view_key_to_rspo_scores, profile.docs_data, rep)
+    check_completeness(profile, view_key_to_rspo_scores, rep)
+    check_index_shard_join(profile, index, rep)
+    check_ranks(profile, view_key_to_rspo_scores, rep)
+    check_metadata(profile, scale, region_payloads, view_key_to_rspo_scores,
+                   recomputed_regions, rep)
+    check_class_spread(profile, scale, rep)
     check_identity_invariants(rows, index, rep)
-    check_region_aggregates(region_payloads, recomputed_regions, rep)
-    check_geometry_join(region_payloads, geometry, rep)
-    check_no_nan(args.docs_data, rep)
-    check_size_budgets(args.docs_data, args.geo_dir, rep)
-    check_percentile_gate(region_payloads, recomputed_regions, rep)
-    check_reference_gate(region_payloads, recomputed_regions, rep)
+    check_region_aggregates(profile, region_payloads, recomputed_regions, rep)
+    check_geometry_join(profile, region_payloads, geometry, rep)
+    check_no_nan(profile.docs_data, rep)
+    check_size_budgets(profile, geo_dir, rep)
+    check_percentile_gate(profile, region_payloads, recomputed_regions, rep)
+    check_reference_gate(profile, region_payloads, recomputed_regions, rep)
     check_voivodeship_bijection(rows, rep)
-    check_region_key_stability(rows, index, rep)
-    check_school_coordinates(index, args.geo_dir, rep)
+    check_region_key_stability(profile, rows, index, rep)
+    check_school_coordinates(index, geo_dir, rep)
+    return Validated(scale, index, rows, view_key_to_rspo_scores)
 
+
+def validate_matura(args, rep: Report) -> None:
+    """The matura export: the row-level checks, then each comparison population."""
+    print('Reading source xlsx …')
+    rows, rejects = read_matura_rows(args.data_dir or MATURA_DATA_DIR)
+    print(f'  {len(rows):,} population rows, {sum(rejects.values()):,} rejected')
+    check_matura_rejects(rejects, args.rejected_schools, rep)
+    check_matura_school_types(rows, rep)
+    docs_root = args.docs_data or MATURA_DOCS_DATA
+    for population, (types, first_year) in MATURA_POPULATIONS.items():
+        excluded = MATURA_EXCLUSIONS.get(population, frozenset())
+        subjects = (*COMPOSITE_INPUTS, 'composite_min',
+                    *(key for key in MATURA_EXTENDED if key not in excluded))
+        profile = Profile(
+            name=f'matura/{population}',
+            docs_data=docs_root / population,
+            subjects=subjects,
+            reference_levels=('national', 'voivodeship'),
+            region_levels=('voivodeship', 'powiat'),
+            slider_subjects=subjects,
+            file_budgets_kb=MATURA_FILE_BUDGETS_KB,
+            shard_budget_kb=MATURA_SHARD_BUDGET_KB,
+            sparse_subjects=True,
+        )
+        population_rows = [row for row in rows if row['type'] in types
+                           and (first_year is None or row['year'] >= first_year)]
+        print(f'\n{"=" * 64}\n{profile.name}: {len(population_rows):,} source rows')
+        validated = validate_dataset(profile, population_rows, args.geo_dir, rep)
+        check_matura_index(profile, validated.rows, validated.index, types, rep)
+        check_n_ranked(profile, validated.scale, validated.view_key_to_rspo_scores, rep)
+        # The unfiltered source rows: validated.rows is narrowed to the published years.
+        check_matura_coverage(profile, population_rows, validated.scale, rep)
+        check_coordinate_floor(validated.index, rep)
+
+
+def main():
+    args = build_parser().parse_args()
+    rep = Report()
+    if args.exam == 'matura':
+        validate_matura(args, rep)
+        return report_result(rep)
+    profile = Profile(
+        name='E8',
+        docs_data=args.docs_data or Path('docs/data'),
+        subjects=(*COMPOSITE_INPUTS, 'composite_min'),
+        reference_levels=('national', 'voivodeship', 'powiat', 'gmina'),
+        region_levels=('voivodeship', 'powiat', 'gmina'),
+        slider_subjects=('composite_min',),
+        file_budgets_kb=E8_FILE_BUDGETS_KB,
+        shard_budget_kb=E8_SHARD_BUDGET_KB,
+    )
+    print('Reading source xlsx …')
+    source_rows = read_clean_rows(args.data_dir or Path('data/egzamin-osmoklasisty'))
+    validate_dataset(profile, source_rows, args.geo_dir, rep)
+    return report_result(rep)
+
+
+def report_result(rep: Report) -> int:
+    """The closing line and the exit code: 0 only if every check passed."""
     print(f'\n{"=" * 64}')
     if rep.failures == 0:
         print(f'ALL CHECKS PASSED  ({rep.checked:,} comparisons)')
