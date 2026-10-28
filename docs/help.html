@@ -20,16 +20,24 @@
 
   <main class="prose">
     <div data-lang-block="pl">
-      <p class="lead">Ta strona wyjaśnia, skąd biorą się liczby i kolory na mapie oraz
+      <p data-exam-block="e8" class="lead">Ta strona wyjaśnia, skąd biorą się liczby i kolory na mapie oraz
         w rankingu — i czego z nich <em>nie</em> da się wyczytać. Narzędzie opiera się na
         wynikach egzaminu ósmoklasisty: to miara ułomna, ale konkretna i porównywalna
         między szkołami.</p>
+      <p class="lead" data-exam-block="matura" hidden>Ta strona wyjaśnia, skąd biorą się liczby i kolory na mapie oraz
+        w rankingu szkół średnich — i czego z nich <em>nie</em> da się wyczytać. Narzędzie
+        opiera się na wynikach matury w formule 2023 w liceach i technikach: to miara
+        ułomna, ale konkretna i porównywalna między szkołami.</p>
     </div>
     <div data-lang-block="en" hidden>
-      <p class="lead">This page explains where the numbers and colours on the map and in the
+      <p data-exam-block="e8" class="lead">This page explains where the numbers and colours on the map and in the
         ranking come from — and what they <em>cannot</em> tell you. The tool is based on the
         Polish 8th-grade exam (egzamin ósmoklasisty): an imperfect measure, but a concrete and
         comparable one.</p>
+      <p class="lead" data-exam-block="matura" hidden>This page explains where the numbers and colours on the secondary
+        school map and ranking come from — and what they <em>cannot</em> tell you. The tool is
+        based on the matura (Poland's secondary-school leaving exam, 2023 formula) in licea
+        and technika: an imperfect measure, but a concrete and comparable one.</p>
     </div>
 
     <details class="toc" open data-lang-block="pl">
@@ -39,6 +47,7 @@
         <li><a href="#goal">Cel</a></li>
         <li><a href="#not-goal">Co nie jest celem</a></li>
         <li><a href="#data">Dane i zakres</a></li>
+        <li data-exam-block="matura" hidden><a href="#matura">Matura: dane i porównania</a></li>
         <li><a href="#levels">Poziomy mapy</a></li>
         <li><a href="#metrics">Metryki dla przedmiotu</a></li>
         <li><a href="#baseline">Punkt odniesienia</a></li>
@@ -62,6 +71,7 @@
         <li><a href="#goal">Goal</a></li>
         <li><a href="#not-goal">What is not the goal</a></li>
         <li><a href="#data">Data and scope</a></li>
+        <li data-exam-block="matura" hidden><a href="#matura">The matura: data and comparisons</a></li>
         <li><a href="#levels">The map's levels</a></li>
         <li><a href="#metrics">Per-subject metrics</a></li>
         <li><a href="#baseline">The reference point</a></li>
@@ -83,37 +93,69 @@
       <div data-lang-block="pl">
         <h2>Jak korzystać</h2>
         <ul>
-          <li><strong>Mapa</strong> — po oddaleniu widać kolorowe obszary (województwa,
+          <li data-exam-block="e8"><strong>Mapa</strong> — po oddaleniu widać kolorowe obszary (województwa,
             powiaty, gminy), a pojedyncze szkoły pojawiają się dopiero po mocnym
             przybliżeniu. Kliknij region, żeby wejść do środka; kliknij szkołę, żeby
             zobaczyć jej wyniki i wykres rok po roku. Zobacz
             <a href="#levels">Poziomy mapy</a>.</li>
+          <li data-exam-block="matura" hidden><strong>Porównanie</strong> — które szkoły widać i z czym je porównujemy:
+            licea z liceami, technika z technikami albo wszystkie szkoły średnie razem. Zobacz
+            <a href="#matura">Matura: dane i porównania</a>.</li>
+          <li data-exam-block="matura" hidden><strong>Mapa</strong> — po oddaleniu widać kolorowe obszary (województwa,
+            powiaty), a pojedyncze szkoły pojawiają się po przybliżeniu do powiatu. Kliknij
+            region, żeby wejść do środka; kliknij szkołę, żeby zobaczyć jej wyniki, przedmioty
+            rozszerzone, zdawalność i wykres rok po roku. Zobacz
+            <a href="#levels">Poziomy mapy</a>.</li>
           <li><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować, a wiersz,
             żeby rozwinąć szczegóły szkoły: wykresy dla wszystkich trzech przedmiotów
             i tabele liczbowe pod przyciskiem.</li>
-          <li><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
+          <li data-exam-block="e8"><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
             uszeregować całe województwa, powiaty albo gminy; wiersz pokazuje wtedy wynik
             regionu, liczbę jego szkół i liczbę uczniów. Regiony mają tylko wynik za
             wszystkie lata, więc widok danych i filtr publiczna/niepubliczna są wtedy nieaktywne.
             Zobacz <a href="#regions">Skąd bierze się kolor regionu</a>.</li>
-          <li><strong>Obszar</strong> — trzy listy: województwo, a dalej opcjonalnie powiat
+          <li data-exam-block="matura" hidden><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
+            uszeregować całe województwa albo powiaty; wiersz pokazuje wtedy wynik regionu,
+            liczbę jego szkół z wynikiem z wybranego przedmiotu i liczbę ich zdających. Regiony
+            mają tylko wynik za wszystkie lata, więc widok danych i filtr
+            publiczna/niepubliczna są wtedy nieaktywne. Zobacz
+            <a href="#regions">Skąd bierze się kolor regionu</a>.</li>
+          <li data-exam-block="e8"><strong>Obszar</strong> — trzy listy: województwo, a dalej opcjonalnie powiat
             i gmina. Wybór zawęża zestawienie do tego obszaru; zostawienie powiatu i gminy
             pustych obejmuje całe województwo. Zobacz
             <a href="#ranking">Miejsce i percentyl w rankingu</a>.</li>
-          <li><strong>Przedmiot</strong> — „Najsłabszy przedmiot" pokazuje najniższy z trzech
+          <li data-exam-block="matura" hidden><strong>Obszar</strong> — dwie listy: województwo, a dalej opcjonalnie powiat.
+            Wybór zawęża zestawienie do tego obszaru; zostawienie powiatu pustego obejmuje
+            całe województwo. Zobacz
+            <a href="#ranking">Miejsce i percentyl w rankingu</a>.</li>
+          <li data-exam-block="e8"><strong>Przedmiot</strong> — „Najsłabszy przedmiot" pokazuje najniższy z trzech
             wyników, czyli odpowiada na pytanie „czy szkoła gdzieś nie wysiada?". Przełącz na
             polski, matematykę lub angielski, żeby zobaczyć pojedynczy przedmiot.</li>
+          <li data-exam-block="matura" hidden><strong>Przedmiot</strong> — „Najsłabszy z 3 podstawowych" pokazuje najniższy
+            z trzech wyników na poziomie podstawowym, czyli odpowiada na pytanie „czy szkoła
+            gdzieś nie wysiada?". Przełącz na polski, matematykę lub angielski podstawowy albo
+            na jeden z przedmiotów rozszerzonych.</li>
           <li><strong>Metryka</strong> — „Średnia" to zwykły wynik procentowy.
             „Wynik znormalizowany" to odległość od średniej grupy odniesienia <em>z tego
             samego roku</em>: 0 oznacza dokładnie średnią, wartości dodatnie są powyżej
             niej, ujemne poniżej.</li>
-          <li><strong>Punkt odniesienia</strong> — decyduje, z czym porównujemy szkołę:
+          <li data-exam-block="e8"><strong>Punkt odniesienia</strong> — decyduje, z czym porównujemy szkołę:
             z całą Polską, województwem, powiatem czy gminą. Zobacz
             <a href="#baseline">Punkt odniesienia</a>.</li>
-          <li><strong>Filtry</strong> — szkoły publiczne albo niepubliczne, minimalny wynik
+          <li data-exam-block="matura" hidden><strong>Punkt odniesienia</strong> — decyduje, z czym porównujemy szkołę:
+            z całą Polską albo z województwem — zawsze ze szkołami wybranymi w polu
+            „Porównanie". Zobacz <a href="#baseline">Punkt odniesienia</a>.</li>
+          <li data-exam-block="e8"><strong>Filtry</strong> — szkoły publiczne albo niepubliczne, minimalny wynik
             oraz minimalna liczba lat danych (szkoły z krótką historią są mniej pewne).</li>
-          <li><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Na mapie jest
+          <li data-exam-block="matura" hidden><strong>Filtry</strong> — szkoły publiczne albo niepubliczne, minimalny wynik
+            oraz minimalna liczba lat danych (szkoły z krótką historią są mniej pewne; przy
+            przedmiocie rozszerzonym liczą się lata, w których szkoła ma z niego wynik).</li>
+          <li data-exam-block="e8"><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Na mapie jest
             dodatkowo wyszukiwanie po adresie, które przesuwa widok w wybrane miejsce.</li>
+          <li data-exam-block="matura" hidden><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Wyszukiwarka
+            obejmuje licea i technika naraz; gdy wybierzesz szkołę spoza oglądanej grupy,
+            „Porównanie" przełączy się samo. Na mapie jest dodatkowo wyszukiwanie po adresie,
+            które przesuwa widok w wybrane miejsce.</li>
           <li><strong>Ustawienia</strong> — płynne przejście koloru oraz metryki zaawansowane,
             jeśli chcesz porównać sposoby liczenia.</li>
         </ul>
@@ -121,35 +163,64 @@
       <div data-lang-block="en" hidden>
         <h2>How to use it</h2>
         <ul>
-          <li><strong>Map</strong> — zoomed out you see coloured areas (voivodeships,
+          <li data-exam-block="e8"><strong>Map</strong> — zoomed out you see coloured areas (voivodeships,
             counties, municipalities); individual schools appear only once you zoom well in.
             Click a region to drill into it; click a school to see its results and a
+            year-by-year chart. See <a href="#levels">The map's levels</a>.</li>
+          <li data-exam-block="matura" hidden><strong>Compare</strong> — which schools you see and what they are compared
+            against: licea with licea, technika with technika, or all secondary schools
+            together. See <a href="#matura">The matura: data and comparisons</a>.</li>
+          <li data-exam-block="matura" hidden><strong>Map</strong> — zoomed out you see coloured areas (voivodeships,
+            counties); individual schools appear once you zoom in to a county. Click a region to
+            drill into it; click a school to see its results, extended subjects, pass rate and a
             year-by-year chart. See <a href="#levels">The map's levels</a>.</li>
           <li><strong>Ranking</strong> — click a column header to sort, and a row to expand the
             school's details: charts for all three subjects, with the numeric tables behind a
             button.</li>
-          <li><strong>Ranking level</strong> — the table need not be about schools. You can rank
+          <li data-exam-block="e8"><strong>Ranking level</strong> — the table need not be about schools. You can rank
             whole voivodeships, counties or municipalities; a row then shows the region's score,
             how many schools it holds and how many pupils. Regions carry only the all-years
             score, so the view selector and the public/private filter are inactive there. See
             <a href="#regions">How a region gets its colour</a>.</li>
-          <li><strong>Area</strong> — three lists: voivodeship, then optionally county and
+          <li data-exam-block="matura" hidden><strong>Ranking level</strong> — the table need not be about schools. You can
+            rank whole voivodeships or counties; a row then shows the region's score, how many
+            of its schools have a result in the selected subject and how many takers they have.
+            Regions carry only the all-years score, so the view selector and the public/private
+            filter are inactive there. See <a href="#regions">How a region gets its
+            colour</a>.</li>
+          <li data-exam-block="e8"><strong>Area</strong> — three lists: voivodeship, then optionally county and
             municipality. A choice narrows the table to that area; leaving county and
             municipality empty covers the whole voivodeship. See
             <a href="#ranking">Rank and percentile in the ranking</a>.</li>
-          <li><strong>Subject</strong> — "Weakest subject" shows the lowest of the three scores,
+          <li data-exam-block="matura" hidden><strong>Area</strong> — two lists: voivodeship, then optionally county. A
+            choice narrows the table to that area; leaving the county empty covers the whole
+            voivodeship. See <a href="#ranking">Rank and percentile in the ranking</a>.</li>
+          <li data-exam-block="e8"><strong>Subject</strong> — "Weakest subject" shows the lowest of the three scores,
             answering "does this school fall down anywhere?". Switch to Polish, Maths or English
             to see a single subject.</li>
+          <li data-exam-block="matura" hidden><strong>Subject</strong> — "Weakest of the 3 basic" shows the lowest of the
+            three basic-level scores, answering "does this school fall down anywhere?". Switch
+            to basic Polish, Maths or English, or to one of the extended subjects.</li>
           <li><strong>Metric</strong> — "Mean" is the plain percentage score. "Normalised score"
             is the distance from the reference group's average <em>of the same year</em>: 0 is
             exactly average, positive values sit above it, negative below.</li>
-          <li><strong>Reference point</strong> — sets what a school is compared against: the
+          <li data-exam-block="e8"><strong>Reference point</strong> — sets what a school is compared against: the
             whole country, its voivodeship, its county or its municipality. See
             <a href="#baseline">The reference point</a>.</li>
-          <li><strong>Filters</strong> — public or private schools, a minimum score, and a
+          <li data-exam-block="matura" hidden><strong>Reference point</strong> — sets what a school is compared against:
+            the whole country or its voivodeship — always the schools chosen under "Compare".
+            See <a href="#baseline">The reference point</a>.</li>
+          <li data-exam-block="e8"><strong>Filters</strong> — public or private schools, a minimum score, and a
             minimum number of years of data (schools with a short history are less certain).</li>
-          <li><strong>Search</strong> — type a school name or a town. The map additionally has an
+          <li data-exam-block="matura" hidden><strong>Filters</strong> — public or private schools, a minimum score, and a
+            minimum number of years of data (schools with a short history are less certain; for
+            an extended subject, the years in which the school has a result in it).</li>
+          <li data-exam-block="e8"><strong>Search</strong> — type a school name or a town. The map additionally has an
             address search that moves the view to a chosen place.</li>
+          <li data-exam-block="matura" hidden><strong>Search</strong> — type a school name or a town. It covers licea and
+            technika at once; picking a school outside the group on screen switches "Compare"
+            for you. The map additionally has an address search that moves the view to a
+            chosen place.</li>
           <li><strong>Settings</strong> — the continuous colour ramp, and the advanced metrics if
             you want to compare ways of computing the score.</li>
         </ul>
@@ -216,18 +287,26 @@
       <div data-lang-block="pl">
         <h2>Dane i zakres</h2>
         <ul>
-          <li><strong>Źródło:</strong> CIE (Centrum Informatyczne Edukacji), egzamin
+          <li data-exam-block="e8"><strong>Źródło:</strong> CIE (Centrum Informatyczne Edukacji), egzamin
             ósmoklasisty, od 2021 r. (pełna lista
             plików źródłowych:
             <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
+          <li data-exam-block="matura" hidden><strong>Źródło:</strong> CIE (Centrum Informatyczne Edukacji), matura
+            w formule 2023, wyniki szkół z edycji wrześniowej (pełna lista plików źródłowych:
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-maturalny/SOURCES.csv">SOURCES.csv</a>).</li>
           <li><strong>Granice administracyjne:</strong> Państwowy Rejestr Granic (PRG),
             © <a target="_blank" rel="noopener" href="https://www.gov.pl/web/gugik">GUGiK</a>,
             pobrane za pośrednictwem
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>.</li>
-          <li><strong>Zakres:</strong> <strong>cała Polska</strong> — wszystkie 16 województw,
+          <li data-exam-block="e8"><strong>Zakres:</strong> <strong>cała Polska</strong> — wszystkie 16 województw,
             380 powiatów i 2 479 gmin. Około 12,9 tys. szkół podstawowych.</li>
-          <li><strong>Przedmioty:</strong> tylko polski, matematyka i angielski — z pozostałych
+          <li data-exam-block="matura" hidden><strong>Zakres:</strong> <strong>cała Polska</strong> — wszystkie 16 województw
+            i 380 powiatów; 2 374 licea i 1 770 techników.</li>
+          <li data-exam-block="e8"><strong>Przedmioty:</strong> tylko polski, matematyka i angielski — z pozostałych
             przedmiotów za mało osób zdaje w jednej szkole, by liczby były miarodajne.</li>
+          <li data-exam-block="matura" hidden><strong>Przedmioty:</strong> polski, matematyka i angielski na poziomie
+            podstawowym oraz jedenaście przedmiotów rozszerzonych. Szczegóły w sekcji
+            <a href="#matura">Matura: dane i porównania</a>.</li>
           <li>Konkursy nie są uwzględniane: trudno o kompletne dane, a konkursy mierzą wyniki
             jednostek — w dużej szkole pojedynczy uczniowie mogą błyszczeć, a statystyczny
             uczeń i tak wypaść słabo.</li>
@@ -236,19 +315,28 @@
       <div data-lang-block="en" hidden>
         <h2>Data and scope</h2>
         <ul>
-          <li><strong>Source:</strong> CIE (Centrum Informatyczne Edukacji, the education
+          <li data-exam-block="e8"><strong>Source:</strong> CIE (Centrum Informatyczne Edukacji, the education
             ministry's IT centre), 8th-grade exam, from 2021 onward
             (full list of source files:
             <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-osmoklasisty/SOURCES.csv">SOURCES.csv</a>).</li>
+          <li data-exam-block="matura" hidden><strong>Source:</strong> CIE (Centrum Informatyczne Edukacji, the education
+            ministry's IT centre), the 2023-formula matura, school results from the September
+            edition (full list of source files:
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-maturalny/SOURCES.csv">SOURCES.csv</a>).</li>
           <li><strong>Administrative boundaries:</strong> the Polish National Register of
             Boundaries (PRG), © <a target="_blank" rel="noopener" href="https://www.gov.pl/web/gugik">GUGiK</a>,
             obtained via
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>.</li>
-          <li><strong>Scope:</strong> <strong>all of Poland</strong> — all 16 voivodeships,
+          <li data-exam-block="e8"><strong>Scope:</strong> <strong>all of Poland</strong> — all 16 voivodeships,
             380 counties (powiats) and 2,479 municipalities (gminas). About 12.9k primary
             schools.</li>
-          <li><strong>Subjects:</strong> Polish, Maths and English only — too few pupils sit the
+          <li data-exam-block="matura" hidden><strong>Scope:</strong> <strong>all of Poland</strong> — all 16 voivodeships
+            and 380 counties (powiats); 2,374 licea and 1,770 technika.</li>
+          <li data-exam-block="e8"><strong>Subjects:</strong> Polish, Maths and English only — too few pupils sit the
             other subjects at any one school for the numbers to be meaningful.</li>
+          <li data-exam-block="matura" hidden><strong>Subjects:</strong> Polish, Maths and English at the basic level, and
+            eleven extended-level subjects. Details in
+            <a href="#matura">The matura: data and comparisons</a>.</li>
           <li>Subject olympiads/contests are not included: complete data is hard to gather and
             contests measure individuals — in a large school a few pupils may shine while the
             typical pupil still does poorly.</li>
@@ -256,16 +344,121 @@
       </div>
     </section>
 
+    <section id="matura" data-exam-block="matura" hidden>
+      <div data-lang-block="pl">
+        <h2>Matura: dane i porównania</h2>
+        <ul>
+          <li><strong>Źródło i lata.</strong> Wyniki szkół z matury w formule 2023 (EM2023),
+            publikowane przez CIE; z każdego roku bierzemy edycję wrześniową (lista plików:
+            <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-maturalny/SOURCES.csv">SOURCES.csv</a>).
+            Licea mają wyniki od 2023 r., technika od 2024 r. — pierwszego roku, w którym
+            technika zdawały maturę w tej formule. Od 2024 r. zaczyna się też zestawienie
+            wszystkich szkół średnich.</li>
+          <li><strong>Trzy porównania.</strong> Pole „Porównanie" decyduje, które szkoły widać
+            i z czym je porównujemy: licea z liceami (domyślnie), technika z technikami albo
+            wszystkie szkoły średnie razem. Domyślnie nie mieszamy typów, bo przy wspólnym
+            punkcie odniesienia kolor pokazywałby przede wszystkim typ szkoły: w 2025 r., dla
+            najsłabszego z trzech przedmiotów podstawowych, powyżej średniej znalazłoby się
+            8,2% techników, a przy porównaniu w obrębie typu — 37,0%. Sam typ szkoły tłumaczy
+            około jednej piątej różnic między szkołami. Porównanie wszystkich szkół razem jest
+            uprawnionym pytaniem, więc zostaje dostępne — z ostrzeżeniem.</li>
+          <li><strong>Przedmioty podstawowe i rozszerzone.</strong> Przedmioty podstawowe są
+            obowiązkowe, więc wynik z polskiego, matematyki i angielskiego ma każda szkoła
+            w zestawieniu; z nich liczymy też „Najsłabszy z 3 podstawowych". Przedmiot
+            rozszerzony uwzględniamy, gdy w każdym roku co najmniej 100 liceów ma z niego
+            opublikowaną średnią — spełnia to jedenaście przedmiotów. W porównaniu techników
+            nie ma historii sztuki: zdaje ją za mało techników, by policzyć wynik.</li>
+          <li><strong>Dwa punkty odniesienia: cała Polska albo województwo</strong> — zawsze
+            wśród szkół wybranych w polu „Porównanie". Powiatu i gminy nie oferujemy: szkół
+            jednego typu jest tam za mało. Przy powiecie jako punkcie odniesienia wynik za
+            wszystkie lata zostałby wstrzymany dla 28,8% liceów i 39,6% techników.</li>
+          <li><strong>Poziomy mapy:</strong> województwa → powiaty → szkoły. Gmin nie ma:
+            przeciętna gmina ma mniej niż jedną szkołę danego typu.</li>
+          <li><strong>Wynik wstrzymany.</strong> W metrykach różnicowych wynik szkoły
+            z przedmiotu rozszerzonego pokazujemy tylko wtedy, gdy w grupie odniesienia
+            (województwie albo kraju) co najmniej 5 szkół ma z niego średnią w danym roku —
+            porównanie z mniejszą grupą niczego nie mówi. Mapa i ranking nazywają taki wynik
+            wstrzymanym i odróżniają go od braku wyniku, gdy szkoła przedmiotu nie
+            zdawała.</li>
+          <li><strong>Zdawalność</strong> — odsetek zdających, którzy zdali całą maturę —
+            pokazujemy tylko jako tło: w dymku szkoły i w kolumnie rankingu, nigdy jako kolor.
+            Pochodzi z edycji wrześniowej i dla większości szkół jest wyższa niż w edycji
+            lipcowej (nigdy niższa).</li>
+        </ul>
+        <h3>Dwa ostrzeżenia, które pokazuje aplikacja</h3>
+        <p>Przy porównaniu wszystkich szkół średnich: <em>„Licea i technika razem: kolor
+          w dużej mierze pokazuje typ szkoły, a nie to, która uczy lepiej. Technika uczą też
+          zawodu, a egzaminu zawodowego te dane nie obejmują."</em></p>
+        <p>Przy każdym przedmiocie rozszerzonym: <em>„Przedmiot rozszerzony zdają chętni —
+          w każdej szkole inna część rocznika. Wynik opisuje tych, którzy go wybrali."</em></p>
+      </div>
+      <div data-lang-block="en" hidden>
+        <h2>The matura: data and comparisons</h2>
+        <ul>
+          <li><strong>Source and years.</strong> School results of the 2023-formula matura
+            (EM2023), published by CIE; for each year we take the September edition (list of
+            files: <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/data/egzamin-maturalny/SOURCES.csv">SOURCES.csv</a>).
+            Licea have results from 2023, technika from 2024 — the first year technika sat the
+            matura in this formula. The all-secondary-schools comparison also starts in
+            2024.</li>
+          <li><strong>Three comparisons.</strong> The "Compare" control sets which schools you
+            see and what they are compared against: licea with licea (the default), technika with
+            technika, or all secondary schools together. Types are not mixed by default because
+            on a shared reference the colour would mostly show school type: in 2025, for the
+            weakest of the three basic subjects, 8.2% of technika would come out above average,
+            against 37.0% when compared within type. School type alone explains about a fifth of
+            the differences between schools. Comparing all schools together is a legitimate
+            question, so it stays available — with a caveat.</li>
+          <li><strong>Basic and extended subjects.</strong> The basic subjects are compulsory, so
+            every school in the data has a result in basic Polish, Maths and English; "Weakest
+            of the 3 basic" is computed from them. An extended subject is included when at least
+            100 licea have a published mean in it in every year — eleven subjects pass. Art
+            history is absent from the technika comparison: too few technika sit it to compute a
+            score.</li>
+          <li><strong>Two reference points: the whole country or the voivodeship</strong> —
+            always among the schools chosen under "Compare". County and municipality are not
+            offered: there are too few schools of one type there. With the county as the
+            reference, the all-years score would be withheld for 28.8% of licea and 39.6% of
+            technika.</li>
+          <li><strong>The map's levels:</strong> voivodeships → counties → schools. There are no
+            municipalities: the average municipality has less than one school of a type.</li>
+          <li><strong>Withheld scores.</strong> Under the difference-based metrics a school's
+            score in an extended subject is shown only where at least 5 schools in the reference
+            group (the voivodeship or the country) have a mean in it that year — a comparison
+            with a smaller group says nothing. The map and the ranking call such a score withheld
+            and keep it apart from no result at all, where the school did not sit the
+            subject.</li>
+          <li><strong>The pass rate</strong> — the share of candidates who passed the whole
+            matura — is shown as context only: in the school popup and as a ranking column, never
+            as a colour. It comes from the September edition and, for most schools, is higher
+            than in the July edition (never lower).</li>
+        </ul>
+        <h3>Two caveats the app shows</h3>
+        <p>When all secondary schools are compared: <em>"Licea and technika together: colour
+          largely reflects school type, not which school teaches better. Technika also teach a
+          trade, and this data does not cover the vocational exam."</em></p>
+        <p>With any extended subject: <em>"An extended subject is sat by students who choose it
+          — a different share of the year group in each school. The score describes those who
+          chose it."</em></p>
+      </div>
+    </section>
+
     <section id="levels">
       <div data-lang-block="pl">
         <h2>Poziomy mapy</h2>
-        <p>Mapa ma cztery poziomy i przełącza się między nimi wraz z przybliżeniem:
+        <p data-exam-block="e8">Mapa ma cztery poziomy i przełącza się między nimi wraz z przybliżeniem:
           <strong>województwa → powiaty → gminy → szkoły</strong>. Dopóki nie dojedziesz
           do najgłębszego, kolorowane są całe obszary, a nie pojedyncze szkoły; ścieżka
           nad mapą pokazuje, gdzie jesteś, i pozwala się cofnąć.</p>
-        <p>Najważniejsza zasada: <strong>region porównujemy z jednostką o jeden poziom
+        <p data-exam-block="matura" hidden>Mapa ma trzy poziomy i przełącza się między nimi wraz z przybliżeniem:
+          <strong>województwa → powiaty → szkoły</strong>. Dopóki nie dojedziesz do
+          najgłębszego, kolorowane są całe obszary, a nie pojedyncze szkoły; ścieżka nad mapą
+          pokazuje, gdzie jesteś, i pozwala się cofnąć.</p>
+        <p data-exam-block="e8">Najważniejsza zasada: <strong>region porównujemy z jednostką o jeden poziom
           wyżej</strong>. Województwo — z całą Polską, powiat — ze swoim województwem,
           gmina — ze swoim powiatem.</p>
+        <p data-exam-block="matura" hidden>Najważniejsza zasada: <strong>region porównujemy z jednostką o jeden poziom
+          wyżej</strong>. Województwo — z całą Polską, powiat — ze swoim województwem.</p>
         <p>Dlaczego akurat tak? Gdyby województwo porównać ze średnią województw, wszystkie
           szesnaście wyszłoby dokładnie zerem — z definicji, bo każde jest wtedy własnym
           punktem odniesienia. Widok całego kraju byłby jednolicie żółty akurat tam, gdzie
@@ -273,14 +466,21 @@
       </div>
       <div data-lang-block="en" hidden>
         <h2>The map's levels</h2>
-        <p>The map has four levels and switches between them as you zoom:
+        <p data-exam-block="e8">The map has four levels and switches between them as you zoom:
           <strong>voivodeships → counties (powiats) → municipalities (gminas) →
           schools</strong>. Until you reach the deepest one it colours whole areas rather
           than individual schools; the trail above the map shows where you are and lets you
           step back out.</p>
-        <p>The rule that matters most: <strong>a region is compared with the level above
+        <p data-exam-block="matura" hidden>The map has three levels and switches between them as you zoom:
+          <strong>voivodeships → counties (powiats) → schools</strong>. Until you reach the
+          deepest one it colours whole areas rather than individual schools; the trail above
+          the map shows where you are and lets you step back out.</p>
+        <p data-exam-block="e8">The rule that matters most: <strong>a region is compared with the level above
           it</strong>. A voivodeship against the whole country, a county against its
           voivodeship, a municipality against its county.</p>
+        <p data-exam-block="matura" hidden>The rule that matters most: <strong>a region is compared with the level above
+          it</strong>. A voivodeship against the whole country, a county against its
+          voivodeship.</p>
         <p>Why that way? If a voivodeship were compared with the average of voivodeships,
           all sixteen would come out at exactly zero — by construction, because each would
           then be its own reference. The national view would be uniformly yellow at exactly
@@ -338,13 +538,22 @@
     <section id="baseline">
       <div data-lang-block="pl">
         <h2>Punkt odniesienia</h2>
-        <p>Wynik szkoły w metrykach różnicowych to jej odległość od średniej pewnej grupy
+        <p data-exam-block="e8">Wynik szkoły w metrykach różnicowych to jej odległość od średniej pewnej grupy
           szkół. Wybór „Punkt odniesienia" na mapie decyduje, jaka to grupa:
           <strong>cała Polska, województwo, powiat albo gmina</strong>.</p>
-        <p>Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy",
+        <p data-exam-block="matura" hidden>Wynik szkoły w metrykach różnicowych to jej odległość od średniej pewnej grupy
+          szkół. Wybór „Punkt odniesienia" na mapie decyduje, jaka to grupa:
+          <strong>cała Polska albo województwo</strong> — zawsze szkoły tego rodzaju, który
+          wybrano w polu „Porównanie". Powiatu i gminy nie oferujemy; zobacz
+          <a href="#matura">Matura: dane i porównania</a>.</p>
+        <p data-exam-block="e8">Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy",
           a mniej „jak na tle kraju". Ta sama szkoła bywa powyżej średniej swojego powiatu
           i poniżej średniej kraju — obie liczby są prawdziwe, odpowiadają tylko na dwa
           różne pytania. Warto wiedzieć, na które się patrzy.</p>
+        <p data-exam-block="matura" hidden>Im węższa grupa, tym bardziej wynik mówi „jak na tle najbliższej okolicy",
+          a mniej „jak na tle kraju". Ta sama szkoła bywa powyżej średniej swojego
+          województwa i poniżej średniej kraju — obie liczby są prawdziwe, odpowiadają tylko
+          na dwa różne pytania. Warto wiedzieć, na które się patrzy.</p>
         <p><strong>Średnia i Mediana nie zmieniają się od tego wyboru.</strong> To surowy
           wynik procentowy w skali 0–100 — nie ma w nim żadnej grupy odniesienia, którą
           dałoby się podmienić. Zmienia się tylko to, co odejmujemy, a tu nie odejmujemy
@@ -357,13 +566,23 @@
       </div>
       <div data-lang-block="en" hidden>
         <h2>The reference point</h2>
-        <p>Under the difference-based metrics, a school's score is its distance from the
+        <p data-exam-block="e8">Under the difference-based metrics, a school's score is its distance from the
           mean of some group of schools. The map's "Reference point" control sets which
           group: <strong>the whole country, the voivodeship, the county or the
           municipality</strong>.</p>
-        <p>The narrower the group, the more the score says "compared with its immediate
+        <p data-exam-block="matura" hidden>Under the difference-based metrics, a school's score is its distance from the
+          mean of some group of schools. The map's "Reference point" control sets which group:
+          <strong>the whole country or the voivodeship</strong> — always schools of the kind
+          chosen under "Compare". County and municipality are not offered; see
+          <a href="#matura">The matura: data and comparisons</a>.</p>
+        <p data-exam-block="e8">The narrower the group, the more the score says "compared with its immediate
           surroundings" and the less it says "compared with the country". The same school
           can sit above its county's average and below the national one — both numbers are
+          true, they just answer different questions. It is worth knowing which one you are
+          looking at.</p>
+        <p data-exam-block="matura" hidden>The narrower the group, the more the score says "compared with its immediate
+          surroundings" and the less it says "compared with the country". The same school can
+          sit above its voivodeship's average and below the national one — both numbers are
           true, they just answer different questions. It is worth knowing which one you are
           looking at.</p>
         <p><strong>Mean and Median do not change with this choice.</strong> They are raw
@@ -381,18 +600,30 @@
     <section id="composite">
       <div data-lang-block="pl">
         <h2>Łączenie trzech przedmiotów</h2>
-        <p>Zwykle w rankingach bierze się średnią z przedmiotów — ale to może ukryć, że szkoła
+        <p data-exam-block="e8">Zwykle w rankingach bierze się średnią z przedmiotów — ale to może ukryć, że szkoła
           ma przyzwoite wyniki w dwóch, a kiepskie w trzecim. Dlatego liczymy
           <strong>minimum</strong> z trzech przedmiotów: odpowiada na pytanie „czy szkoła ma
           kiepskie wyniki w <em>którymkolwiek</em> przedmiocie?". To domyślny widok na mapie
           (w apce „Najsłabszy przedmiot").</p>
+        <p data-exam-block="matura" hidden>Zwykle w rankingach bierze się średnią z przedmiotów — ale to może ukryć, że
+          szkoła ma przyzwoite wyniki w dwóch, a kiepskie w trzecim. Dlatego liczymy
+          <strong>minimum</strong> z trzech przedmiotów podstawowych: odpowiada na pytanie
+          „czy szkoła ma kiepskie wyniki w <em>którymkolwiek</em> z nich?". Przedmioty
+          rozszerzone do tego nie wchodzą — zdaje je tylko część uczniów, w każdej szkole
+          inna. To domyślny widok na mapie (w apce „Najsłabszy z 3 podstawowych").</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Combining the three subjects</h2>
-        <p>Rankings usually average the subjects — but that can hide a school doing decently in two
+        <p data-exam-block="e8">Rankings usually average the subjects — but that can hide a school doing decently in two
           and poorly in the third. So we take the <strong>minimum</strong> of the three: it
           answers "does the school have poor results in <em>any</em> subject?". This is the default map view
           (the app's "Weakest subject").</p>
+        <p data-exam-block="matura" hidden>Rankings usually average the subjects — but that can hide a school doing
+          decently in two and poorly in the third. So we take the <strong>minimum</strong> of
+          the three basic subjects: it answers "does the school have poor results in
+          <em>any</em> of them?". Extended subjects do not enter it — only some students sit
+          them, a different share in each school. This is the default map view (the app's
+          "Weakest of the 3 basic").</p>
       </div>
     </section>
 
@@ -419,21 +650,36 @@
     <section id="metric-stability">
       <div data-lang-block="pl">
         <h2>Która metryka jest najstabilniejsza</h2>
-        <p>Znormalizowana różnica od średniej — bo w testach to przy niej pozycje szkół
+        <p data-exam-block="e8">Znormalizowana różnica od średniej — bo w testach to przy niej pozycje szkół
           wahały się najmniej rok do roku (sprawdzane metodą „leave-one-out": liczymy wynik,
           pomijając po kolei każdy rok, i patrzymy, jak bardzo skacze). Mimo to nawet po
           pominięciu pojedynczych lat pozycje potrafią mocno się zmieniać — dlatego nie warto
           przywiązywać się do konkretnego miejsca w rankingu. Pełna analiza:
           <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
+        <p data-exam-block="matura" hidden>Znormalizowana różnica od średniej — wybrana dla egzaminu kończącego szkołę
+          podstawową, bo tam
+          pozycje szkół wahały się przy niej najmniej rok do roku (metoda „leave-one-out":
+          liczymy wynik, pomijając po kolei każdy rok, i patrzymy, jak bardzo skacze). Dla
+          matury ten sam test powtarzamy osobno dla liceów i techników. Lat jest mniej —
+          cztery dla liceów, trzy dla techników — więc traktujemy go jako sprawdzenie tamtego
+          wyboru, a nie nowy wybór. Pełna analiza:
+          <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/matura.ipynb">notebook</a>.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Which metric is the most stable</h2>
-        <p>The normalised difference from the mean — because in testing its school positions
+        <p data-exam-block="e8">The normalised difference from the mean — because in testing its school positions
           moved the least year to year (checked with a "leave-one-out" method: recompute the
           score leaving each year out in turn, and see how much it jumps). Even so, dropping
           single years can still move positions a lot — which is why a specific ranking place is
           not worth clinging to. The full analysis:
           <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
+        <p data-exam-block="matura" hidden>The normalised difference from the mean — chosen for the primary-school exam,
+          where school positions moved the least year to year under it (the "leave-one-out"
+          method: recompute the score leaving each year out in turn, and see how much it
+          jumps). For the matura the same test is re-run separately for licea and technika.
+          There are fewer years — four for licea, three for technika — so we read it as a check
+          on that choice rather than a fresh one. The full analysis:
+          <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/matura.ipynb">notebook</a>.</p>
       </div>
     </section>
 
@@ -477,94 +723,167 @@
     <section id="regions">
       <div data-lang-block="pl">
         <h2>Skąd bierze się kolor regionu</h2>
-        <p>Kolor gminy, powiatu czy województwa <strong>nie jest średnią kolorów jej
+        <p data-exam-block="e8">Kolor gminy, powiatu czy województwa <strong>nie jest średnią kolorów jej
           szkół</strong>. Najpierw z wyników szkół liczymy jeden wynik dla całego regionu,
           i dopiero on dostaje kolor. To nie to samo: region, w którym połowa szkół jest
           zielona, a połowa czerwona, wcale nie musi wyjść żółty.</p>
-        <p>W metrykach różnicowych (Różnica od średniej, Wynik znormalizowany) ten wynik
+        <p data-exam-block="matura" hidden>Kolor powiatu czy województwa <strong>nie jest średnią kolorów jego
+          szkół</strong>. Najpierw z wyników szkół liczymy jeden wynik dla całego regionu,
+          i dopiero on dostaje kolor. To nie to samo: region, w którym połowa szkół jest
+          zielona, a połowa czerwona, wcale nie musi wyjść żółty.</p>
+        <p data-exam-block="e8">W metrykach różnicowych (Różnica od średniej, Wynik znormalizowany) ten wynik
           jest <strong>ważony liczbą uczniów</strong>: szkoła z 300 uczniami przesuwa gminę
           mocniej niż szkoła z 30. To celowe — większy rocznik to po prostu więcej dowodów.
           Średnia i Mediana są zwykłą średnią po szkołach regionu, bez ważenia.</p>
+        <p data-exam-block="matura" hidden>W metrykach różnicowych (Różnica od średniej, Wynik znormalizowany) ten wynik
+          jest <strong>ważony liczbą zdających</strong>: szkoła z 300 zdającymi przesuwa
+          powiat mocniej niż szkoła z 30. To celowe — większy rocznik to po prostu więcej
+          dowodów. Średnia i Mediana są zwykłą średnią po szkołach regionu, bez ważenia.</p>
         <p>Skala kolorów jest osobna dla każdego poziomu. Wyniki regionów są z natury mniej
           rozstrzelone niż wyniki pojedynczych szkół — uśrednianie zbija skrajności — więc
           gdyby kolorować je skalą szkolną, mapa regionów byłaby niemal cała żółta.</p>
         <h3>Zestawienia regionów</h3>
-        <p>Te same wyniki zbiorcze można oglądać jako listę, a nie tylko jako kolor na mapie:
+        <p data-exam-block="e8">Te same wyniki zbiorcze można oglądać jako listę, a nie tylko jako kolor na mapie:
           w zakładce <strong>Ranking</strong> pole „Poziom rankingu" przełącza tabelę na
           województwa, powiaty albo gminy. Wiersz pokazuje wtedy wynik regionu, jego klasę,
           liczbę szkół i liczbę uczniów.</p>
-        <p>Dwie różnice względem zestawienia szkół są celowe. Po pierwsze, <strong>regiony
+        <p data-exam-block="matura" hidden>Te same wyniki zbiorcze można oglądać jako listę, a nie tylko jako kolor na
+          mapie: w zakładce <strong>Ranking</strong> pole „Poziom rankingu" przełącza tabelę na
+          województwa albo powiaty. Wiersz pokazuje wtedy wynik regionu, jego klasę, liczbę
+          jego szkół z wynikiem z wybranego przedmiotu i liczbę ich zdających.</p>
+        <p data-exam-block="e8">Dwie różnice względem zestawienia szkół są celowe. Po pierwsze, <strong>regiony
           bez wyniku i tak są w tabeli</strong>, z podaną przyczyną — tabela wylicza całą
           populację danego poziomu, więc pominięcie 66 gmin sugerowałoby, że one nie
           istnieją. Po drugie, <strong>regiony mają tylko wynik za wszystkie lata</strong>:
           widoków rocznych ani „bez jednego roku" dla nich nie liczymy, więc widok danych
           i filtr publiczna/niepubliczna są przy tych poziomach nieaktywne.</p>
+        <p data-exam-block="matura" hidden>Dwie różnice względem zestawienia szkół są celowe. Po pierwsze,
+          <strong>regiony bez wyniku i tak są w tabeli</strong>, z podaną przyczyną — tabela
+          wylicza całą populację danego poziomu, więc pominięcie powiatu bez wyniku
+          sugerowałoby, że on nie istnieje. Po drugie, <strong>regiony mają tylko wynik za
+          wszystkie lata</strong>: widoków rocznych ani „bez jednego roku" dla nich nie
+          liczymy, więc widok danych i filtr publiczna/niepubliczna są przy tych poziomach
+          nieaktywne.</p>
         <h3>Dlaczego niektóre regiony są szare</h3>
-        <p>Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
+        <p data-exam-block="e8">Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
           ręczyć", a powody są trzy — i mapa oraz ranking nazywają je osobno, bo to trzy
           różne rzeczy:</p>
+        <p data-exam-block="matura" hidden>Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
+          ręczyć". Mapa i ranking podają przyczynę:</p>
         <ul>
-          <li><strong>Brak szkół z wynikami egzaminu.</strong> Region istnieje w rejestrze,
+          <li data-exam-block="e8"><strong>Brak szkół z wynikami egzaminu.</strong> Region istnieje w rejestrze,
             ale nie ma w nim ani jednej szkoły podstawowej z wynikami. Takich gmin są dziś 3.</li>
-          <li><strong>Jedyna jednostka w jednostce nadrzędnej.</strong> Gmina, która jest
+          <li data-exam-block="e8"><strong>Jedyna jednostka w jednostce nadrzędnej.</strong> Gmina, która jest
             jedyną gminą swojego powiatu, musiałaby zostać porównana sama ze sobą — wynik
             wyszedłby zerem niezależnie od tego, jak uczą tamtejsze szkoły. Dziś to
             66 gmin (przede wszystkim miasta na prawach powiatu).</li>
-          <li><strong>Za mała grupa odniesienia.</strong> Gdy jednostka nadrzędna ma mniej
+          <li data-exam-block="e8"><strong>Za mała grupa odniesienia.</strong> Gdy jednostka nadrzędna ma mniej
             niż 5 szkół, jej średnia sama jest zbyt niepewna, żeby cokolwiek od niej
             odmierzać. Reguła jest wpisana w dane; przy dzisiejszym zestawie nie trafia
             w żaden region.</li>
+          <li data-exam-block="matura" hidden><strong>Brak liceów</strong> (albo techników, albo szkół średnich). Powiat
+            istnieje w rejestrze, ale nie ma w nim ani jednej szkoły wybranej grupy z wynikami
+            matury. Dziś to 3 powiaty dla liceów, 2 dla techników i 1 dla wszystkich szkół
+            średnich.</li>
+          <li data-exam-block="matura" hidden><strong>Żadna szkoła tutaj nie ma wyników z tego przedmiotu.</strong>
+            Przedmiot rozszerzony zdaje tylko część szkół; powiat, w którym nikt go nie zdawał,
+            nie ma z czego policzyć wyniku.</li>
+          <li data-exam-block="matura" hidden><strong>Za mała grupa odniesienia.</strong> W metrykach różnicowych szkoły
+            z przedmiotu rozszerzonego mają wynik tylko tam, gdzie w grupie odniesienia jest
+            co najmniej 5 szkół z wynikiem; powiat, którego szkołom wynik wstrzymano albo
+            którego województwo ma za mało takich szkół, zostaje szary. Przy przedmiotach
+            rzadkich — na przykład niemieckim rozszerzonym w technikach — zdarza się to
+            często.</li>
         </ul>
-        <p>Dwa pierwsze powody dotyczą tylko metryk różnicowych. Średnia i Mediana nie mają
+        <p data-exam-block="e8">Dwa pierwsze powody dotyczą tylko metryk różnicowych. Średnia i Mediana nie mają
           grupy odniesienia, więc pozostają widoczne wszędzie tam, gdzie w ogóle są jakieś
           szkoły.</p>
+        <p data-exam-block="matura" hidden>Za mała grupa odniesienia dotyczy tylko metryk różnicowych. Średnia i Mediana
+          nie mają grupy odniesienia, więc pozostają widoczne wszędzie tam, gdzie jakaś szkoła
+          ma wynik z wybranego przedmiotu.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>How a region gets its colour</h2>
-        <p>A municipality's, county's or voivodeship's colour is <strong>not the average of
+        <p data-exam-block="e8">A municipality's, county's or voivodeship's colour is <strong>not the average of
           its schools' colours</strong>. We first compute one score for the whole region
           from its schools' scores, and only that score gets a colour. It is not the same
           thing: a region with half its schools green and half red need not come out
           yellow.</p>
-        <p>Under the difference-based metrics (Difference from the mean, Normalised score)
+        <p data-exam-block="matura" hidden>A county's or voivodeship's colour is <strong>not the average of its schools'
+          colours</strong>. We first compute one score for the whole region from its schools'
+          scores, and only that score gets a colour. It is not the same thing: a region with
+          half its schools green and half red need not come out yellow.</p>
+        <p data-exam-block="e8">Under the difference-based metrics (Difference from the mean, Normalised score)
           that score is <strong>weighted by the number of pupils</strong>: a school with
           300 pupils moves its municipality more than one with 30. That is deliberate — a
           larger cohort is simply more evidence. Mean and Median are a plain average across
           the region's schools, unweighted.</p>
+        <p data-exam-block="matura" hidden>Under the difference-based metrics (Difference from the mean, Normalised score)
+          that score is <strong>weighted by the number of takers</strong>: a school with 300
+          takers moves its county more than one with 30. That is deliberate — a larger cohort is
+          simply more evidence. Mean and Median are a plain average across the region's
+          schools, unweighted.</p>
         <p>The colour scale is computed separately for each level. Region scores are
           inherently less spread out than individual schools' — averaging pulls in the
           extremes — so colouring them on the school scale would leave the region map
           almost entirely yellow.</p>
         <h3>Region tables</h3>
-        <p>The same grouped scores can be read as a list rather than only as a colour on the
+        <p data-exam-block="e8">The same grouped scores can be read as a list rather than only as a colour on the
           map: on the <strong>Ranking</strong> tab, "Ranking level" switches the table to
           voivodeships, counties or municipalities. A row then shows the region's score, its
           class, how many schools it holds and how many pupils.</p>
-        <p>Two differences from the school table are deliberate. First, <strong>regions with
+        <p data-exam-block="matura" hidden>The same grouped scores can be read as a list rather than only as a colour on
+          the map: on the <strong>Ranking</strong> tab, "Ranking level" switches the table to
+          voivodeships or counties. A row then shows the region's score, its class, how many of
+          its schools have a result in the selected subject and how many takers they have.</p>
+        <p data-exam-block="e8">Two differences from the school table are deliberate. First, <strong>regions with
           no score still appear</strong>, carrying their reason — the table enumerates that
           level's whole population, so omitting 66 municipalities would suggest they do not
           exist. Second, <strong>regions carry only the all-years score</strong>: we compute
           no single-year or leave-one-year-out views for them, which is why the view selector
           and the public/private filter are inactive at those levels.</p>
+        <p data-exam-block="matura" hidden>Two differences from the school table are deliberate. First, <strong>regions
+          with no score still appear</strong>, carrying their reason — the table enumerates that
+          level's whole population, so omitting a county with no score would suggest it does
+          not exist. Second, <strong>regions carry only the all-years score</strong>: we compute
+          no single-year or leave-one-year-out views for them, which is why the view selector
+          and the public/private filter are inactive at those levels.</p>
         <h3>Why some regions are grey</h3>
-        <p>Grey does not mean "weak". It means "we have no number here we would stand
+        <p data-exam-block="e8">Grey does not mean "weak". It means "we have no number here we would stand
           behind", and there are three reasons — named separately on the map and in the
           ranking, because they are three different things:</p>
+        <p data-exam-block="matura" hidden>Grey does not mean "weak". It means "we have no number here we would stand
+          behind". The map and the ranking give the reason:</p>
         <ul>
-          <li><strong>No schools with exam results.</strong> The region exists in the
+          <li data-exam-block="e8"><strong>No schools with exam results.</strong> The region exists in the
             register but holds no primary school with results. Today that is 3
             municipalities.</li>
-          <li><strong>An only child of its parent.</strong> A municipality that is the only
+          <li data-exam-block="e8"><strong>An only child of its parent.</strong> A municipality that is the only
             one in its county would have to be compared against itself — the score would
             come out zero however its schools actually teach. Today that is 66
             municipalities, mostly cities holding county rights.</li>
-          <li><strong>Too small a reference group.</strong> Where the parent holds fewer
+          <li data-exam-block="e8"><strong>Too small a reference group.</strong> Where the parent holds fewer
             than 5 schools, its own average is too uncertain to measure anything against.
             The rule is built into the data; on the current dataset it catches no region.</li>
+          <li data-exam-block="matura" hidden><strong>No licea</strong> (or technika, or secondary schools). The county
+            exists in the register but holds no school of the chosen group with matura results.
+            Today that is 3 counties for licea, 2 for technika and 1 for all secondary
+            schools.</li>
+          <li data-exam-block="matura" hidden><strong>No school here has results in this subject.</strong> Only some
+            schools sit an extended subject; a county where nobody sat it has nothing to compute
+            a score from.</li>
+          <li data-exam-block="matura" hidden><strong>Too small a reference group.</strong> Under the difference-based
+            metrics, schools get an extended-subject score only where the reference group holds
+            at least 5 schools with a result; a county whose schools' scores were withheld, or
+            whose voivodeship has too few such schools, stays grey. With rare subjects — German
+            at the extended level in technika, for example — this happens often.</li>
         </ul>
-        <p>The first two reasons apply only to the difference-based metrics. Mean and Median
+        <p data-exam-block="e8">The first two reasons apply only to the difference-based metrics. Mean and Median
           have no reference group, so they stay visible wherever there are any schools at
           all.</p>
+        <p data-exam-block="matura" hidden>Too small a reference group applies only to the difference-based metrics. Mean
+          and Median have no reference group, so they stay visible wherever a school has a
+          result in the selected subject.</p>
       </div>
     </section>
 
@@ -600,63 +919,104 @@
         <p>Te kolumny liczone są na <strong>różnych populacjach</strong>, i to nie jest
           niedopatrzenie — dlatego nagłówki mówią, na jakiej.</p>
         <ul>
-          <li><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
+          <li data-exam-block="e8"><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
             wszystkich województw, wszystkich 380 powiatów, wszystkich 2 479 gmin albo
             wszystkich 12 889 szkół, które mają wynik. Jednostki bez wyniku nie zajmują
             miejsca, więc mianownik bywa mniejszy niż liczba wierszy w tabeli.</li>
-          <li><strong>Percentyl liczymy tylko wśród „rodzeństwa"</strong> — jednostek
+          <li data-exam-block="matura" hidden><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
+            wszystkich województw, wszystkich 380 powiatów albo wszystkich szkół wybranej grupy
+            (2 374 liceów, 1 770 techników, 4 100 szkół średnich), które mają wynik. Jednostki
+            bez wyniku nie zajmują miejsca. Przy szkołach tabela i dymek podają mianownik
+            wprost — „#12 z 1 770" — czyli liczbę szkół z wynikiem w wybranym widoku
+            danych.</li>
+          <li data-exam-block="e8"><strong>Percentyl liczymy tylko wśród „rodzeństwa"</strong> — jednostek
             mających tę samą jednostkę nadrzędną. Percentyl gminy dotyczy gmin jej powiatu,
             percentyl powiatu — powiatów jego województwa. Zostaje pusty, gdy rodzeństwa
             z wynikiem jest mniej niż 8: w tak małej grupie percentyl udaje precyzję, której nie ma
             (przy trzech jednostkach są tylko wartości 0, 50 i 100). Dziś dotyczy to 1 042
             z 2 479 gmin.</li>
-          <li><strong>Po zawężeniu do obszaru dochodzi druga kolumna miejsca</strong> —
+          <li data-exam-block="matura" hidden><strong>Percentyl liczymy tylko wśród „rodzeństwa"</strong> — jednostek
+            mających tę samą jednostkę nadrzędną: percentyl powiatu dotyczy powiatów jego
+            województwa, percentyl województwa — wszystkich województw. Zostaje pusty, gdy
+            rodzeństwa z wynikiem jest mniej niż 8: w tak małej grupie percentyl udaje precyzję,
+            której nie ma. Percentyl szkoły zostaje pusty z tego samego powodu w widoku, w którym
+            wynik ma mniej niż 8 szkół; miejsce z mianownikiem zostaje.</li>
+          <li data-exam-block="e8"><strong>Po zawężeniu do obszaru dochodzi druga kolumna miejsca</strong> —
             „Miejsce w województwie", „w powiecie" albo „w gminie", zależnie od tego, jak
             głęboko sięga wybór. Liczy się ją tylko wśród wierszy tego obszaru. Stoi obok
             krajowej celowo: dwie liczby w jednym wierszu mają wtedy różne mianowniki
             i pomylenie ich zmienia sens. Ani filtr nazwy, ani filtr publiczna/niepubliczna jej nie przesuwa —
             tak samo jak nie przesuwa miejsca w kraju.</li>
+          <li data-exam-block="matura" hidden><strong>Po zawężeniu do obszaru dochodzi druga kolumna miejsca</strong> —
+            „Miejsce w województwie" albo „w powiecie", zależnie od tego, jak głęboko sięga
+            wybór. Liczy się ją tylko wśród wierszy tego obszaru. Stoi obok krajowej celowo:
+            dwie liczby w jednym wierszu mają wtedy różne mianowniki i pomylenie ich zmienia
+            sens. Ani filtr nazwy, ani filtr publiczna/niepubliczna jej nie przesuwa — tak samo
+            jak nie przesuwa miejsca w kraju.</li>
         </ul>
         <p>Kolumna obszaru znika, gdy nic by nie wnosiła: przy zestawieniu powiatów
           zawężonym do jednego powiatu zostaje jeden wiersz, a jego „miejsce" byłoby
           zawsze pierwsze. Taki wybór nadal działa — to podgląd jednej jednostki wraz z jej
           miejscem w kraju — ale drugiej kolumny już nie dostaje.</p>
-        <p><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — jest
+        <p data-exam-block="e8"><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — jest
           miejsce w kraju, a po wybraniu obszaru także miejsce w nim. Ranking szkół
           pokazujemy zawsze w obrębie <strong>wybranego obszaru — województwa, powiatu albo
           gminy</strong> (ogólnopolska lista wszystkich szkół to plik, którego nikt nie chce
           pobierać na telefonie), ale numery w kolumnie krajowej pozostają krajowe —
           dlatego w takiej liście nie idą po kolei. Percentyl przy szkole w dymku na mapie
           też jest krajowy: mówi, ile procent szkół w Polsce ma wynik nie lepszy niż ta.</p>
+        <p data-exam-block="matura" hidden><strong>Na poziomie szkół percentylu w tabeli nie ma w ogóle</strong> — jest
+          miejsce w kraju, a po wybraniu obszaru także miejsce w nim. Ranking szkół pokazujemy
+          zawsze w obrębie <strong>wybranego obszaru — województwa albo powiatu</strong>, ale
+          numery w kolumnie krajowej pozostają krajowe — dlatego w takiej liście nie idą po
+          kolei. Percentyl przy szkole w dymku na mapie też jest krajowy: mówi, ile procent
+          szkół wybranej grupy w Polsce ma wynik nie lepszy niż ta.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Rank and percentile in the ranking</h2>
         <p>These columns are computed over <strong>different populations</strong>, and
           that is not an oversight — which is why the headers say which.</p>
         <ul>
-          <li><strong>Rank is national</strong> at every level: among all voivodeships, all
+          <li data-exam-block="e8"><strong>Rank is national</strong> at every level: among all voivodeships, all
             380 counties, all 2,479 municipalities, or all 12,889 schools that have a score.
             Units with no score take no place, so the denominator can be smaller than the
             number of rows in the table.</li>
-          <li><strong>The percentile is computed among siblings only</strong> — units
+          <li data-exam-block="matura" hidden><strong>Rank is national</strong> at every level: among all voivodeships, all
+            380 counties, or all schools of the chosen group (2,374 licea, 1,770 technika, 4,100
+            secondary schools) that have a score. Units with no score take no place. For schools
+            the table and the popup give the denominator outright — "#12 of 1,770" — the number
+            of schools with a score in the selected view.</li>
+          <li data-exam-block="e8"><strong>The percentile is computed among siblings only</strong> — units
             sharing the same parent. A municipality's percentile is among its county's
             municipalities, a county's among its voivodeship's counties. It is left blank
             where fewer than 8 siblings have a score: in a group that small a percentile fakes
             a precision it does not have (with three units the only possible values are 0,
             50 and 100). Today that applies to 1,042 of 2,479 municipalities.</li>
-          <li><strong>Narrowing to an area adds a second rank column</strong> — "Rank in
+          <li data-exam-block="matura" hidden><strong>The percentile is computed among siblings only</strong> — units
+            sharing the same parent: a county's percentile is among its voivodeship's counties,
+            a voivodeship's among all voivodeships. It is left blank where fewer than 8 siblings
+            have a score: in a group that small a percentile fakes a precision it does not have.
+            A school's percentile is left blank for the same reason in a view where fewer than 8
+            schools have a score; the rank with its denominator stays.</li>
+          <li data-exam-block="e8"><strong>Narrowing to an area adds a second rank column</strong> — "Rank in
             voivodeship", "in county" or "in municipality", depending how deep the choice
             goes. It is computed among the rows of that area alone. It sits beside the
             national one deliberately: two numbers in one row then have different
             denominators, and confusing them changes what they mean. Neither the name
             search nor the public/private filter moves it — just as neither moves the national
             rank.</li>
+          <li data-exam-block="matura" hidden><strong>Narrowing to an area adds a second rank column</strong> — "Rank in
+            voivodeship" or "in county", depending how deep the choice goes. It is computed among
+            the rows of that area alone. It sits beside the national one deliberately: two
+            numbers in one row then have different denominators, and confusing them changes what
+            they mean. Neither the name search nor the public/private filter moves it — just as
+            neither moves the national rank.</li>
         </ul>
         <p>The area column disappears where it would add nothing: ranking counties narrowed
           to a single county leaves one row, whose "rank" would always be first. That choice
           still works — it is a look at one unit together with its national standing — but it
           gets no second column.</p>
-        <p><strong>At school level the table has no percentile column at all</strong> — there
+        <p data-exam-block="e8"><strong>At school level the table has no percentile column at all</strong> — there
           is the national rank, and the rank within the area once one is chosen. The school
           ranking is always shown within the <strong>chosen area — a voivodeship, a county or
           a municipality</strong> (a national list of every school is a file nobody wants to
@@ -664,42 +1024,68 @@
           is why they do not run consecutively in such a list. The percentile in a school's
           map popup is national too: it says what share of schools in Poland score no better
           than this one.</p>
+        <p data-exam-block="matura" hidden><strong>At school level the table has no percentile column at all</strong> —
+          there is the national rank, and the rank within the area once one is chosen. The
+          school ranking is always shown within the <strong>chosen area — a voivodeship or a
+          county</strong>, but the numbers in the national column stay national, which is why
+          they do not run consecutively in such a list. The percentile in a school's map popup is
+          national too: it says what share of the chosen group's schools in Poland score no
+          better than this one.</p>
       </div>
     </section>
 
     <section id="map">
       <div data-lang-block="pl">
         <h2>Mapa i lokalizacje</h2>
-        <p>Współrzędnych nie ma w danych egzaminacyjnych. Bierzemy je z rejestru szkół
+        <p data-exam-block="e8">Współrzędnych nie ma w danych egzaminacyjnych. Bierzemy je z rejestru szkół
           <strong>RSPO</strong> po numerze szkoły; dopiero gdy rejestr ich nie ma,
           geokodujemy adres w OpenStreetMap. Lokalizacji nigdy nie zgadujemy — gdy obie
           drogi zawiodą, szkoła <strong>nie pojawia się na mapie</strong> (ale zostaje
           w rankingu). Dziś dotyczy to 3 z 12 889 szkół.</p>
+        <p data-exam-block="matura" hidden>Współrzędnych nie ma w danych egzaminacyjnych. Bierzemy je z rejestru szkół
+          <strong>RSPO</strong> po numerze szkoły; dopiero gdy rejestr ich nie ma, geokodujemy
+          adres w OpenStreetMap. Lokalizacji nigdy nie zgadujemy — gdy obie drogi zawiodą,
+          szkoła <strong>nie pojawia się na mapie</strong> (ale zostaje w rankingu). Dziś
+          dotyczy to 3 z 2 374 liceów i 1 z 1 770 techników.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>The map and locations</h2>
-        <p>Coordinates are not in the exam data. They come from the <strong>RSPO</strong>
+        <p data-exam-block="e8">Coordinates are not in the exam data. They come from the <strong>RSPO</strong>
           school register, looked up by the school's id; only where the register has none do
           we geocode the address against OpenStreetMap. We never guess a location — when both
           routes fail the school <strong>does not appear on the map</strong> (but stays in the
           ranking). Today that is 3 of 12,889 schools.</p>
+        <p data-exam-block="matura" hidden>Coordinates are not in the exam data. They come from the <strong>RSPO</strong>
+          school register, looked up by the school's id; only where the register has none do we
+          geocode the address against OpenStreetMap. We never guess a location — when both
+          routes fail the school <strong>does not appear on the map</strong> (but stays in the
+          ranking). Today that is 3 of 2,374 licea and 1 of 1,770 technika.</p>
       </div>
     </section>
 
     <section id="caveat">
       <div data-lang-block="pl">
         <h2>Czego dane nie mówią</h2>
-        <p>Mierzymy <strong>wyniki</strong>, nie „wartość dodaną" szkoły. Nie mamy danych o tym,
+        <p data-exam-block="e8">Mierzymy <strong>wyniki</strong>, nie „wartość dodaną" szkoły. Nie mamy danych o tym,
           z jakim poziomem uczniowie do szkoły przychodzą, ani czy szkoła selekcjonuje na
           wejściu. Dlatego różnice między szkołami (na przykład publiczne vs niepubliczne)
           niekoniecznie wynikają z jakości nauczania — pokazujemy wzorzec, nie przyczynę.</p>
+        <p data-exam-block="matura" hidden>Mierzymy <strong>wyniki</strong>, nie „wartość dodaną" szkoły. Do szkół
+          średnich przyjmuje się według punktów rekrutacyjnych, ale nie mamy danych o tym,
+          z jakim poziomem uczniowie trafiają do konkretnej szkoły. Dlatego różnice między
+          szkołami niekoniecznie wynikają z jakości nauczania — pokazujemy wzorzec, nie
+          przyczynę.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>What the data does not say</h2>
-        <p>We measure <strong>outcomes</strong>, not a school's "value added". We have no data on
+        <p data-exam-block="e8">We measure <strong>outcomes</strong>, not a school's "value added". We have no data on
           the level pupils arrive with, or whether a school selects at intake. So differences
           between schools (for example public vs non-public) do not necessarily stem from
           teaching quality — we show a pattern, not a cause.</p>
+        <p data-exam-block="matura" hidden>We measure <strong>outcomes</strong>, not a school's "value added". Secondary
+          schools admit by recruitment points, but we have no data on the level pupils arrive
+          with at a particular school. So differences between schools do not necessarily stem
+          from teaching quality — we show a pattern, not a cause.</p>
       </div>
     </section>
 
@@ -707,7 +1093,7 @@
       <div data-lang-block="pl">
         <h2>Inne źródła i kod</h2>
         <ul>
-          <li><strong>Skąd pochodzą dane:</strong>
+          <li data-exam-block="e8"><strong>Skąd pochodzą dane:</strong>
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
             — serwis CIE, w którym publikowane są wyniki egzaminu ósmoklasisty dla całej
             Polski. Stamtąd pobieramy zarówno arkusze z wynikami, jak i granice
@@ -715,7 +1101,13 @@
             żadnych danych nie zbieramy — liczymy na nich metryki i rysujemy je inaczej.
             Serwis ma też własną mapę, więc bywa wymieniany jako narzędzie obok; jest przede
             wszystkim naszym źródłem.</li>
-          <li>Podobne narzędzia:
+          <li data-exam-block="matura" hidden><strong>Skąd pochodzą dane:</strong>
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
+            — serwis CIE, w którym publikowane są wyniki egzaminów, w tym matury, dla całej
+            Polski. Stamtąd pobieramy zarówno arkusze z wynikami, jak i granice
+            administracyjne rysowane na mapie (Państwowy Rejestr Granic, © GUGiK). Sami żadnych
+            danych nie zbieramy — liczymy na nich metryki i rysujemy je inaczej.</li>
+          <li data-exam-block="e8">Podobne narzędzia:
             <a target="_blank" rel="noopener" href="https://www.rankingedukacji.pl/rankingi/szkoly-podstawowe/warszawa">rankingedukacji.pl</a>.</li>
           <li>Kod i pełna analiza (notebook):
             <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz">GitHub</a>.</li>
@@ -724,7 +1116,7 @@
       <div data-lang-block="en" hidden>
         <h2>Other sources and code</h2>
         <ul>
-          <li><strong>Where the data comes from:</strong>
+          <li data-exam-block="e8"><strong>Where the data comes from:</strong>
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
             — the CIE service that publishes 8th-grade exam results for the whole of Poland.
             Both the result sheets and the administrative boundaries drawn on the map (the
@@ -732,7 +1124,13 @@
             data ourselves — we compute metrics on theirs and draw them differently. The
             service has its own map too, so it is sometimes listed as a neighbouring tool;
             it is first of all our source.</li>
-          <li>Similar tools:
+          <li data-exam-block="matura" hidden><strong>Where the data comes from:</strong>
+            <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>
+            — the CIE service that publishes exam results, the matura included, for the whole
+            of Poland. Both the result sheets and the administrative boundaries drawn on the map
+            (the National Register of Boundaries, © GUGiK) are taken from there. We collect no
+            data ourselves — we compute metrics on theirs and draw them differently.</li>
+          <li data-exam-block="e8">Similar tools:
             <a target="_blank" rel="noopener" href="https://www.rankingedukacji.pl/rankingi/szkoly-podstawowe/warszawa">rankingedukacji.pl</a>.</li>
           <li>Code and the full analysis (notebook):
             <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz">GitHub</a>.</li>
@@ -746,21 +1144,31 @@
         <p>Każdą liczbę z tej strony da się prześledzić wstecz aż do arkusza źródłowego. Wszystkie
           trzy etapy są jawne:</p>
         <ul>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Pliki
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Pliki
             źródłowe</a> — arkusze xlsx dokładnie tak, jak opublikowało je CIE, bez żadnych
             zmian. Oryginały stoją na
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>;
             trzymamy ich nienaruszoną kopię, żeby każdą liczbę dało się odtworzyć także
             wtedy, gdy serwis źródłowy się zmieni. Obok leży <code>SOURCES.csv</code>
             z adresem i datą pobrania każdego pliku.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Dane
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-maturalny">Pliki
+            źródłowe</a> — arkusze xlsx matury dokładnie tak, jak opublikowało je CIE, bez
+            żadnych zmian; obok leży <code>SOURCES.csv</code> z adresem i datą pobrania
+            każdego pliku.</li>
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Dane
             przetworzone (xlsx)</a> — po przeliczeniu, jeden wiersz na (szkoła, przedmiot,
             widok), osobny plik dla każdej metryki. Każdy ma arkusz <code>legend</code>
             objaśniający wszystkie kolumny, więc da się sprawdzić pojedynczą szkołę
             w Excelu.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">Dane
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output/matura">Dane przetworzone (xlsx)</a> —
+            po przeliczeniu, osobno dla liceów, techników i wszystkich szkół średnich: jeden
+            wiersz na (szkołę, przedmiot, widok), osobny plik dla każdej metryki, z arkuszem
+            <code>legend</code> objaśniającym kolumny.</li>
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">Dane
             JSON</a> — dokładnie te pliki, które wczytuje ta strona. Wyniki, miejsca
             i percentyle są w nich gotowe; przeglądarka dobiera do nich już tylko kolory.</li>
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data/matura">Dane JSON</a> — dokładnie te
+            pliki, które wczytuje ta strona, osobno dla każdej z trzech grup.</li>
         </ul>
       </div>
       <div data-lang-block="en" hidden>
@@ -768,20 +1176,30 @@
         <p>Every number on this site can be traced back to a source spreadsheet. All three
           stages are public:</p>
         <ul>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Source
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-osmoklasisty">Source
             files</a> — the xlsx sheets exactly as CIE published them, unmodified. The
             originals live at
             <a target="_blank" rel="noopener" href="https://mapa.wyniki.edu.pl/MapaEgzaminow/">mapa.wyniki.edu.pl</a>;
             we keep an untouched copy so every number stays reproducible even if the source
             service changes. Alongside them, <code>SOURCES.csv</code> records where each file
             came from and when it was retrieved.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Processed
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/data/egzamin-maturalny">Source files</a> — the
+            matura xlsx sheets exactly as CIE published them, unmodified; alongside them,
+            <code>SOURCES.csv</code> records where each file came from and when it was
+            retrieved.</li>
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output">Processed
             data (xlsx)</a> — after computation, one row per (school, subject, view), a separate
             file per metric. Each has a <code>legend</code> sheet explaining every column, so a
             single school can be checked in Excel.</li>
-          <li><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">JSON
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/output/matura">Processed data (xlsx)</a> — after
+            computation, separately for licea, technika and all secondary schools: one row per
+            (school, subject, view), a separate file per metric, with a <code>legend</code>
+            sheet explaining the columns.</li>
+          <li data-exam-block="e8"><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data">JSON
             data</a> — the very files this site loads. Scores, ranks and percentiles arrive
             ready-made; the browser only maps them to colours.</li>
+          <li data-exam-block="matura" hidden><a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/tree/main/docs/data/matura">JSON data</a> — the very files
+            this site loads, separately for each of the three groups.</li>
         </ul>
       </div>
     </section>
