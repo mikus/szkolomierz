@@ -89,6 +89,12 @@ const EXAMS = {
 const EXAM = getURLParams().get('exam') === 'matura' ? 'matura' : 'e8';
 const EXAM_CONFIG = EXAMS[EXAM];
 
+// The gmina gate (spec §7.1): matura has no gmina rung, so nothing may fetch
+// regions-gmina.json (it does not exist there, and the preloads that prime its
+// names sit inside a Promise.all whose 404 would block every marker and row),
+// and the gmina select and column are hidden.
+const HAS_GMINA = EXAM_CONFIG.regionLevels.includes('gmina');
+
 // Preferences that mean something different per exam, stored under the exam's
 // prefix (spec §7.2). Everything else (lang, metric, advanced_metrics,
 // gradient) is shared.
@@ -204,8 +210,6 @@ function colourFor(score, centre, sigma, p1, p99, gradient) {
   if (i == null) return COLOURS.missing;
   return gradient ? gradient3Colour(score, centre, sigma, p1, p99) : CLASS3_FLAT[i];
 }
-
-const REFERENCE_LEVEL_KEYS = EXAM_CONFIG.referenceLevels;
 
 // What a SCHOOL is compared against (spec §6.2). Shared rather than per-page:
 // index.html and ranking.html both load app.js and both colour by these anchors.
@@ -629,9 +633,9 @@ const I18N = {
     labelSubject: 'Przedmiot',
     labelMetric: 'Metryka',
     labelBaseline: 'Punkt odniesienia',
-    // The four REFERENCE_LEVEL_KEYS. Deliberately not the same vocabulary as the
-    // zoom levels: `country` is a zoom rung, `national` is what a school is
-    // compared against.
+    // The four reference levels (EXAMS.e8.referenceLevels). Deliberately not the
+    // same vocabulary as the zoom levels: `country` is a zoom rung, `national` is
+    // what a school is compared against.
     levelNational: 'Cała Polska',
     levelVoivodeship: 'Województwo',
     levelPowiat: 'Powiat',
@@ -1057,14 +1061,27 @@ function fillMetricSelect(selectEl, currentMetric, advanced) {
   }
 }
 
+// E8 lists SUBJECTS. A matura dataset names its own subjects in scale.json,
+// grouped basic then extended (spec §7.1), and the select shows those groups.
 function fillSubjectSelect(selectEl, currentSubject) {
   selectEl.innerHTML = '';
-  for (const s of SUBJECTS) {
+  const addOption = (parent, s) => {
     const opt = document.createElement('option');
     opt.value = s;
     opt.textContent = t('subject_' + s);
     if (s === currentSubject) { opt.selected = true; opt.setAttribute('selected', ''); }
-    selectEl.appendChild(opt);
+    parent.appendChild(opt);
+  };
+  const groups = scaleData?.metadata.subject_groups;
+  if (!groups) {
+    for (const s of SUBJECTS) addOption(selectEl, s);
+    return;
+  }
+  for (const [group, labelKey] of [['basic', 'subjectGroupBasic'], ['extended', 'subjectGroupExtended']]) {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = t(labelKey);
+    for (const s of groups[group]) addOption(optgroup, s);
+    selectEl.appendChild(optgroup);
   }
 }
 

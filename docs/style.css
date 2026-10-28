@@ -208,6 +208,10 @@ body.page-help { display: block; height: auto; }
   margin-bottom: 0.6rem;
 }
 .field > span { font-size: 0.85rem; color: var(--text-muted); }
+/* A field the current exam does not have (the ranking's gmina select under
+   matura). A class, not the `hidden` attribute: .field's display: flex
+   overrides that. */
+.field.is-hidden { display: none; }
 
 /* A note under a control saying why it is inert or limited. :empty so the
    flex gap above it disappears when there is nothing to say. */

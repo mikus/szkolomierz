@@ -27,8 +27,9 @@
 // never one number that quietly changes meaning when a filter moves.
 
 (function () {
-  const RANK_LEVELS = ['voivodeship', 'powiat', 'gmina', 'school'];
-  const REGION_LEVELS = ['voivodeship', 'powiat', 'gmina'];
+  // Derived from the exam (spec §7.1): matura stops at powiat.
+  const REGION_LEVELS = EXAM_CONFIG.regionLevels;
+  const RANK_LEVELS = [...REGION_LEVELS, 'school'];
   // Whose name the "parent" column shows. Voivodeships have no parent (their
   // `parent` field is ''), so they get no such column.
   const PARENT_LEVEL = { powiat: 'voivodeship', gmina: 'powiat' };
@@ -53,8 +54,12 @@
   const SELECT_LEVEL_BY_DIGITS = { 2: 'voivodeship', 4: 'powiat', 6: 'gmina' };
   // How deep the area filter may go at each ranking level. Selecting deeper than
   // the rows being ranked cannot narrow them — a 4-digit powiat TERYT never
-  // starts with a 6-digit gmina prefix — it can only empty the table.
-  const MAX_SELECT_DIGITS = { voivodeship: 2, powiat: 4, gmina: 6, school: 6 };
+  // starts with a 6-digit gmina prefix — it can only empty the table. Schools
+  // may be narrowed as deep as the exam's finest region level.
+  const MAX_SELECT_DIGITS = {
+    ...Object.fromEntries(REGION_LEVELS.map(l => [l, SELECT_DIGITS[l]])),
+    school: SELECT_DIGITS[REGION_LEVELS.at(-1)],
+  };
   const RANK_IN_COLUMN = {
     voivodeship: 'colRankInVoivodeship',
     powiat: 'colRankInPowiat',
@@ -128,12 +133,13 @@
     return 'school';
   }
 
-  // 2, 4 or 6 digits — voivodeship, powiat or gmina. Anything else (including the
-  // 7-digit form with the gmina type on the end) is not a selection this page
-  // can act on, so it is dropped rather than silently truncated to something the
-  // user did not ask for.
+  // 2, 4 or 6 digits — voivodeship, powiat or gmina; 2 or 4 under matura, which
+  // has no gmina level. Anything else (including the 7-digit form with the gmina
+  // type on the end) is not a selection this page can act on, so it is dropped
+  // rather than silently truncated to something the user did not ask for.
   function resolveRegion() {
-    const valid = (v) => /^\d{2}$|^\d{4}$|^\d{6}$/.test(v || '');
+    const widths = REGION_LEVELS.map(l => SELECT_DIGITS[l]);
+    const valid = (v) => /^\d+$/.test(v || '') && widths.includes(v.length);
     const url = getURLParams().get('region');
     if (valid(url)) return url;
     const stored = readPrefs().rank_region;
@@ -143,7 +149,8 @@
   function resolveInitialState() {
     state.advancedMetrics = resolveAdvancedMetrics();
     state.metric  = resolvePref('metric',  METRICS);
-    state.subject = resolvePref('subject', SUBJECTS);
+    // Matura's subject is checked against the loaded scale.json in applyDataset.
+    state.subject = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang    = resolvePref('lang',    ['pl', 'en']);
     state.level   = resolveLevel();
     state.region  = resolveRegion();
@@ -323,6 +330,7 @@
         if (r.score == null) return false;
       }
       if (q) {
+        // r.gmina is null under matura (no gmina level); `v || ''` skips it.
         const hay = schools
           ? [r.name, r.town, r.street, r.gmina, r.powiat]
           : [r.name, r.parent];
@@ -374,7 +382,8 @@
       { key: 'classLetter', label: t('colClass'),       num: true,  width: '4rem' },
       { key: 'looMinR',     label: t('colLOORange'),    num: true,  help: 'helpLOORange' },
       { key: 'singleMinR',  label: t('colSingleRange'), num: true,  help: 'helpSingleRange' },
-      { key: 'gmina',       label: t('colGmina'),       num: false },
+      // Positional with schoolRowHTML's cells: drop both or neither.
+      ...(HAS_GMINA ? [{ key: 'gmina', label: t('colGmina'), num: false }] : []),
       { key: 'powiat',      label: t('colPowiat'),      num: false },
     ];
   }
@@ -642,7 +651,7 @@
         <td class="num class-cell">${classCellHTML(r)}</td>
         <td class="num">${looCell}</td>
         <td class="num">${syCell}</td>
-        <td>${escapeHTML(r.gmina || '')}</td>
+        ${HAS_GMINA ? `<td>${escapeHTML(r.gmina || '')}</td>` : ''}
         <td>${escapeHTML(r.powiat || '')}</td>
       </tr>`;
     // A selected row expands an inline detail panel below it.
@@ -944,8 +953,9 @@
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve the gmina column and makes the name search match on it.
       // Same deal as map.js's buildSchools: one 0.77 MB fetch a session, and
-      // only once a powiat has been deliberately chosen.
-      loadRegions('gmina'),
+      // only once a powiat has been deliberately chosen. Matura has no gmina
+      // level and no such file (HAS_GMINA).
+      ...(HAS_GMINA ? [loadRegions('gmina')] : []),
     ]);
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
@@ -977,7 +987,7 @@
         name: col.name[i],
         miejscowosc: col.miejscowosc[i],
         ulica_nr: col.ulica_nr[i],
-        gmina: nameOf('gmina', col.teryt[i].slice(0, 6)),
+        gmina: HAS_GMINA ? nameOf('gmina', col.teryt[i].slice(0, 6)) : null,
         powiat: nameOf('powiat', col.powiat[i]),
         is_public: col.is_public[i],
         n_years: col.n_years[i],
@@ -1108,15 +1118,17 @@
     const wantGminas = !!powiat && maxDigits >= 6;
     const gminaRegions = wantGminas ? await loadRegions('gmina') : null;
     if (token !== regionSyncToken) return;
-    fillRegionOptions(gminaSel, 'gminaPlaceholderAll', gminaRegions, powiat);
-    gminaSel.value = gmina;
-    gminaSel.disabled = !wantGminas;
+    if (gminaSel) {
+      fillRegionOptions(gminaSel, 'gminaPlaceholderAll', gminaRegions, powiat);
+      gminaSel.value = gmina;
+      gminaSel.disabled = !wantGminas;
+    }
 
     // A URL or stored prefix naming a region that does not exist leaves its
     // select on the placeholder. Trim the selection back to the deepest part
     // that did resolve, so the page filters by something real or by nothing —
     // never by a code no region has.
-    const resolved = gminaSel.value || powiatSel.value || voivSel.value || '';
+    const resolved = gminaSel?.value || powiatSel.value || voivSel.value || '';
     if (resolved !== sel) {
       state.region = resolved || null;
       writePref('rank_region', state.region);
@@ -1152,7 +1164,7 @@
     for (const r of document.querySelectorAll('input[name="public"]')) r.disabled = !schools;
     const parts = [];
     if (!schools) parts.push(t('levelRegionNote'));
-    if (MAX_SELECT_DIGITS[state.level] < 6) parts.push(t('selectDeeperThanLevel'));
+    if (MAX_SELECT_DIGITS[state.level] < MAX_SELECT_DIGITS.school) parts.push(t('selectDeeperThanLevel'));
     document.getElementById('level-note').textContent = parts.join(' ');
     // The click hint is NOT set here: it depends on whether rows are on screen,
     // which changes on area selection and on load too. renderAll owns it.
@@ -1169,9 +1181,13 @@
     const viewParamSel = document.getElementById('view-param-select');
     const nameInput  = document.getElementById('name-search');
 
+    // Hidden, not removed: removing the markup would leave gminaSel null for the
+    // listener below. A class rather than `hidden`, which .field's display: flex
+    // would override.
+    if (!HAS_GMINA) document.querySelector('.field--gmina').classList.add('is-hidden');
+
     fillLevelSelect(levelSel);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
-    fillSubjectSelect(subjectSel, state.subject);
     viewSel.value = state.view;
 
     levelSel.addEventListener('change', () => {
@@ -1204,7 +1220,7 @@
     // whatever powiat and gmina were under the old one.
     voivSel.addEventListener('change',   () => setRegion(voivSel.value));
     powiatSel.addEventListener('change', () => setRegion(powiatSel.value || voivSel.value));
-    gminaSel.addEventListener('change',  () => setRegion(gminaSel.value || powiatSel.value));
+    gminaSel?.addEventListener('change', () => setRegion(gminaSel.value || powiatSel.value));
 
     const advancedCB = document.getElementById('advanced-metrics-toggle');
     advancedCB.checked = state.advancedMetrics;
@@ -1290,6 +1306,24 @@
     });
   }
 
+  // Everything set up from the loaded scale.json (spec §7.3). Binds no listener
+  // — those are wireControls', bound once — so it can run again whenever the
+  // dataset changes.
+  function applyDataset() {
+    // Each matura dataset names its own subjects, so a stored or linked subject
+    // is checked here, once the list is known. E8's list is SUBJECTS, which
+    // resolveInitialState already enforced, so this never fires there.
+    if (!scaleData.metadata.subjects.includes(state.subject)) {
+      state.subject = DEFAULTS.subject;
+      writePref('subject', null);
+    }
+    fillSubjectSelect(document.getElementById('subject-select'), state.subject);
+    fillDataYears();
+    // The view parameters are the dataset's years: a liceum last_k of 3 does
+    // not exist where the data starts a year later.
+    updateViewParamField();
+  }
+
   function wireNavLinks() {
     const link = document.querySelector('.topnav nav a[href="index.html"]');
     if (!link) return;
@@ -1319,6 +1353,7 @@
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
       return;
     }
+    applyDataset();
     // The map hands a school over as ranking.html?school=<rspo> and carries no
     // region with it. Deriving the powiat from the index keeps that handoff
     // landing on the school instead of on the pick-a-county prompt.
@@ -1334,8 +1369,6 @@
     // ?region= before anything is fetched for it, and the two files behind it are
     // 6.9 KB + 118 KB and needed at every level anyway.
     await syncRegionSelects().catch(e => console.error('region lists unavailable', e));
-    fillDataYears();
-    updateViewParamField();
 
     syncURL();
     // Unawaited, so the page stays usable for the whole download; renderAll runs

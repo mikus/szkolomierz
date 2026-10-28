@@ -52,13 +52,16 @@
   function resolveInitialState() {
     state.advancedMetrics = resolveAdvancedMetrics();
     state.metric   = resolvePref('metric',  METRICS);
-    state.subject  = resolvePref('subject', SUBJECTS);
+    // A matura subject is checked against the loaded scale.json instead, in
+    // applyDataset: each dataset names its own subjects.
+    state.subject  = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang     = resolvePref('lang',    ['pl', 'en']);
     // Not on `state`: scoreExtent/scaleFor live in app.js and cannot see it, and
     // ranking.js colours from the same binding. app.js is plain global scope, so
     // assigning it from here works. resolvePref rejects anything outside the
-    // list, so a stale or hand-edited value falls back to DEFAULTS.baseline.
-    baselineLevel = resolvePref('baseline', REFERENCE_LEVEL_KEYS);
+    // list, so a stale or hand-edited value — or a level the exam does not have —
+    // falls back to DEFAULTS.baseline.
+    baselineLevel = resolvePref('baseline', EXAM_CONFIG.referenceLevels);
 
     const url = getURLParams();
     const pub = url.get('public');
@@ -305,7 +308,8 @@
       // file is fetched, and two callers depend on it having been: the
       // breadcrumb's last segment at school zoom, and the "gm. …" line in the
       // find-a-school typeahead. Cached, so it costs one fetch a session.
-      loadRegions('gmina'),
+      // Matura has no gmina rung and no such file (HAS_GMINA).
+      ...(HAS_GMINA ? [loadRegions('gmina')] : []),
     ]);
     // The shard is the app's largest fetch (median 0.14 MB, up to 4.3 MB), so
     // zooming back out before it lands is an ordinary gesture, not a race worth
@@ -393,21 +397,26 @@
   // Choropleth: one administrative level per zoom
   //
   // Mirrors src/school_quality/zoom.py — the two are checked against each other
-  // in the task's verification step, so keep them in step.
+  // in the task's verification step, so keep them in step. Matura uses the same
+  // thresholds without the gmina rung; that filter lives here, in JS only.
 
   const ZOOM_THRESHOLDS = [[12, 'gmina'], [10, 'powiat'], [8, 'voivodeship'], [0, 'country']];
-  const CHILD_OF = { country: 'voivodeship', voivodeship: 'powiat', powiat: 'gmina', gmina: null };
+  // This exam's rungs, finest first: the country plus its region levels.
+  const LADDER = ZOOM_THRESHOLDS.filter(([, l]) => l === 'country' || EXAM_CONFIG.regionLevels.includes(l));
+  // Each rung's child is the next finer rung; the finest has none, which is the
+  // rung where school markers are drawn instead of polygons.
+  const CHILD_OF = Object.fromEntries(LADDER.map(([, l], i) => [l, i === 0 ? null : LADDER[i - 1][1]]));
 
   function levelForZoom(zoom) {
-    for (const [min, level] of ZOOM_THRESHOLDS) if (zoom >= min) return level;
+    for (const [min, level] of LADDER) if (zoom >= min) return level;
     return 'country';
   }
 
   // The lowest zoom at which levelForZoom() returns `level` — i.e. the rung at
-  // which that level's own children are drawn. Read back out of ZOOM_THRESHOLDS
-  // rather than hardcoded, so retuning the ladder cannot leave this behind.
+  // which that level's own children are drawn. Read back out of LADDER rather
+  // than hardcoded, so retuning the ladder cannot leave this behind.
   function minZoomForLevel(level) {
-    const row = ZOOM_THRESHOLDS.find(([, l]) => l === level);
+    const row = LADDER.find(([, l]) => l === level);
     return row ? row[0] : 0;
   }
 
@@ -548,7 +557,7 @@
   // ranking.html carries no baseline control.
   function fillBaselineSelect() {
     baselineSelect.innerHTML = '';
-    for (const key of REFERENCE_LEVEL_KEYS) {
+    for (const key of EXAM_CONFIG.referenceLevels) {
       const opt = document.createElement('option');
       opt.value = key;
       opt.textContent = t('level' + key[0].toUpperCase() + key.slice(1));
@@ -1217,10 +1226,33 @@
   // ---------------------------------------------------------------------------
   // Wiring UI controls
 
+  // Everything set up from the loaded scale.json (spec §7.3). Binds no listener
+  // — those are wireControls', bound once — so it can run again whenever the
+  // dataset changes.
+  function applyDataset() {
+    // Each matura dataset names its own subjects, so a stored or linked subject
+    // is checked here, once the list is known. E8's list is SUBJECTS, which
+    // resolveInitialState already enforced, so this never fires there.
+    if (!scaleData.metadata.subjects.includes(state.subject)) {
+      state.subject = DEFAULTS.subject;
+      writePref('subject', null);
+    }
+    fillSubjectSelect(document.getElementById('subject-select'), state.subject);
+    syncThresholdSlider();   // keeps a valid URL threshold
+    // Min years slider. Max = number of dataset years, so it scales when a new
+    // exam year lands; also clamp a too-large minYears carried over from an older URL.
+    const myr = document.getElementById('min-years-slider');
+    const maxYears = scaleData.metadata.years_in_data.length;
+    myr.max = maxYears;
+    state.minYears = Math.min(state.minYears, maxYears);
+    myr.value = state.minYears;
+    document.getElementById('min-years-display').textContent = state.minYears;
+    fillDataYears();
+  }
+
   function wireControls() {
     const subjectSel = document.getElementById('subject-select');
     const metricSel  = document.getElementById('metric-select');
-    fillSubjectSelect(subjectSel, state.subject);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
 
     subjectSel.addEventListener('change', e => onSubjectChange(e.target.value));
@@ -1266,8 +1298,7 @@
       });
     }
 
-    // Threshold slider
-    syncThresholdSlider();
+    // Threshold slider (its range is applyDataset's)
     const slider = document.getElementById('threshold-slider');
     const display = document.getElementById('threshold-display');
     slider.addEventListener('input', () => {
@@ -1279,15 +1310,9 @@
       refreshFilters();
     });
 
-    // Min years slider. Max = number of dataset years, so it scales when a new
-    // exam year lands; also clamp a too-large minYears carried over from an older URL.
+    // Min years slider (its maximum and clamp are applyDataset's)
     const myr = document.getElementById('min-years-slider');
     const myrDisp = document.getElementById('min-years-display');
-    const maxYears = scaleData.metadata.years_in_data.length;
-    myr.max = maxYears;
-    state.minYears = Math.min(state.minYears, maxYears);
-    myr.value = state.minYears;
-    myrDisp.textContent = state.minYears;
     myr.addEventListener('input', () => {
       state.minYears = parseInt(myr.value, 10);
       myrDisp.textContent = state.minYears;
@@ -1404,7 +1429,7 @@
     }
     buildClusterGroup();
     buildSchoolSearchIndex();
-    fillDataYears();
+    applyDataset();
     wireControls();
     syncURL();          // canonicalise the URL (e.g. add resolved threshold)
     openInitialPopup(); // if ?school=… was in the URL
