@@ -22,6 +22,10 @@
     gradient: true,               // continuous colour by default; flat 3 classes via the toggle
     advancedMetrics: false,       // unlocks median + diff_mean in the metric select
     popupTablesOpen: false,       // year-by-year numbers in the popup; reset per school
+    // The comparison population asked for (matura); null under E8. The URL is
+    // written from this, never from app.js's `population`, which names the
+    // dataset already loaded and lags behind while a switch is in flight.
+    population: null,
   };
 
   let map = null;
@@ -56,6 +60,7 @@
     // applyDataset: each dataset names its own subjects.
     state.subject  = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang     = resolvePref('lang',    ['pl', 'en']);
+    state.population = resolvePopulation();
     // Not on `state`: scoreExtent/scaleFor live in app.js and cannot see it, and
     // ranking.js colours from the same binding. app.js is plain global scope, so
     // assigning it from here works. resolvePref rejects anything outside the
@@ -96,6 +101,8 @@
       school:     state.selectedSchool,
       lang:       state.lang !== DEFAULTS.lang ? state.lang : null,
       gradient:   state.gradient ? null : '0',   // param only when off (on is the default)
+      // Listed, or setURLParams would strip them on the first sync (spec §7.2).
+      ...linkParams(state.population),
     });
   }
 
@@ -1105,6 +1112,7 @@
     if (state.metric  !== DEFAULTS.metric)  usp.set('metric',  state.metric);
     if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
     if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
+    setLinkParams(usp);
     usp.set('school', rspo);
     window.location.href = 'ranking.html?' + usp.toString();
   }
@@ -1352,6 +1360,8 @@
     wireSchoolFind();
     wirePopupToggles();
     wireNavLinks();
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active');
+    const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate the dynamic, JS-built content that
     // applyI18N (static [data-i18n] only) can't reach — the metric/subject
@@ -1359,6 +1369,7 @@
     wireLangToggle(() => {
       state.lang = currentLang;
       syncURL();
+      renderExamToggle();
       fillSubjectSelect(subjectSel, state.subject);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillBaselineSelect();
@@ -1373,8 +1384,15 @@
     });
   }
 
+  // The exam and population a link to the ranking carries; nothing under E8.
+  function setLinkParams(usp) {
+    const { exam, population } = linkParams(state.population);
+    if (exam) usp.set('exam', exam);
+    if (population) usp.set('population', population);
+  }
+
   function wireNavLinks() {
-    // Carry metric/subject/lang to the ranking page nav link.
+    // Carry metric/subject/lang (and the exam and population) to the ranking page nav link.
     const link = document.querySelector('.topnav nav a[href="ranking.html"]');
     if (!link) return;
     const update = () => {
@@ -1382,6 +1400,7 @@
       if (state.metric  !== DEFAULTS.metric)  usp.set('metric',  state.metric);
       if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
       if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
+      setLinkParams(usp);
       const qs = usp.toString();
       link.href = 'ranking.html' + (qs ? '?' + qs : '');
     };
@@ -1421,7 +1440,7 @@
     setLang(state.lang);
     initMap();
     try {
-      await activateDataset(resolvePopulation());
+      await activateDataset(state.population);
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';

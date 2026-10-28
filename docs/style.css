@@ -645,8 +645,10 @@ table.ranking-table tr.detail-row > td {
   /* Keep the nav links visible. The title is flex:1 but min-width:auto stops
      a flex item shrinking below its text width, so a long title pushed the nav
      (now 3 links) off the right edge. min-width:0 + ellipsis lets the title
-     shrink; the nav never shrinks. */
-  .topnav { gap: 0.5rem; padding: 0.5rem 0.6rem; }
+     shrink; the nav never shrinks. With the exam toggle the nav is ~405 px at
+     max-content, so the bar and the nav both wrap instead: at 375 px nothing may
+     scroll sideways. */
+  .topnav { gap: 0.5rem; padding: 0.5rem 0.6rem; flex-wrap: wrap; row-gap: 0.4rem; }
   .topnav h1 {
     font-size: 0.9rem;
     min-width: 0;
@@ -654,7 +656,7 @@ table.ranking-table tr.detail-row > td {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .topnav nav { flex-shrink: 0; }
+  .topnav nav { flex-shrink: 0; flex-wrap: wrap; row-gap: 0.4rem; max-width: 100%; }
   .topnav nav a { padding: 0.35rem 0.5rem; }
 
   /* Detail panel: stack the numeric tables (each with its caption above) and

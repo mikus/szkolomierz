@@ -681,7 +681,7 @@ const I18N = {
     labelRankLevel: 'Poziom rankingu',
     levelSchool: 'Szkoła',
     helpRankLevel: 'Województwa, powiaty i gminy są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły — w obrębie wybranego obszaru: województwa, powiatu albo gminy; ich miejsce w kraju pokazuje osobna kolumna. Ogólnopolska lista szkół wymagałaby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
-    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
+    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr publiczna/niepubliczna dotyczą wyłącznie poziomu szkół.',
     labelVoivodeship: 'Województwo',
     labelPowiatOptional: 'Powiat (opcjonalnie)',
     labelGminaOptional: 'Gmina (opcjonalnie)',
@@ -724,7 +724,7 @@ const I18N = {
     colRankInVoivodeship: 'Miejsce w województwie',
     colRankInPowiat: 'Miejsce w powiecie',
     colRankInGmina: 'Miejsce w gminie',
-    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Filtry nazwy i typu szkoły nie zmieniają tego miejsca.`,
+    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Ani filtr nazwy, ani filtr publiczna/niepubliczna nie zmieniają tego miejsca.`,
     colPctInCountry: 'Percentyl w kraju',
     colPctInVoivodeship: 'Percentyl w województwie',
     colPctInPowiat: 'Percentyl w powiecie',
@@ -801,6 +801,8 @@ const I18N = {
     publicNoShort: 'Nie',
     langPL: 'PL',
     langEN: 'EN',
+    examPrimary: 'Podstawowe',
+    examSecondary: 'Średnie',
   },
   en: {
     appTitle: 'Primary schools map',
@@ -869,7 +871,7 @@ const I18N = {
     labelRankLevel: 'Ranking level',
     levelSchool: 'School',
     helpRankLevel: 'Voivodeships, counties and municipalities rank across the whole country — their files already cover all of Poland. Schools rank within the area you choose — a voivodeship, county or municipality — with their national rank in a column of its own. A national list of schools would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
-    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the school-type filter apply to the school level alone.',
+    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the public/private filter apply to the school level alone.',
     labelVoivodeship: 'Voivodeship',
     labelPowiatOptional: 'County (optional)',
     labelGminaOptional: 'Municipality (optional)',
@@ -900,7 +902,7 @@ const I18N = {
     colRankInVoivodeship: 'Rank in voivodeship',
     colRankInPowiat: 'Rank in county',
     colRankInGmina: 'Rank in municipality',
-    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. The name and school-type filters do not change this rank.`,
+    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. Neither the name filter nor the public/private filter changes this rank.`,
     colPctInCountry: 'Percentile in Poland',
     colPctInVoivodeship: 'Percentile in voivodeship',
     colPctInPowiat: 'Percentile in county',
@@ -953,6 +955,8 @@ const I18N = {
     publicNoShort: 'No',
     langPL: 'PL',
     langEN: 'EN',
+    examPrimary: 'Primary',
+    examSecondary: 'Secondary',
   },
 };
 
@@ -1160,6 +1164,65 @@ function wireLangToggle(onAfterChange) {
     render();
     if (onAfterChange) onAfterChange();
   });
+}
+
+// Wire the #exam-toggle segment "Podstawowe | Średnie" (spec §7.2). It looks like
+// the language toggle but works differently: switching exams RELOADS the page
+// into the other exam, carrying only the language (D3), and each exam's own
+// stored preferences restore the rest. An in-place switch would need the exam in
+// every cache key and would bind wireControls' listeners twice. Returns the
+// render function, for the page's language callback.
+function wireExamToggle() {
+  const el = document.getElementById('exam-toggle');
+  if (!el) return () => {};
+  const OPTIONS = [['e8', 'examPrimary'], ['matura', 'examSecondary']];
+  const render = () => {
+    el.innerHTML = OPTIONS.map(([exam, key]) =>
+      `<button type="button" class="lang-opt${exam === EXAM ? ' active' : ''}" `
+      + `data-exam="${exam}" aria-pressed="${exam === EXAM}">${t(key)}</button>`
+    ).join('');
+  };
+  render();
+  el.addEventListener('click', (e) => {
+    const opt = e.target.closest('.lang-opt');
+    if (!opt || opt.getAttribute('data-exam') === EXAM) return;
+    const usp = new URLSearchParams();
+    if (opt.getAttribute('data-exam') === 'matura') usp.set('exam', 'matura');
+    if (currentLang !== DEFAULTS.lang) usp.set('lang', currentLang);
+    const qs = usp.toString();
+    location.assign(window.location.pathname + (qs ? '?' + qs : ''));
+  });
+  return render;
+}
+
+// The exam and population a URL or cross-page link must carry: both null under
+// E8, so no E8 link changes, and population null when it is the default
+// (`requestedPopulation` is the page's state.population — the population asked
+// for, which can run ahead of the one loaded while a switch is in flight).
+function linkParams(requestedPopulation) {
+  if (EXAM === 'e8') return { exam: null, population: null };
+  const fallback = EXAM_CONFIG.populations[0];
+  return { exam: EXAM, population: requestedPopulation === fallback ? null : requestedPopulation };
+}
+
+// `href` with exam=matura in its query, before any #anchor. Unchanged under E8.
+function examHref(href) {
+  if (EXAM === 'e8') return href;
+  const hashAt = href.indexOf('#');
+  const base = hashAt < 0 ? href : href.slice(0, hashAt);
+  const hash = hashAt < 0 ? '' : href.slice(hashAt);
+  return base + (base.includes('?') ? '&' : '?') + 'exam=' + EXAM + hash;
+}
+
+// Make static links keep the exam: the help links and the active tab, which no
+// wireNavLinks touches (under matura, clicking it would otherwise reload E8).
+// The nav's help entry also gets the exam's help anchor (D5). Run once.
+function rewriteExamLinks(selector) {
+  for (const a of document.querySelectorAll(selector)) {
+    let href = a.getAttribute('href');
+    if (href === 'help.html' && a.closest('.topnav nav')) href += EXAM_CONFIG.helpAnchors;
+    a.setAttribute('href', examHref(href));
+  }
 }
 
 // Fill the #data-years subtitle (if present) from the loaded scale metadata.

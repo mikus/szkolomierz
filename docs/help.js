@@ -10,7 +10,11 @@
   }
   setLang(resolvePref('lang', ['pl', 'en']));
   showLangContent();
-  wireLangToggle(() => showLangContent());
+  // The nav carries the exam, so the map and ranking links return to the exam
+  // this page was opened from.
+  rewriteExamLinks('.topnav nav a');
+  const renderExamToggle = wireExamToggle();
+  wireLangToggle(() => { showLangContent(); renderExamToggle(); });
 
   // Floating "back to contents" button: appears once you scroll down, and jumps
   // to the top (where the ToC lives). Avoids the downsides of a sticky ToC bar.

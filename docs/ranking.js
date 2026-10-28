@@ -85,6 +85,10 @@
     selectedSchool: null,
     lang: DEFAULTS.lang,
     advancedMetrics: false,
+    // The matura comparison population asked for; null under E8. The URL is
+    // written from this, never from app.js's `population`, which names the
+    // dataset already loaded and lags behind while a switch is in flight.
+    population: null,
     // Detail-panel UI (ephemeral, not in the URL):
     detailTablesOpen: false,        // numeric tables hidden until asked for
     detailTableDim: 'score',        // 'score' | 'rank' | 'pct'
@@ -152,6 +156,7 @@
     // Matura's subject is checked against the loaded scale.json in applyDataset.
     state.subject = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang    = resolvePref('lang',    ['pl', 'en']);
+    state.population = resolvePopulation();
     state.level   = resolveLevel();
     state.region  = resolveRegion();
 
@@ -190,6 +195,8 @@
       dir:        state.sortDir !== 'asc' ? state.sortDir : null,
       school:     state.selectedSchool,
       lang:       state.lang !== DEFAULTS.lang ? state.lang : null,
+      // Listed, or setURLParams would strip them on the first sync (spec §7.2).
+      ...linkParams(state.population),
     });
   }
 
@@ -1288,6 +1295,8 @@
     });
 
     wireNavLinks();
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active');
+    const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate JS-built content (metric/subject selects
     // and the whole table, whose headers/labels come from t()). The view-select
@@ -1295,6 +1304,7 @@
     wireLangToggle(() => {
       state.lang = currentLang;
       syncURL();
+      renderExamToggle();
       fillLevelSelect(levelSel);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillSubjectSelect(subjectSel, state.subject);
@@ -1333,6 +1343,9 @@
       if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
       if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
       if (state.selectedSchool != null)       usp.set('school',  state.selectedSchool);
+      const { exam, population } = linkParams(state.population);
+      if (exam) usp.set('exam', exam);
+      if (population) usp.set('population', population);
       const qs = usp.toString();
       link.href = 'index.html' + (qs ? '?' + qs : '');
     };
@@ -1347,7 +1360,7 @@
     resolveInitialState();
     setLang(state.lang);
     try {
-      await activateDataset(resolvePopulation());
+      await activateDataset(state.population);
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
