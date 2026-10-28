@@ -1307,6 +1307,14 @@ function fmtInt(n) {
   return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, currentLang === 'pl' ? ' ' : ',');
 }
 
+// A pass rate (0–100), one decimal in the locale's own notation: '87,5%' in
+// Polish, '87.5%' in English; '—' where the year has none.
+function fmtPassRate(v) {
+  if (v == null) return '—';
+  const s = v.toFixed(1);
+  return (currentLang === 'pl' ? s.replace('.', ',') : s) + '%';
+}
+
 // Same as fmtScore but renders the decimals in a muted/smaller span so the
 // ranking table can show 3 decimals without visually shouting them — the
 // integer part is the main read, the decimals are for breaking apparent ties.

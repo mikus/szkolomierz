@@ -545,7 +545,10 @@
     } else {
       const n = r.n_ranked[state.metric][state.subject];
       lines.push(`${score.toFixed(2)}${rank == null ? '' : ` (${rank}/${n})`}`);
-      lines.push(t('schoolsInRegion', r.n_schools[i]));
+      // Matura files count, per subject, the schools with a result in it.
+      lines.push(r.n_scored
+        ? t('schoolsWithResults', r.n_scored[state.subject][i], r.n_schools[i])
+        : t('schoolsInRegion', r.n_schools[i]));
     }
     return lines.join('<br>');
   }
@@ -797,10 +800,24 @@
     else pendingSchool = keep;
   }
 
+  // Under matura (a scale with subject_groups) the hidden schools are split by
+  // why, as two clauses (D11): no result in the subject at all, or a result
+  // whose difference score is withheld at this reference level. A shown school
+  // — a forced one included — is never counted as hidden.
   function updateFilterSummary(nVisible) {
-    const total = loadedSchools.filter(s => s.lat != null).length;
-    document.getElementById('filter-summary').textContent =
-      t('rowsShown', nVisible, total);
+    const mapped = loadedSchools.filter(s => s.lat != null);
+    let text = t('rowsShown', nVisible, mapped.length);
+    if (scaleData?.metadata.subject_groups) {
+      let noResult = 0, withheld = 0;
+      for (const s of mapped) {
+        if (schoolPassesFilters(s)) continue;
+        if (subjectYears(s, state.subject) === 0) noResult++;
+        else if (scoreOf(s, state.metric, state.subject) == null) withheld++;
+      }
+      if (noResult) text += '; ' + t('summaryNoResult', noResult);
+      if (withheld) text += '; ' + t('summaryWithheld', withheld, baselineLevel);
+    }
+    document.getElementById('filter-summary').textContent = text;
   }
 
   function recolourAll() {
@@ -824,12 +841,19 @@
     const pub = isPublic(school) ? t('popupPublic') : t('popupPrivate');
     const addr = [school.miejscowosc, school.ulica_nr].filter(Boolean).join(', ');
 
+    // "#12 z 2 130" where the dataset publishes the base view's ranked
+    // population (matura's scale.json, D10); E8's plain "#12" otherwise.
+    const rankText = (cell, subj) => {
+      const n = scaleData.metadata.n_ranked?.[baselineLevel]?.[metric]?.[subj]?.base;
+      return cell?.rank != null && n != null ? t('rankOfN', cell.rank, n) : `#${cell?.rank ?? '—'}`;
+    };
+
     const rowsHTML = CORE_SUBJECTS.map(subj => {
       const cell = school.scores[metric]?.[subj];
       return `<tr>
         <th>${t('subject_' + subj)}</th>
         <td class="num">${fmtScore(cell?.score, metric)}</td>
-        <td class="num">#${cell?.rank ?? '—'}</td>
+        <td class="num">${rankText(cell, subj)}</td>
         <td class="num">${cell?.pct != null ? cell.pct.toFixed(1) : '—'}</td>
       </tr>`;
     }).join('');
@@ -838,9 +862,37 @@
     const compositeHTML = `<tr class="composite-row">
       <th>${t('popupComposite')}</th>
       <td class="num">${fmtScore(composite?.score, metric)}</td>
-      <td class="num">#${composite?.rank ?? '—'}</td>
+      <td class="num">${rankText(composite, 'composite_min')}</td>
       <td class="num">${composite?.pct != null ? composite.pct.toFixed(1) : '—'}</td>
     </tr>`;
+
+    // Matura only: each field below is read only where the loaded files carry
+    // it, so an E8 popup has none of them.
+    const typeHTML = school.type
+      ? `<p class="type">${t(school.type === 'technikum' ? 'typeTechnikum' : 'typeLiceum')}</p>` : '';
+
+    // The extended subjects this school has a result in, each with its takers and
+    // its score here or the reason it has none. The year-by-year table and the
+    // sparkline stay on the basic subjects: 15 columns do not fit the popup.
+    const extended = (scaleData.metadata.subject_groups?.extended || [])
+      .filter((s) => school.subject_years?.[s] > 0);
+    const extendedHTML = extended.length ? `
+      <div class="extended">
+        <h4>${t('popupExtended')}</h4>
+        <table><tbody>${extended.map((s) => {
+          const cell = school.scores[metric]?.[s];
+          const values = cell?.score != null
+            ? `<td class="num">${fmtScore(cell.score, metric)}</td><td class="num">${rankText(cell, s)}</td>`
+            : `<td colspan="2" class="muted">${t('popupWithheld')}</td>`;
+          return `<tr><th>${t('subject_' + s)}<span class="takers">${t('popupTakers', school.subject_takers[s])}</span></th>${values}</tr>`;
+        }).join('')}</tbody></table>
+        <p class="caveat">${t('caveatExtended')}</p>
+      </div>` : '';
+
+    const passYears = school.pass_rate ? Object.keys(school.pass_rate).sort() : [];
+    const passHTML = passYears.length
+      ? `<p class="pass-rate">${t('popupPassRate')}: ${passYears.map((y) => `${y} ${fmtPassRate(school.pass_rate[y])}`).join(' · ')}</p>`
+      : '';
 
     const warnings = warningsFor(school);
     const warnHTML = warnings.length
@@ -860,11 +912,14 @@
       <div class="popup-school">
         ${forcedHTML}
         <h3>${escapeHTML(school.name)}</h3>
+        ${typeHTML}
         <p class="addr">${escapeHTML(addr)} · ${pub} · ${subjectYears(school, state.subject)} ${t('popupYears')}</p>
         <table>
           <thead><tr><th></th><th>${t('popupScore')}</th><th>${t('popupRank')}</th><th>${t('popupPct')}${helpIconHTML('helpPct')}</th></tr></thead>
           <tbody>${rowsHTML}${compositeHTML}</tbody>
         </table>
+        ${extendedHTML}
+        ${passHTML}
         ${warnHTML}
         ${histHTML}
       </div>`;
@@ -1032,6 +1087,7 @@
     state.subject = newSubject;
     writePref('subject', newSubject);
     syncURL();
+    syncExtendedCaveat();
     recolourAll();
     refreshFilters();
     // A school still waiting for its powiat was asked for under the old subject.
@@ -1381,6 +1437,13 @@
     fillDataYears();
     document.getElementById('population-select').value = population;
     document.getElementById('caveat-all').hidden = population !== 'all';
+    syncExtendedCaveat();
+  }
+
+  // Caveat 2 (spec §7.6): whenever the selected subject is an extended one.
+  function syncExtendedCaveat() {
+    document.getElementById('caveat-extended').hidden =
+      !scaleData.metadata.subject_groups?.extended?.includes(state.subject);
   }
 
   function wireControls() {

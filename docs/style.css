@@ -324,7 +324,7 @@ body.page-help { display: block; height: auto; }
 .popup-school table { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
 .popup-school th, .popup-school td { padding: 2px 6px; text-align: left; border-bottom: 1px solid #eee; }
 .popup-school th { font-weight: 600; }
-.popup-school td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.popup-school td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .popup-school .warning {
   display: inline-block;
   background: #fff3cd;
@@ -336,6 +336,15 @@ body.page-help { display: block; height: auto; }
   margin-top: 0.4rem;
 }
 .popup-school .composite-row td { background: #f5f5f5; font-weight: 600; }
+/* The forced-school note, the school type, and matura's extended-subject block
+   and pass-rate line. */
+.popup-school .forced-note { color: var(--text-muted); font-size: 0.8rem; margin: 0 0 0.4rem 0; }
+.popup-school .type { font-size: 0.85rem; margin: 0 0 0.15rem 0; }
+.popup-school .extended { margin-top: 0.5rem; }
+.popup-school .extended h4 { margin: 0 0 0.2rem 0; font-size: 0.85rem; }
+.popup-school .takers { display: block; font-weight: 400; font-size: 0.75rem; color: var(--text-muted); }
+.popup-school .pass-rate { font-size: 0.8rem; color: var(--text-muted); margin: 0.4rem 0 0 0; }
+.popup-school .caveat { font-size: 0.75rem; margin: 0.3rem 0 0 0; }
 
 .popup-school .show-history-btn {
   margin-top: 0.5rem;
