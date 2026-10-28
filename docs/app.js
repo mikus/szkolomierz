@@ -665,7 +665,14 @@ const I18N = {
     subject_composite_min: 'Najsłabszy przedmiot',
     popupPublic: 'Publiczna',
     popupPrivate: 'Niepubliczna',
-    popupYears: 'lat danych',
+    // Three forms, as in schoolsInRegion: a liceum has at most 4 years and a
+    // technikum 3, so a fixed "lat" would misread nearly every matura popup.
+    popupYears: (n) => {
+      const d = n % 10, dd = n % 100;
+      const word = n === 1 ? 'rok'
+        : (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) ? 'lata' : 'lat';
+      return `${n} ${word} danych`;
+    },
     popupScore: 'Wynik',
     popupRank: 'Miejsce',
     popupPct: 'Percentyl',
@@ -865,7 +872,7 @@ const I18N = {
     subject_composite_min: 'Weakest subject',
     popupPublic: 'Public',
     popupPrivate: 'Private',
-    popupYears: 'years of data',
+    popupYears: (n) => `${n} ${n === 1 ? 'year' : 'years'} of data`,
     popupScore: 'Score',
     popupRank: 'Rank',
     popupPct: 'Percentile',

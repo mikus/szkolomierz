@@ -913,7 +913,7 @@
         ${forcedHTML}
         <h3>${escapeHTML(school.name)}</h3>
         ${typeHTML}
-        <p class="addr">${escapeHTML(addr)} · ${pub} · ${subjectYears(school, state.subject)} ${t('popupYears')}</p>
+        <p class="addr">${escapeHTML(addr)} · ${pub} · ${t('popupYears', subjectYears(school, state.subject))}</p>
         <table>
           <thead><tr><th></th><th>${t('popupScore')}</th><th>${t('popupRank')}</th><th>${t('popupPct')}${helpIconHTML('helpPct')}</th></tr></thead>
           <tbody>${rowsHTML}${compositeHTML}</tbody>
