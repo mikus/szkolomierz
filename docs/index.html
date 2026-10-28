@@ -16,6 +16,7 @@
       <a href="index.html" class="active" data-i18n="navMap">Mapa</a>
       <a href="ranking.html" data-i18n="navRanking">Ranking</a>
       <a href="help.html" data-i18n="navHelp">Pomoc</a>
+      <div id="exam-toggle" class="lang-toggle" role="group" aria-label="Egzamin / Exam"></div>
       <div id="lang-toggle" class="lang-toggle" role="group" aria-label="Język / Language"></div>
     </nav>
   </header>
@@ -32,6 +33,15 @@
       <p class="data-years" id="data-years"></p>
       <section class="panel-section">
         <h2 data-i18n="sectionView">Widok</h2>
+
+        <label class="field field--population is-hidden">
+          <span data-i18n="labelPopulation">Porównanie</span>
+          <select id="population-select">
+            <option value="liceum" data-i18n="populationLiceum">Licea</option>
+            <option value="technikum" data-i18n="populationTechnikum">Technika</option>
+            <option value="all" data-i18n="populationAll">Wszystkie szkoły średnie</option>
+          </select>
+        </label>
 
         <label class="field">
           <span data-i18n="labelSubject">Przedmiot</span>
@@ -62,10 +72,10 @@
         <h2 data-i18n="sectionFilters">Filtry</h2>
 
         <fieldset class="field radio-group">
-          <legend data-i18n="labelPublic">Typ szkoły</legend>
+          <legend data-i18n="labelPublic">Publiczna</legend>
           <label><input type="radio" name="public" value="all" checked> <span data-i18n="publicAll">Wszystkie</span></label>
-          <label><input type="radio" name="public" value="tak"> <span data-i18n="publicYes">Publiczne</span></label>
-          <label><input type="radio" name="public" value="nie"> <span data-i18n="publicNo">Niepubliczne</span></label>
+          <label><input type="radio" name="public" value="tak"> <span data-i18n="publicYes">Tak</span></label>
+          <label><input type="radio" name="public" value="nie"> <span data-i18n="publicNo">Nie</span></label>
         </fieldset>
 
         <label class="field">
@@ -112,6 +122,8 @@
         </ul>
         <p class="muted small" id="legend-gradient-note" data-i18n="legendGradientNote"></p>
         <p class="muted small"><a href="help.html#colour" data-i18n="helpLink">Jak liczone są wyniki? → Pomoc</a></p>
+        <p class="caveat" id="caveat-all" data-i18n="caveatAll" hidden></p>
+        <p class="caveat" id="caveat-extended" data-i18n="caveatExtended" hidden></p>
       </section>
 
       <section class="panel-section">

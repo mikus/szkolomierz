@@ -208,11 +208,18 @@ body.page-help { display: block; height: auto; }
   margin-bottom: 0.6rem;
 }
 .field > span { font-size: 0.85rem; color: var(--text-muted); }
+/* A field the current exam does not have (the ranking's gmina select under
+   matura). A class, not the `hidden` attribute: .field's display: flex
+   overrides that. */
+.field.is-hidden { display: none; }
 
 /* A note under a control saying why it is inert or limited. :empty so the
    flex gap above it disappears when there is nothing to say. */
 .field-note { font-size: 0.8rem; line-height: 1.35; color: var(--text-muted); }
 .field-note:empty { display: none; }
+
+/* A fact the reader needs beside what the colours show (matura's caveats). */
+.caveat { font-size: 0.85rem; color: var(--text-muted); margin: 0.4rem 0; }
 
 .field select, .field input[type="text"], .field input[type="number"] {
   padding: 0.35rem 0.5rem;
@@ -317,7 +324,7 @@ body.page-help { display: block; height: auto; }
 .popup-school table { border-collapse: collapse; font-size: 0.85rem; width: 100%; }
 .popup-school th, .popup-school td { padding: 2px 6px; text-align: left; border-bottom: 1px solid #eee; }
 .popup-school th { font-weight: 600; }
-.popup-school td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.popup-school td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .popup-school .warning {
   display: inline-block;
   background: #fff3cd;
@@ -329,6 +336,15 @@ body.page-help { display: block; height: auto; }
   margin-top: 0.4rem;
 }
 .popup-school .composite-row td { background: #f5f5f5; font-weight: 600; }
+/* The forced-school note, the school type, and matura's extended-subject block
+   and pass-rate line. */
+.popup-school .forced-note { color: var(--text-muted); font-size: 0.8rem; margin: 0 0 0.4rem 0; }
+.popup-school .type { font-size: 0.85rem; margin: 0 0 0.15rem 0; }
+.popup-school .extended { margin-top: 0.5rem; }
+.popup-school .extended h4 { margin: 0 0 0.2rem 0; font-size: 0.85rem; }
+.popup-school .takers { display: block; font-weight: 400; font-size: 0.75rem; color: var(--text-muted); }
+.popup-school .pass-rate { font-size: 0.8rem; color: var(--text-muted); margin: 0.4rem 0 0 0; }
+.popup-school .caveat { font-size: 0.75rem; margin: 0.3rem 0 0 0; }
 
 .popup-school .show-history-btn {
   margin-top: 0.5rem;
@@ -641,8 +657,10 @@ table.ranking-table tr.detail-row > td {
   /* Keep the nav links visible. The title is flex:1 but min-width:auto stops
      a flex item shrinking below its text width, so a long title pushed the nav
      (now 3 links) off the right edge. min-width:0 + ellipsis lets the title
-     shrink; the nav never shrinks. */
-  .topnav { gap: 0.5rem; padding: 0.5rem 0.6rem; }
+     shrink; the nav never shrinks. With the exam toggle the nav is ~405 px at
+     max-content, so the bar and the nav both wrap instead: at 375 px nothing may
+     scroll sideways. */
+  .topnav { gap: 0.5rem; padding: 0.5rem 0.6rem; flex-wrap: wrap; row-gap: 0.4rem; }
   .topnav h1 {
     font-size: 0.9rem;
     min-width: 0;
@@ -650,7 +668,7 @@ table.ranking-table tr.detail-row > td {
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .topnav nav { flex-shrink: 0; }
+  .topnav nav { flex-shrink: 0; flex-wrap: wrap; row-gap: 0.4rem; max-width: 100%; }
   .topnav nav a { padding: 0.35rem 0.5rem; }
 
   /* Detail panel: stack the numeric tables (each with its caption above) and
@@ -675,17 +693,24 @@ table.ranking-table tr.detail-row > td {
   /* Level and the area cascade lead: they decide what the table ranks at all, so
      they must not auto-flow to the bottom past the explicitly placed fields
      below. The cascade reads left-to-right then down, in the order it is filled
-     in — voivodeship beside the level it qualifies, then powiat and gmina. */
-  .ranking-controls .field--level    { grid-column: 1; grid-row: 1; }
-  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 1; }
-  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 2; }
-  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 2; }
-  .ranking-controls .field--metric   { grid-column: 1; grid-row: 3; }
-  .ranking-controls .field--subject  { grid-column: 2; grid-row: 3; }
-  .ranking-controls .field--view     { grid-column: 1; grid-row: 4; }
-  .ranking-controls .field--search   { grid-column: 1; grid-row: 5; }
-  .ranking-controls .radio-group     { grid-column: 2; grid-row: 4 / span 2; }
-  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 6; }
+     in — voivodeship beside the level it qualifies, then powiat and gmina.
+     Matura's Porównanie field comes before all of them, on a row of its own:
+     it decides which schools there are to rank. */
+  .ranking-controls .field--population { grid-column: 1 / -1; grid-row: 1; }
+  /* Hidden under E8, the field leaves row 1 empty but still followed by a row
+     gap. Pull the grid up by that gap, so E8's controls sit exactly where they
+     did before the field existed. */
+  .ranking-controls:has(> .field--population.is-hidden) { margin-top: -0.45rem; }
+  .ranking-controls .field--level    { grid-column: 1; grid-row: 2; }
+  .ranking-controls .field--voiv     { grid-column: 2; grid-row: 2; }
+  .ranking-controls .field--powiat   { grid-column: 1; grid-row: 3; }
+  .ranking-controls .field--gmina    { grid-column: 2; grid-row: 3; }
+  .ranking-controls .field--metric   { grid-column: 1; grid-row: 4; }
+  .ranking-controls .field--subject  { grid-column: 2; grid-row: 4; }
+  .ranking-controls .field--view     { grid-column: 1; grid-row: 5; }
+  .ranking-controls .field--search   { grid-column: 1; grid-row: 6; }
+  .ranking-controls .radio-group     { grid-column: 2; grid-row: 5 / span 2; }
+  .ranking-controls #view-param-field { grid-column: 1 / -1; grid-row: 7; }
   /* Grid columns are half the viewport, so the desktop min-widths would overflow. */
   .ranking-controls .field,
   .ranking-controls .field input[type="text"] { min-width: 0; }

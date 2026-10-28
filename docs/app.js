@@ -60,6 +60,58 @@ const DEFAULTS = {
   baseline: 'voivodeship',   // the level the map used before this change
 };
 
+// The two exams this app serves (matura spec §7.1). `regionLevels` is the only
+// place the deepest region level is stated: the zoom ladder, the ranking levels,
+// the area-select depth and the gmina gate are all derived from it. A matura
+// population's first entry is its default (resolvePopulation).
+const EXAMS = {
+  e8: {
+    dataBase: 'data/',
+    populations: null,                    // one dataset
+    referenceLevels: ['national', 'voivodeship', 'powiat', 'gmina'],
+    regionLevels: ['voivodeship', 'powiat', 'gmina'],
+    prefPrefix: '',                       // E8 keeps its bare, pre-matura keys
+    helpAnchors: '',                      // the nav's help link: plain help.html
+  },
+  matura: {
+    dataBase: 'data/matura/',
+    populations: ['liceum', 'technikum', 'all'],
+    referenceLevels: ['national', 'voivodeship'],
+    regionLevels: ['voivodeship', 'powiat'],
+    prefPrefix: 'matura_',
+    helpAnchors: '#matura',
+  },
+};
+
+// Read once, here. A link without `exam` is E8, so every link shared before
+// matura existed keeps working; the toggle reloads the page rather than
+// switching in place, so the exam never changes under a running page.
+const EXAM = getURLParams().get('exam') === 'matura' ? 'matura' : 'e8';
+const EXAM_CONFIG = EXAMS[EXAM];
+
+// The gmina gate (spec §7.1): matura has no gmina rung, so nothing may fetch
+// regions-gmina.json (it does not exist there, and the preloads that prime its
+// names sit inside a Promise.all whose 404 would block every marker and row),
+// and the gmina select and column are hidden.
+const HAS_GMINA = EXAM_CONFIG.regionLevels.includes('gmina');
+
+// Preferences that mean something different per exam, stored under the exam's
+// prefix (spec §7.2). Everything else (lang, metric, advanced_metrics,
+// gradient) is shared.
+const SCOPED_PREF_KEYS = ['subject', 'baseline', 'rank_level', 'rank_region', 'population'];
+
+// The comparison population to load: URL > this exam's stored pref > the
+// exam's first population. E8 has a single dataset, whose population is null.
+function resolvePopulation() {
+  const populations = EXAM_CONFIG.populations;
+  if (!populations) return null;
+  const url = getURLParams().get('population');
+  if (populations.includes(url)) return url;
+  const stored = readPrefs().population;
+  if (populations.includes(stored)) return stored;
+  return populations[0];
+}
+
 const COLOURS = {
   satRed:   '#d6604d',
   red:      '#f4a582',
@@ -158,8 +210,6 @@ function colourFor(score, centre, sigma, p1, p99, gradient) {
   if (i == null) return COLOURS.missing;
   return gradient ? gradient3Colour(score, centre, sigma, p1, p99) : CLASS3_FLAT[i];
 }
-
-const REFERENCE_LEVEL_KEYS = ['national', 'voivodeship', 'powiat', 'gmina'];
 
 // What a SCHOOL is compared against (spec §6.2). Shared rather than per-page:
 // index.html and ranking.html both load app.js and both colour by these anchors.
@@ -308,30 +358,68 @@ function subjectLegendHTML(subjects) {
 // the same key can be requested twice before the first fetch lands. Caching the
 // resolved value would let both requests through — up to 4.3 MB for a powiat
 // shard, 0.77 MB for regions-gmina.json.
+//
+// Every dataset cache is keyed by the file's PATH, which names the exam and the
+// matura population (datasetPath), so one population's payload can never answer
+// for another's.
 let indexData = null, scaleData = null;
-const regionCache = new Map();   // level       -> Promise<payload>
-const shardCache  = new Map();   // "1425|mean" -> Promise<payload>
-const NAME_CACHE  = new Map();   // level       -> Map(teryt -> name)
+// The comparison population whose files indexData and scaleData hold: 'liceum',
+// 'technikum' or 'all' under matura, null under E8. An app.js global like
+// baselineLevel, because loadShard builds its path from it. Only
+// activateDataset assigns it.
+let population = null;
+const datasetCache = new Map();  // path -> Promise<payload>: schools-index.json, scale.json
+const regionCache = new Map();   // path -> Promise<payload>
+const shardCache  = new Map();   // path -> Promise<payload>, e.g. "data/powiat/1425-mean.json"
+const NAME_CACHE  = new Map();   // level -> Map(teryt -> name); names agree across datasets
 
-async function loadIndex() {
-  if (indexData) return indexData;
-  const res = await fetch('data/schools-index.json');
-  if (!res.ok) throw new Error(`schools-index.json: HTTP ${res.status}`);
-  indexData = await res.json();
-  return indexData;
+// `file` relative to the exam's data directory, inside the population's own
+// directory under matura: datasetPath('technikum', 'scale.json') is
+// 'data/matura/technikum/scale.json', datasetPath(null, 'scale.json') 'data/scale.json'.
+function datasetPath(p, file) {
+  return EXAM_CONFIG.dataBase + (p ? p + '/' : '') + file;
 }
 
-async function loadScale() {
-  if (scaleData) return scaleData;
-  const res = await fetch('data/scale.json');
-  if (!res.ok) throw new Error(`scale.json: HTTP ${res.status}`);
-  scaleData = await res.json();
-  return scaleData;
+// schools-index.json and scale.json. They never assign the globals —
+// activateDataset does, once both have landed.
+function loadDatasetFile(path) {
+  if (!datasetCache.has(path)) {
+    const file = path.slice(path.lastIndexOf('/') + 1);
+    datasetCache.set(path, fetch(path).then((r) => {
+      if (!r.ok) throw new Error(`${file}: HTTP ${r.status}`);
+      return r.json();
+    }).catch((e) => {
+      // Drop the failed promise before rethrowing — see loadGeometryFor.
+      datasetCache.delete(path);
+      throw e;
+    }));
+  }
+  return datasetCache.get(path);
+}
+
+function loadIndex(path) { return loadDatasetFile(path); }
+function loadScale(path) { return loadDatasetFile(path); }
+
+let datasetToken = 0;
+
+// The only writer of indexData, scaleData and population. Resolves true once
+// all three name `p`'s dataset; false, assigning nothing, when a later call
+// started before this one's files arrived.
+async function activateDataset(p) {
+  const token = ++datasetToken;
+  const [index, scale] = await Promise.all([
+    loadIndex(datasetPath(p, 'schools-index.json')),
+    loadScale(datasetPath(p, 'scale.json')),
+  ]);
+  if (token !== datasetToken) return false;
+  indexData = index; scaleData = scale; population = p;
+  return true;
 }
 
 async function loadRegions(level) {
-  if (!regionCache.has(level)) {
-    regionCache.set(level, fetch('data/regions-' + level + '.json').then((r) => {
+  const path = datasetPath(population, 'regions-' + level + '.json');
+  if (!regionCache.has(path)) {
+    regionCache.set(path, fetch(path).then((r) => {
       if (!r.ok) throw new Error(`regions-${level}.json: HTTP ${r.status}`);
       return r.json();
     }).then((payload) => {
@@ -342,11 +430,41 @@ async function loadRegions(level) {
       return payload;
     }).catch((e) => {
       // Drop the failed promise before rethrowing — see loadGeometryFor.
-      regionCache.delete(level);
+      regionCache.delete(path);
       throw e;
     }));
   }
-  return regionCache.get(level);
+  return regionCache.get(path);
+}
+
+// How many regions share each parent, per level. The suppression gate has two
+// arms (scripts/validate_export.py check_reference_gate): a region whose parent
+// holds fewer than MIN_REFERENCE_N schools, and a region that is its parent's
+// ONLY CHILD — compared against itself. They are different facts about a
+// region and the tooltip must not conflate them; on today's data every
+// suppressed cell is the second kind, so a single "too small" message is
+// wrong for all of them. Derived from regions.parent, which ships in the file.
+const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
+
+function siblingCountsFor(regions) {
+  const level = regions.metadata.level;
+  if (!siblingCache.has(level)) {
+    const counts = new Map();
+    for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
+    siblingCache.set(level, counts);
+  }
+  return siblingCache.get(level);
+}
+
+// Why region `i` has no score for `subject`, as an I18N key — decided here, once,
+// for both the map's tooltip and the ranking's row (spec §7.4). First match wins.
+// Only matura region files carry `n_scored`, so E8 never reaches the second arm.
+function regionNullReason(regions, i, subject) {
+  const r = regions.regions;
+  if (r.n_schools[i] === 0) return 'regionNoSchools';
+  if (r.n_scored?.[subject]?.[i] === 0) return 'regionNoScored';
+  if (siblingCountsFor(regions).get(r.parent[i]) <= 1) return 'regionOnlyChild';
+  return 'regionTooSmall';
 }
 
 // Region display names, filled by loadRegions as each level lands. Here rather
@@ -361,18 +479,18 @@ function nameOf(level, teryt) {
 }
 
 async function loadShard(powiat, metric) {
-  const key = powiat + '|' + metric;
-  if (!shardCache.has(key)) {
-    shardCache.set(key, fetch('data/powiat/' + powiat + '-' + metric + '.json').then((r) => {
+  const path = datasetPath(population, 'powiat/' + powiat + '-' + metric + '.json');
+  if (!shardCache.has(path)) {
+    shardCache.set(path, fetch(path).then((r) => {
       if (!r.ok) throw new Error(`${powiat}-${metric}.json: HTTP ${r.status}`);
       return r.json();
     }).catch((e) => {
       // Drop the failed promise before rethrowing — see loadGeometryFor.
-      shardCache.delete(key);
+      shardCache.delete(path);
       throw e;
     }));
   }
-  return shardCache.get(key);
+  return shardCache.get(path);
 }
 
 // Every shard under one selection, fetched concurrently. A voivodeship-wide
@@ -435,18 +553,32 @@ async function loadGeometryFor(level, focused) {
 
 const STORAGE_KEY = 'schools-app-prefs';
 
-function readPrefs() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch {
-    return {};
-  }
+function readRawPrefs() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch { return {}; }
 }
 
+// The exam's view of the stored preferences: scoped keys read from the exam's
+// prefix, and a scoped key the exam has never stored reads as absent - never as
+// the other exam's value. Shared keys (lang, metric, advanced_metrics, gradient)
+// pass through.
+function readPrefs() {
+  const raw = readRawPrefs();
+  const prefix = EXAM_CONFIG.prefPrefix;
+  if (!prefix) return raw;
+  const view = { ...raw };
+  for (const key of SCOPED_PREF_KEYS) {
+    if ((prefix + key) in raw) view[key] = raw[prefix + key]; else delete view[key];
+  }
+  return view;
+}
+
+// Changes and saves the RAW object: saving readPrefs()'s view would copy one
+// exam's values into the other's keys.
 function writePref(key, value) {
-  const prefs = readPrefs();
-  if (value == null) delete prefs[key]; else prefs[key] = value;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs)); } catch {}
+  const raw = readRawPrefs();
+  const stored = SCOPED_PREF_KEYS.includes(key) ? EXAM_CONFIG.prefPrefix + key : key;
+  if (value == null) delete raw[stored]; else raw[stored] = value;
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(raw)); } catch {}
 }
 
 function getURLParams() {
@@ -501,9 +633,9 @@ const I18N = {
     labelSubject: 'Przedmiot',
     labelMetric: 'Metryka',
     labelBaseline: 'Punkt odniesienia',
-    // The four REFERENCE_LEVEL_KEYS. Deliberately not the same vocabulary as the
-    // zoom levels: `country` is a zoom rung, `national` is what a school is
-    // compared against.
+    // The four reference levels (EXAMS.e8.referenceLevels). Deliberately not the
+    // same vocabulary as the zoom levels: `country` is a zoom rung, `national` is
+    // what a school is compared against.
     levelNational: 'Cała Polska',
     levelVoivodeship: 'Województwo',
     levelPowiat: 'Powiat',
@@ -533,7 +665,14 @@ const I18N = {
     subject_composite_min: 'Najsłabszy przedmiot',
     popupPublic: 'Publiczna',
     popupPrivate: 'Niepubliczna',
-    popupYears: 'lat danych',
+    // Three forms, as in schoolsInRegion: a liceum has at most 4 years and a
+    // technikum 3, so a fixed "lat" would misread nearly every matura popup.
+    popupYears: (n) => {
+      const d = n % 10, dd = n % 100;
+      const word = n === 1 ? 'rok'
+        : (d >= 2 && d <= 4 && (dd < 12 || dd > 14)) ? 'lata' : 'lat';
+      return `${n} ${word} danych`;
+    },
     popupScore: 'Wynik',
     popupRank: 'Miejsce',
     popupPct: 'Percentyl',
@@ -541,6 +680,14 @@ const I18N = {
     popupComposite: 'Najsłabszy z 3',
     warnShortHistory: 'Krótka historia (< 3 lata) — wyniki mniej pewne.',
     warnVolatile: 'Duże wahania roczne — wynik zależy od wyboru lat.',
+    // A school opened by search or link that the filters would hide (spec
+    // §7.4): the note names every filter that does.
+    forcedHidden: (reasons) => `Ta szkoła jest ukryta przez bieżące filtry (${reasons}); pokazujemy ją, bo została wybrana.`,
+    hiddenByPublic: 'filtr publiczna/niepubliczna',
+    hiddenByMinYears: (n) => `mniej niż ${n} ${n >= 2 && n <= 4 ? 'lata' : 'lat'} danych`,
+    hiddenNoResult: 'brak wyniku z wybranego przedmiotu',
+    hiddenWithheld: 'wynik wstrzymany przy tym punkcie odniesienia',
+    hiddenByThreshold: 'wynik poniżej progu',
     rankingTitle: 'Ranking szkół podstawowych',
     rankingNameSearch: 'Szukaj po nazwie lub lokalizacji',
     rankingSearchPlaceholder: 'np. STO, Vizja, Słupica',
@@ -549,7 +696,7 @@ const I18N = {
     labelRankLevel: 'Poziom rankingu',
     levelSchool: 'Szkoła',
     helpRankLevel: 'Województwa, powiaty i gminy są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły — w obrębie wybranego obszaru: województwa, powiatu albo gminy; ich miejsce w kraju pokazuje osobna kolumna. Ogólnopolska lista szkół wymagałaby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
-    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr typu szkoły dotyczą wyłącznie poziomu szkół.',
+    levelRegionNote: 'Regiony są rankingowane w skali kraju i mają tylko wynik za wszystkie lata, więc widok danych i filtr publiczna/niepubliczna dotyczą wyłącznie poziomu szkół.',
     labelVoivodeship: 'Województwo',
     labelPowiatOptional: 'Powiat (opcjonalnie)',
     labelGminaOptional: 'Gmina (opcjonalnie)',
@@ -592,7 +739,7 @@ const I18N = {
     colRankInVoivodeship: 'Miejsce w województwie',
     colRankInPowiat: 'Miejsce w powiecie',
     colRankInGmina: 'Miejsce w gminie',
-    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Filtry nazwy i typu szkoły nie zmieniają tego miejsca.`,
+    helpRankInSelection: (name) => `Miejsce liczone wyłącznie wśród wierszy wybranego obszaru: ${name}. Sąsiednia kolumna „Miejsce w kraju" pozostaje ogólnopolska — te dwie liczby mają różne mianowniki i nie należy ich mylić. Ani filtr nazwy, ani filtr publiczna/niepubliczna nie zmieniają tego miejsca.`,
     colPctInCountry: 'Percentyl w kraju',
     colPctInVoivodeship: 'Percentyl w województwie',
     colPctInPowiat: 'Percentyl w powiecie',
@@ -669,6 +816,8 @@ const I18N = {
     publicNoShort: 'Nie',
     langPL: 'PL',
     langEN: 'EN',
+    examPrimary: 'Podstawowe',
+    examSecondary: 'Średnie',
   },
   en: {
     appTitle: 'Primary schools map',
@@ -723,7 +872,7 @@ const I18N = {
     subject_composite_min: 'Weakest subject',
     popupPublic: 'Public',
     popupPrivate: 'Private',
-    popupYears: 'years of data',
+    popupYears: (n) => `${n} ${n === 1 ? 'year' : 'years'} of data`,
     popupScore: 'Score',
     popupRank: 'Rank',
     popupPct: 'Percentile',
@@ -731,13 +880,19 @@ const I18N = {
     popupComposite: 'Weakest of 3',
     warnShortHistory: 'Short history (< 3 years) — less certain.',
     warnVolatile: 'High year-to-year volatility — score depends on which years are included.',
+    forcedHidden: (reasons) => `This school is hidden by the current filters (${reasons}); it is shown because you selected it.`,
+    hiddenByPublic: 'the public/private filter',
+    hiddenByMinYears: (n) => `fewer than ${n} years of data`,
+    hiddenNoResult: 'no result in the selected subject',
+    hiddenWithheld: 'score withheld at this reference point',
+    hiddenByThreshold: 'score below the threshold',
     rankingTitle: 'School ranking',
     rankingNameSearch: 'Search by name or location',
     rankingSearchPlaceholder: 'e.g. STO, Vizja, Słupica',
     labelRankLevel: 'Ranking level',
     levelSchool: 'School',
     helpRankLevel: 'Voivodeships, counties and municipalities rank across the whole country — their files already cover all of Poland. Schools rank within the area you choose — a voivodeship, county or municipality — with their national rank in a column of its own. A national list of schools would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
-    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the school-type filter apply to the school level alone.',
+    levelRegionNote: 'Regions rank nationally and carry only the all-years score, so the view selector and the public/private filter apply to the school level alone.',
     labelVoivodeship: 'Voivodeship',
     labelPowiatOptional: 'County (optional)',
     labelGminaOptional: 'Municipality (optional)',
@@ -768,7 +923,7 @@ const I18N = {
     colRankInVoivodeship: 'Rank in voivodeship',
     colRankInPowiat: 'Rank in county',
     colRankInGmina: 'Rank in municipality',
-    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. The name and school-type filters do not change this rank.`,
+    helpRankInSelection: (name) => `Rank among the rows of the selected area alone: ${name}. The "Rank in Poland" column beside it stays national — the two have different denominators and must not be read as the same number. Neither the name filter nor the public/private filter changes this rank.`,
     colPctInCountry: 'Percentile in Poland',
     colPctInVoivodeship: 'Percentile in voivodeship',
     colPctInPowiat: 'Percentile in county',
@@ -821,6 +976,134 @@ const I18N = {
     publicNoShort: 'No',
     langPL: 'PL',
     langEN: 'EN',
+    examPrimary: 'Primary',
+    examSecondary: 'Secondary',
+  },
+};
+
+// The genitive plural of the loaded population's school type, for "N z M …",
+// "wśród …" and "Brak …". Read from the `population` global when a string is
+// built, so a population switch rewords every count with no extra wiring.
+const POP_GEN = {
+  pl: { liceum: 'liceów', technikum: 'techników', all: 'szkół średnich' },
+  en: { liceum: 'licea', technikum: 'technika', all: 'secondary schools' },
+};
+
+function popGen(lang) { return POP_GEN[lang][population]; }
+
+// Exam-level overrides of I18N (spec §7.6), looked up by t() before I18N. Only
+// matura has one; under E8 the chain is exactly I18N's. Anything E8 can render
+// lives in I18N itself.
+const I18N_EXAM = {
+  matura: {
+    pl: {
+      appTitle: 'Mapa szkół średnich',
+      rankingTitle: 'Ranking szkół średnich',
+      dataYears: (lo, hi) => `Matura ${lo}–${hi} (formuła 2023)`,
+      subject_polski: 'Polski podstawowy',
+      subject_matematyka: 'Matematyka podstawowa',
+      subject_angielski: 'Angielski podstawowy',
+      subject_composite_min: 'Najsłabszy z 3 podstawowych',
+      popupComposite: 'Najsłabszy z 3 podstawowych',
+      subject_angielski_r: 'Angielski rozszerzony',
+      subject_matematyka_r: 'Matematyka rozszerzona',
+      subject_polski_r: 'Polski rozszerzony',
+      subject_biologia_r: 'Biologia rozszerzona',
+      subject_chemia_r: 'Chemia rozszerzona',
+      subject_fizyka_r: 'Fizyka rozszerzona',
+      subject_geografia_r: 'Geografia rozszerzona',
+      subject_historia_r: 'Historia rozszerzona',
+      subject_informatyka_r: 'Informatyka rozszerzona',
+      subject_historia_sztuki_r: 'Historia sztuki rozszerzona',
+      subject_niemiecki_r: 'Niemiecki rozszerzony',
+      subjectGroupBasic: 'Podstawowe',
+      subjectGroupExtended: 'Rozszerzone',
+      labelPopulation: 'Porównanie',
+      populationLiceum: 'Licea',
+      populationTechnikum: 'Technika',
+      populationAll: 'Wszystkie szkoły średnie',
+      rowsShown: (n, total) => `${n} z ${total} ${popGen('pl')}`,
+      summaryNoResult: (n) => `${n} bez wyniku z wybranego przedmiotu`,
+      summaryWithheld: (n, level) => `${n} z wynikiem wstrzymanym (mniej niż 5 szkół z wynikiem ${level === 'national' ? 'w kraju' : 'w województwie'})`,
+      schoolsWithResults: (scored, total) => `${scored} z ${total} ${popGen('pl')} z wynikiem`,
+      regionNoSchools: () => `Brak ${popGen('pl')}`,
+      regionNoScored: 'Żadna szkoła tutaj nie ma wyników z tego przedmiotu',
+      colNSchools: 'Szkoły z wynikiem',
+      colNStudents: 'Zdający',
+      helpBaseline: 'Wynik szkoły to odległość od średniej grupy odniesienia. Ten wybór decyduje, jaka to grupa: cała Polska albo województwo — zawsze szkoły tego rodzaju, który wybrano w polu „Porównanie”.',
+      helpRankLevel: 'Województwa i powiaty są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły — w obrębie wybranego obszaru: województwa albo powiatu; ich miejsce w kraju pokazuje osobna kolumna. Ogólnopolska lista szkół wymagałaby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
+      rankingPickRegion: 'Wybierz województwo, aby zobaczyć ranking jego szkół — opcjonalnie zawęź go do powiatu. Szkoły są rankingowane w obrębie wybranego obszaru; pokazanie części listy jako całości byłoby mylące, więc dopóki obszar nie jest wybrany, ranking się nie pojawia.',
+      helpRankNational: (n, ref) => (n == null
+        ? `Miejsce wśród wszystkich ${popGen('pl')} w Polsce, policzone przy punkcie odniesienia „${ref}". W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.`
+        : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
+      helpPct: () => `Ile procent ${popGen('pl')} ma wynik nie lepszy niż ta szkoła. 50 znaczy, że połowa wypadła gorzej lub tak samo; 100 to najlepszy wynik w zestawieniu. Liczone wśród ${popGen('pl')} obecnych w tym samym widoku.`,
+      rankOfN: (r, n) => `#${r} z ${fmtInt(n)}`,
+      typeLiceum: 'Liceum',
+      typeTechnikum: 'Technikum',
+      popupExtended: 'Rozszerzone',
+      popupTakers: (n) => `${fmtInt(n)} zdających`,
+      popupWithheld: 'wstrzymany przy tym punkcie odniesienia',
+      popupPassRate: 'Zdawalność',
+      colPassRate: (year) => `Zdawalność ${year}`,
+      caveatAll: 'Licea i technika razem: kolor w dużej mierze pokazuje typ szkoły, a nie to, która uczy lepiej. Technika uczą też zawodu, a egzaminu zawodowego te dane nie obejmują.',
+      caveatExtended: 'Przedmiot rozszerzony zdają chętni — w każdej szkole inna część rocznika. Wynik opisuje tych, którzy go wybrali.',
+      findSchoolPlaceholder: 'np. Batory, Kraków, technikum',
+      rankingSearchPlaceholder: 'np. Batory, technikum, Kraków',
+    },
+    en: {
+      appTitle: 'Secondary schools map',
+      rankingTitle: 'Secondary school ranking',
+      dataYears: (lo, hi) => `Matura ${lo}–${hi} (2023 formula)`,
+      subject_polski: 'Polish (basic)',
+      subject_matematyka: 'Maths (basic)',
+      subject_angielski: 'English (basic)',
+      subject_composite_min: 'Weakest of the 3 basic',
+      popupComposite: 'Weakest of the 3 basic',
+      subject_angielski_r: 'English (extended)',
+      subject_matematyka_r: 'Maths (extended)',
+      subject_polski_r: 'Polish (extended)',
+      subject_biologia_r: 'Biology (extended)',
+      subject_chemia_r: 'Chemistry (extended)',
+      subject_fizyka_r: 'Physics (extended)',
+      subject_geografia_r: 'Geography (extended)',
+      subject_historia_r: 'History (extended)',
+      subject_informatyka_r: 'Computer science (extended)',
+      subject_historia_sztuki_r: 'Art history (extended)',
+      subject_niemiecki_r: 'German (extended)',
+      subjectGroupBasic: 'Basic level',
+      subjectGroupExtended: 'Extended level',
+      labelPopulation: 'Compare',
+      populationLiceum: 'Licea',
+      populationTechnikum: 'Technika',
+      populationAll: 'All secondary schools',
+      rowsShown: (n, total) => `${n} of ${total} ${popGen('en')}`,
+      summaryNoResult: (n) => `${n} with no result in the selected subject`,
+      summaryWithheld: (n, level) => `${n} with the score withheld (fewer than 5 schools with results ${level === 'national' ? 'in the country' : 'in the voivodeship'})`,
+      schoolsWithResults: (scored, total) => `${scored} of ${total} ${popGen('en')} with results`,
+      regionNoSchools: () => `No ${popGen('en')}`,
+      regionNoScored: 'No school here has results in this subject',
+      colNSchools: 'Schools with results',
+      colNStudents: 'Takers',
+      helpBaseline: 'A school\'s score is its distance from the mean of a reference group. This choice sets that group: the whole country or the voivodeship — always schools of the kind chosen under "Compare".',
+      helpRankLevel: 'Voivodeships and counties rank across the whole country — their files already cover all of Poland. Schools rank within the area you choose — a voivodeship or county — with their national rank in a column of its own. A national list of schools would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
+      rankingPickRegion: 'Pick a voivodeship to rank its schools — optionally narrow to a county. Schools are ranked within the selected area; showing part of the list as if it were the whole would mislead, so no ranking appears until an area is chosen.',
+      helpRankNational: (n, ref) => (n == null
+        ? `Rank among all ${popGen('en')} in Poland, computed against the "${ref}" reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.`
+        : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
+      helpPct: () => `The share of ${popGen('en')} whose result is no better than this school's. 50 means half did worse or the same; 100 is the best result in the set. Computed among the ${popGen('en')} present in the same view.`,
+      rankOfN: (r, n) => `#${r} of ${fmtInt(n)}`,
+      typeLiceum: 'Liceum',
+      typeTechnikum: 'Technikum',
+      popupExtended: 'Extended level',
+      popupTakers: (n) => `${fmtInt(n)} takers`,
+      popupWithheld: 'withheld at this reference point',
+      popupPassRate: 'Pass rate',
+      colPassRate: (year) => `Pass rate ${year}`,
+      caveatAll: 'Licea and technika together: colour largely reflects school type, not which school teaches better. Technika also teach a trade, and this data does not cover the vocational exam.',
+      caveatExtended: 'An extended subject is sat by students who choose it — a different share of the year group in each school. The score describes those who chose it.',
+      findSchoolPlaceholder: 'e.g. Batory, Kraków, technikum',
+      rankingSearchPlaceholder: 'e.g. Batory, technikum, Kraków',
+    },
   },
 };
 
@@ -847,8 +1130,13 @@ function helpDetailsHTML(captionKey, helpKey) {
     </details>`;
 }
 
+// The exam's override first — current language, then its Polish, so an entry
+// missing in English shows matura's Polish rather than E8's English — then
+// I18N's own chain. Under E8 there is no override.
 function t(key, ...args) {
-  const v = (I18N[currentLang] && I18N[currentLang][key]) || I18N.pl[key] || key;
+  const exam = I18N_EXAM[EXAM];
+  const v = exam?.[currentLang]?.[key] || exam?.pl?.[key]
+    || (I18N[currentLang] && I18N[currentLang][key]) || I18N.pl[key] || key;
   return (typeof v === 'function') ? v(...args) : v;
 }
 
@@ -899,6 +1187,74 @@ function wireLangToggle(onAfterChange) {
   });
 }
 
+// Wire the #exam-toggle segment "Podstawowe | Średnie" (spec §7.2). It looks like
+// the language toggle but works differently: switching exams RELOADS the page
+// into the other exam, carrying only the language (D3), and each exam's own
+// stored preferences restore the rest. An in-place switch would need the exam in
+// every cache key and would bind wireControls' listeners twice. Returns the
+// render function, for the page's language callback.
+function wireExamToggle() {
+  const el = document.getElementById('exam-toggle');
+  if (!el) return () => {};
+  const OPTIONS = [['e8', 'examPrimary'], ['matura', 'examSecondary']];
+  const render = () => {
+    el.innerHTML = OPTIONS.map(([exam, key]) =>
+      `<button type="button" class="lang-opt${exam === EXAM ? ' active' : ''}" `
+      + `data-exam="${exam}" aria-pressed="${exam === EXAM}">${t(key)}</button>`
+    ).join('');
+  };
+  render();
+  el.addEventListener('click', (e) => {
+    const opt = e.target.closest('.lang-opt');
+    if (!opt || opt.getAttribute('data-exam') === EXAM) return;
+    const usp = new URLSearchParams();
+    if (opt.getAttribute('data-exam') === 'matura') usp.set('exam', 'matura');
+    if (currentLang !== DEFAULTS.lang) usp.set('lang', currentLang);
+    const qs = usp.toString();
+    location.assign(window.location.pathname + (qs ? '?' + qs : ''));
+  });
+  return render;
+}
+
+// The exam and population a URL or cross-page link must carry: both null under
+// E8, so no E8 link changes, and population null when it is the default
+// (`requestedPopulation` is the page's state.population — the population asked
+// for, which can run ahead of the one loaded while a switch is in flight).
+function linkParams(requestedPopulation) {
+  if (EXAM === 'e8') return { exam: null, population: null };
+  const fallback = EXAM_CONFIG.populations[0];
+  return { exam: EXAM, population: requestedPopulation === fallback ? null : requestedPopulation };
+}
+
+// `href` with the exam and, unless it is the default, the requested population
+// (linkParams) in its query, before any #anchor. Unchanged under E8.
+function examHref(href, requestedPopulation) {
+  if (EXAM === 'e8') return href;
+  const hashAt = href.indexOf('#');
+  const base = hashAt < 0 ? href : href.slice(0, hashAt);
+  const hash = hashAt < 0 ? '' : href.slice(hashAt);
+  const { exam, population } = linkParams(requestedPopulation);
+  const query = 'exam=' + exam + (population ? '&population=' + population : '');
+  return base + (base.includes('?') ? '&' : '?') + query + hash;
+}
+
+// Each static link's href as the page shipped it, so every rewrite starts there.
+const SHIPPED_HREFS = new WeakMap();
+
+// Make static links keep the exam and the population: the help links and the
+// active tab, which no wireNavLinks touches (under matura, clicking it would
+// otherwise reload E8, or drop a population that came in by link and was never
+// stored as a preference). The nav's help entry also gets the exam's help anchor
+// (D5). Re-run whenever the population may have changed.
+function rewriteExamLinks(selector, requestedPopulation) {
+  for (const a of document.querySelectorAll(selector)) {
+    if (!SHIPPED_HREFS.has(a)) SHIPPED_HREFS.set(a, a.getAttribute('href'));
+    let href = SHIPPED_HREFS.get(a);
+    if (href === 'help.html' && a.closest('.topnav nav')) href += EXAM_CONFIG.helpAnchors;
+    a.setAttribute('href', examHref(href, requestedPopulation));
+  }
+}
+
 // Fill the #data-years subtitle (if present) from the loaded scale metadata.
 // Range min–max, so it auto-updates when a new exam year is added. Re-callable
 // (e.g. after a language switch) since the label text is language-dependent.
@@ -929,14 +1285,27 @@ function fillMetricSelect(selectEl, currentMetric, advanced) {
   }
 }
 
+// E8 lists SUBJECTS. A matura dataset names its own subjects in scale.json,
+// grouped basic then extended (spec §7.1), and the select shows those groups.
 function fillSubjectSelect(selectEl, currentSubject) {
   selectEl.innerHTML = '';
-  for (const s of SUBJECTS) {
+  const addOption = (parent, s) => {
     const opt = document.createElement('option');
     opt.value = s;
     opt.textContent = t('subject_' + s);
     if (s === currentSubject) { opt.selected = true; opt.setAttribute('selected', ''); }
-    selectEl.appendChild(opt);
+    parent.appendChild(opt);
+  };
+  const groups = scaleData?.metadata.subject_groups;
+  if (!groups) {
+    for (const s of SUBJECTS) addOption(selectEl, s);
+    return;
+  }
+  for (const [group, labelKey] of [['basic', 'subjectGroupBasic'], ['extended', 'subjectGroupExtended']]) {
+    const optgroup = document.createElement('optgroup');
+    optgroup.label = t(labelKey);
+    for (const s of groups[group]) addOption(optgroup, s);
+    selectEl.appendChild(optgroup);
   }
 }
 
@@ -945,6 +1314,21 @@ function fmtScore(score, metric) {
   if (metric === 'mean' || metric === 'median') return score.toFixed(1);
   if (metric === 'diff_mean') return (score >= 0 ? '+' : '') + score.toFixed(1);
   return (score >= 0 ? '+' : '') + score.toFixed(3);
+}
+
+// A count, grouped in threes: '2 130' (no-break space) in Polish, '2,130' in
+// English. toLocaleString('pl-PL') is not enough — Polish convention leaves a
+// four-digit number ungrouped, so 2130 and 12 130 would read differently.
+function fmtInt(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, currentLang === 'pl' ? ' ' : ',');
+}
+
+// A pass rate (0–100), one decimal in the locale's own notation: '87,5%' in
+// Polish, '87.5%' in English; '—' where the year has none.
+function fmtPassRate(v) {
+  if (v == null) return '—';
+  const s = v.toFixed(1);
+  return (currentLang === 'pl' ? s.replace('.', ',') : s) + '%';
 }
 
 // Same as fmtScore but renders the decimals in a muted/smaller span so the
@@ -967,3 +1351,14 @@ function fmtScoreHTML(score, metric) {
 }
 
 function isPublic(s) { return s.is_public === 'Tak'; }
+
+// How many of the school's years have a result in `subject` (matura spec §6.2):
+// an extended subject's own count, which only a matura index carries; otherwise
+// the school's years, which is what every basic subject, the composite and every
+// E8 subject have.
+function subjectYears(s, subject) {
+  if (scaleData?.metadata.subject_groups?.extended?.includes(subject)) {
+    return s.subject_years?.[subject] ?? 0;
+  }
+  return s.n_years;
+}

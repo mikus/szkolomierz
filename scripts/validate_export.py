@@ -86,6 +86,7 @@ two reference and two region levels, and adds:
   V. Every subject has source data each year; the subject lists are the
      validator's own; every scale entry is complete, finite, with sigma > 0.
   W. At least 99% of each population's schools have coordinates.
+  X. Every region name equals E8's for the same TERYT.
 
 M and N gate on two different populations, and conflating them is the easiest
 way to break this map. Both derive their populations independently — the
@@ -2403,6 +2404,30 @@ def check_coordinate_floor(index: dict, rep: Report):
         rep.ok(f'{mapped:,} of {total:,} schools have coordinates ({share:.2%})')
 
 
+def check_region_names(profile: Profile, e8_docs: Path, rep: Report):
+    """X (matura plan 2, D1) — a region's name is display and its TERYT is identity
+    (spec §5.7), so the same TERYT must read the same in both exams and every
+    population: in the breadcrumb, the ranking's powiat column and the name search."""
+    rep.section("X. Region names equal E8's, TERYT by TERYT")
+    for level in profile.region_levels:
+        names = {}
+        for side, docs in (('matura', profile.docs_data), ('E8', e8_docs)):
+            rows = json.loads(
+                (docs / f'regions-{level}.json').read_text(encoding='utf-8')
+            )['regions']
+            names[side] = dict(zip(rows['teryt'], rows['name'], strict=True))
+        matura, e8 = names['matura'], names['E8']
+        rep.checked += len(matura)
+        problems = [f'{t}: missing from E8' for t in sorted(matura.keys() - e8.keys())]
+        problems += [f'{t}: missing from matura' for t in sorted(e8.keys() - matura.keys())]
+        problems += [f'{t}: {matura[t]!r} != E8 {e8[t]!r}'
+                     for t in sorted(matura.keys() & e8.keys()) if matura[t] != e8[t]]
+        if problems:
+            rep.fail(f"{level}: {len(problems)} names differ from E8's", problems)
+        else:
+            rep.ok(f"{level}: all {len(matura)} names equal E8's")
+
+
 # ── main ─────────────────────────────────────────────────────────────────────
 
 
@@ -2562,6 +2587,7 @@ def validate_matura(args, rep: Report) -> None:
         # The unfiltered source rows: validated.rows is narrowed to the published years.
         check_matura_coverage(profile, population_rows, validated.scale, rep)
         check_coordinate_floor(validated.index, rep)
+        check_region_names(profile, Path('docs/data'), rep)
 
 
 def main():

@@ -14,6 +14,11 @@ anywhere in Poland and see how they perform on the 8th-grade exam (egzamin
 ósmoklasisty), 2021–2026. ~12.9k schools, 16 voivodeships, 380 powiats, 2,479
 gminas.
 
+The same app also serves a second exam, the **matura** (the secondary-school
+leaving exam, 2023 formula) for licea and technika, behind an exam switch — see
+§13. Everything up to §12 describes the 8th-grade exam (E8) and holds for the
+matura except where §13 says otherwise.
+
 The map is a **zoom ladder**, not a single pin layer. Zoomed out it is a
 choropleth of regions — voivodeships, then powiats, then gminas — and only at the
 deepest rung does it draw individual schools. A region is always coloured by its
@@ -237,6 +242,40 @@ These live in `output/` (not `docs/`), are for human analysts (Excel), and are
 not served by the site. Ignore them in the web app.
 
 ---
+
+### 2g. `data/matura/{population}/` — the matura datasets
+
+One self-contained dataset per comparison population — `liceum/`, `technikum/`,
+`all/` — each in §2a–§2d's exact shape (`schools-index.json`, `scale.json`,
+`regions-voivodeship.json`, `regions-powiat.json`, `powiat/{teryt4}-{metric}.json`;
+**no** `regions-gmina.json`), plus these **additive** fields, which E8 files never
+carry — the app reads each only where it is present:
+
+- **`schools-index.json`:** `type` (`'liceum'` / `'technikum'`); `pass_rate`
+  (`{"2024": 87.5, …}`, string year keys, `null` where unpublished);
+  `subject_years` and `subject_takers` (`{subject: …}`, extended subjects only —
+  the school's years with a published mean in the subject, and its median takers
+  per year over them). A subject's years are read only through `subjectYears`
+  (`docs/app.js`): `subject_years[subject] ?? 0` for an extended subject, otherwise
+  `n_years`.
+- **`scale.json` metadata:** `levels` (`['national', 'voivodeship']`);
+  `subject_groups` (`{basic: [polski, matematyka, angielski, composite_min],
+  extended: [… '_r' keys]}`, `basic + extended == subjects`); `n_ranked[level]
+  [metric][subject][view]` — each view's ranked population (an integer for `base`,
+  `{param: n}` otherwise), which the app shows as "#12 z 2 130". `slider_ranges`
+  is built over every subject of the population, so a subject switch leaves an
+  unset slider unset.
+- **`regions-{level}.json`:** `n_scored[subject]` (schools with a published mean
+  in the subject) and `n_takers[subject]` (their takers). Where present, the app
+  shows them **in place of `n_schools` / `n_students`** for the selected subject —
+  in the map tooltip ("1 z 17 techników z wynikiem") and in the ranking's two
+  count columns — and `n_scored == 0` is its own reason for a missing score.
+- **Shards:** a school carries only the extended subjects it has a stored view
+  for; `pct` is `null` where a view ranks fewer than 8 schools. A missing cell can
+  mean *withheld* (fewer than 5 scored schools in the reference), not *no data*.
+
+`all/` is not the union of the other two (it starts in 2024 and lacks 44 licea),
+so search and `?school=` run over `liceum/` + `technikum/` (§13).
 
 ## 3. Coordinates
 
@@ -479,7 +518,7 @@ single "too small" is wrong for most of them:
     - **Reset the threshold when the user switches metric.** The scales differ
       (`mean` is 10–87, `unit_norm_diff_mean` is −0.85…0.64), so a numeric value
       that filtered out the bottom 1% on one metric is meaningless on another.
-      Snap back to the default handle position (`p1` of the new metric).
+      Reset it to the new range's minimum — no threshold at all.
       Subject changes do *not* reset the threshold — same metric, comparable scale.
   - **Minimum n_years:** hide schools with little history.
 - **Zoom + address search:** native Leaflet zoom, plus a search box that
@@ -670,11 +709,18 @@ in one interaction, so the same key is routinely requested twice before the firs
 fetch lands; caching the resolved value lets both requests through, which for a
 shard means downloading megabytes twice.
 
-**One exception on rejections.** Geometry fetches must *drop* a failed promise
+**Never cache a rejection.** Every loader — geometry, regions, shards, and the
+dataset files `schools-index.json` / `scale.json` — *drops* a failed promise
 before rethrowing: they fire from `zoomend`/`moveend`, where panning away and
-back **is** the natural retry, and a cached rejection would leave that region
-permanently unrendered for the rest of the session. Region and shard fetches fire
-rarely and on deliberate action, so they keep their cached rejections.
+back **is** the natural retry, and a cached rejection would leave that region (or,
+for a shard, every marker in a powiat) permanently unrendered for the session.
+
+**Every dataset cache is keyed by the file's path** (`datasetPath(population,
+file)`), which names the exam and the matura population, so one population's
+payload can never answer for another's. `activateDataset(population)` is the only
+writer of the `indexData` / `scaleData` / `population` globals: it awaits both
+dataset files and assigns all three in one step unless a later call has started
+(latest wins).
 
 Browser HTTP caching (ETag) covers repeat visits from the same browser for free;
 incognito / a different device re-downloads, which is why the per-powiat scoping
@@ -699,20 +745,29 @@ via URL. Visiting the same URL from another browser must reproduce the same view
 - `threshold` — number; minimum score for the current (metric, subject). Schools
   with score below this are hidden.
 - `min_years` — integer; minimum `n_years` to show.
-- `school` — rspo (integer); if present, pan to the school, open its popup.
+- `school` — rspo (integer); if present, pan to the school, open its popup —
+  even when the filters would hide it (§13, E8 included).
 - `lang` — `pl` or `en` (omitted = use stored default).
+- `exam` — `matura`, or omitted for E8. A link without it is E8, so every link
+  shared before the matura existed keeps working.
+- `population` — `liceum`, `technikum` or `all` (matura only; omitted = `liceum`;
+  ignored under E8).
 
 **`ranking.html`** (table):
 - `metric`, `subject` — same as above.
 - `level` — `voivodeship`, `powiat`, `gmina` or omitted (`school`, the default).
-- `region` — the 4-digit powiat TERYT whose schools are listed; school level only.
+- `region` — a TERYT prefix of 2, 4 or 6 digits (voivodeship, powiat or gmina;
+  2 or 4 under the matura), at every level: at school level it picks the area
+  ranked, at a region level it filters the rows.
 - `view` — `base`, `last_k`, `single_year`, or `loo`.
 - `view_param` — for non-base views: year (e.g. `2023`) or k (e.g. `3`).
 - `public` — same as above.
 - `q` — free-text name search query.
-- `sort` — column key (e.g. `base_rank`); `dir` — `asc` or `desc`.
+- `sort` — column key (e.g. `rank`); `dir` — `asc` or `desc`. A key that names
+  no column of the current exam, level and area falls back to `rank`/`asc`.
 - `school` — rspo to highlight/scroll to.
 - `lang` — same.
+- `exam`, `population` — same as above.
 
 Unknown or out-of-range param values are ignored (fall back to defaults), not
 errors — be liberal in what you accept.
@@ -752,6 +807,15 @@ When the user changes a setting:
   user's preferred view (carries across visits).
 - `rank_level`, `rank_region` — the ranking page's own level and powiat.
   Namespaced because the map has no equivalent and must not pick them up.
+- `population` — the matura comparison population.
+- **Per exam:** `subject`, `baseline`, `rank_level`, `rank_region` and
+  `population` are stored under the exam's prefix — bare for E8 (so a returning
+  E8 visitor's stored view survives), `matura_` for the matura. Under the matura a
+  scoped key it has never stored reads as absent, never as E8's value.
+  `readPrefs`/`writePref` (`docs/app.js`) own this; `writePref` changes the raw
+  stored object, never the per-exam view. `lang`, `metric`, `advanced_metrics`
+  and `gradient` are shared. The exam itself is never stored: it comes from the
+  URL.
 
 Filters (`public`, `threshold`, `min_years`, `q`, `sort`) and the selected
 school are *not* persisted across visits — they are URL-only. Visiting fresh
@@ -803,12 +867,13 @@ szkolomierz/
 │   │   ├── regions-voivodeship.json
 │   │   ├── regions-powiat.json
 │   │   ├── regions-gmina.json
-│   │   └── powiat/{teryt4}-{metric}.json   × 4 × 380
+│   │   ├── powiat/{teryt4}-{metric}.json   × 4 × 380
+│   │   └── matura/{liceum,technikum,all}/  # the same files, minus regions-gmina (§2g)
 │   └── geo/                    # scripts/fetch_geometry.py writes these
 │       ├── kraj.json
 │       ├── woj/{ww}.json       × 16
 │       └── pow/{wwpp}.json     × 380
-└── output/                     # xlsx for analysts (not served by the site)
+└── output/                     # xlsx for analysts (not served by the site); matura/ beside it
 ```
 
 The notebook generates the JSON straight into `docs/data/`, so there is no copy
@@ -849,3 +914,106 @@ place; each page's own logic lives in its own file.
 
 Build incrementally; steps 1–4 already give a working national choropleth that
 drills down to real schools, on ~1.8 MB plus one shard.
+
+---
+
+## 13. The matura (secondary schools)
+
+One app serves both exams. `docs/app.js` holds an `EXAMS` config — each exam's
+data base path, comparison populations, reference levels, region levels, stored-
+preference prefix and help anchor — and reads the exam once, from `?exam=`, when
+it loads. `regionLevels` is the only place the deepest region level is stated;
+the zoom ladder, the ranking's levels, the area-select depth, the TERYT widths
+`?region=` accepts and the gmina gate are all derived from it.
+
+### 13a. Exam switch
+
+A segmented **Podstawowe | Średnie** ("Primary | Secondary") control in every
+page's top bar, beside the language toggle and styled like it. Switching
+**reloads** the page into the other exam, carrying only the language; each
+exam's stored preferences (§9) restore the rest. Every link the app writes —
+cross-page nav, the active tab, help links, `?school=` hand-offs — carries
+`exam=matura` under the matura; the help page's nav entry opens on `#matura`.
+
+### 13b. The *Porównanie* ("Compare") control
+
+First in the map's *Widok* controls and in the ranking's controls, hidden under
+E8: **Licea / Technika / Wszystkie szkoły średnie**, default *Licea*. Each is a
+separate dataset (§2g) compared within itself — licea against licea, technika
+against technika, or all secondary schools together. Types are not mixed by
+default: on a shared reference the colour mostly encodes school type.
+
+Each page changes the population only through its `setPopulation(p)`: it writes
+URL and preference, calls `activateDataset(p)`, and — unless a later switch
+superseded it — clears any selected, pending or forced school, re-runs
+`applyDataset()` (the setup derived from `scale.json`: subject list, slider range
+and threshold, minimum-years maximum, data-years subtitle, view parameters,
+caveat 1) and re-renders. `applyDataset()` binds no listeners. The population is
+part of the map's marker rebuild key and of the ranking's loaded-rows key, so a
+late response for the previous population is discarded.
+
+### 13c. Subjects, levels and reference points
+
+- **Subjects:** from the dataset's `scale.json`, in two groups — *Podstawowe*
+  (basic Polish, Maths and English, and "Najsłabszy z 3 podstawowych", the
+  minimum of the three) and *Rozszerzone* (the extended subjects: 11, or 10 under
+  *Technika*, which has no art history). A stored or linked subject the dataset
+  lacks falls back to `composite_min`.
+- **Region levels:** voivodeship and powiat only. No gmina rung, no gmina select
+  or column, and `regions-gmina.json` is never fetched.
+- **Reference points:** the whole country or the voivodeship.
+- **Years:** a school's years count per subject (`subjectYears`, §2g) — in the
+  popup, the short-history warning, the minimum-years filter and the ranking's
+  *Lata* column.
+
+### 13d. What the matura adds to the map and the ranking
+
+- **Popup:** the school type; ranks with their denominator ("#12 z 2 130"); a
+  *Rozszerzone* block listing each extended subject the school has a result in,
+  with its takers and its score here or "wstrzymany przy tym punkcie odniesienia";
+  the pass rate per year. The year-by-year chart and table stay on the basic
+  subjects.
+- **Filter summary:** hidden schools are split into *no result in the subject*
+  and *score withheld at this reference* ("…; 15 bez wyniku z wybranego
+  przedmiotu; 1 z wynikiem wstrzymanym (mniej niż 5 szkół z wynikiem
+  w województwie)").
+- **Why a region has no score** — one function, `regionNullReason`, for the
+  tooltip and the ranking row: no schools of the type, no school with results in
+  the subject, an only child, or too small a reference.
+- **Search and `?school=`** run over the licea and technika indexes together;
+  a school outside the shown population switches the population first.
+- **Ranking:** rank cells read "#r z n" with the selected view's own n; a sortable
+  pass-rate column for the latest year; region rows count schools with results and
+  their takers (§2g); "shown N of M" counts schools with a result in the subject.
+
+### 13e. Caveats
+
+Worded as facts, not causes (§7):
+
+1. Under *Wszystkie szkoły średnie*, under the map legend and above the ranking
+   table: „Licea i technika razem: kolor w dużej mierze pokazuje typ szkoły, a nie
+   to, która uczy lepiej. Technika uczą też zawodu, a egzaminu zawodowego te dane
+   nie obejmują."
+2. Wherever an extended subject is shown — legend, ranking, the popup's
+   *Rozszerzone* block: „Przedmiot rozszerzony zdają chętni — w każdej szkole inna
+   część rocznika. Wynik opisuje tych, którzy go wybrali."
+3. The help page's matura variant of "Czego dane nie mówią": secondary schools
+   admit by recruitment points, but there is no data on the level pupils arrive
+   with at a particular school.
+
+The help page carries both exams: exam-specific passages are
+`data-exam-block="e8" | "matura"` blocks, shown by `help.js` together with the
+language blocks, and the matura variant adds a `#matura` section.
+
+### 13f. What changed for E8 — the complete list
+
+1. The wording "filtr typu szkoły" / "school-type filter" became "filtr
+   publiczna/niepubliczna" / "public/private filter", in the ranking's notes and
+   on the help page.
+2. A school opened by search or by a `?school=` link is shown and its popup opened
+   even when the current filters hide it, for as long as it stays selected, with
+   the popup naming the filters that would hide it. A school opened by clicking
+   its marker is unaffected.
+3. A pending school (searched for, its powiat not yet drawn) is cleared on every
+   subject switch.
+4. The exam switch in the top bar.

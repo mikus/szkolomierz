@@ -13,12 +13,24 @@
       <a href="index.html" data-i18n="navMap">Mapa</a>
       <a href="ranking.html" class="active" data-i18n="navRanking">Ranking</a>
       <a href="help.html" data-i18n="navHelp">Pomoc</a>
+      <div id="exam-toggle" class="lang-toggle" role="group" aria-label="Egzamin / Exam"></div>
       <div id="lang-toggle" class="lang-toggle" role="group" aria-label="Język / Language"></div>
     </nav>
   </header>
 
   <main>
     <div class="ranking-controls">
+      <!-- Matura only: which schools are compared. Hidden under E8; wireControls
+           shows it. -->
+      <div class="field field--population is-hidden">
+        <label for="population-select" data-i18n="labelPopulation">Porównanie</label>
+        <select id="population-select">
+          <option value="liceum" data-i18n="populationLiceum">Licea</option>
+          <option value="technikum" data-i18n="populationTechnikum">Technika</option>
+          <option value="all" data-i18n="populationAll">Wszystkie szkoły średnie</option>
+        </select>
+      </div>
+
       <div class="field field--level">
         <span>
           <label for="level-select" data-i18n="labelRankLevel">Poziom rankingu</label><span
@@ -90,10 +102,10 @@
       </label>
 
       <fieldset class="field radio-group">
-        <legend data-i18n="labelPublic">Typ szkoły</legend>
+        <legend data-i18n="labelPublic">Publiczna</legend>
         <label><input type="radio" name="public" value="all" checked> <span data-i18n="publicAll">Wszystkie</span></label>
-        <label><input type="radio" name="public" value="tak"> <span data-i18n="publicYes">Publiczne</span></label>
-        <label><input type="radio" name="public" value="nie"> <span data-i18n="publicNo">Niepubliczne</span></label>
+        <label><input type="radio" name="public" value="tak"> <span data-i18n="publicYes">Tak</span></label>
+        <label><input type="radio" name="public" value="nie"> <span data-i18n="publicNo">Nie</span></label>
       </fieldset>
 
       <label class="field field--search">
@@ -126,6 +138,8 @@
       </details>
     </div>
 
+    <p class="caveat" id="caveat-all" data-i18n="caveatAll" hidden></p>
+    <p class="caveat" id="caveat-extended" data-i18n="caveatExtended" hidden></p>
     <div class="ranking-table-wrap">
       <table class="ranking-table" id="ranking-table"></table>
     </div>

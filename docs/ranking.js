@@ -27,8 +27,9 @@
 // never one number that quietly changes meaning when a filter moves.
 
 (function () {
-  const RANK_LEVELS = ['voivodeship', 'powiat', 'gmina', 'school'];
-  const REGION_LEVELS = ['voivodeship', 'powiat', 'gmina'];
+  // Derived from the exam (spec §7.1): matura stops at powiat.
+  const REGION_LEVELS = EXAM_CONFIG.regionLevels;
+  const RANK_LEVELS = [...REGION_LEVELS, 'school'];
   // Whose name the "parent" column shows. Voivodeships have no parent (their
   // `parent` field is ''), so they get no such column.
   const PARENT_LEVEL = { powiat: 'voivodeship', gmina: 'powiat' };
@@ -53,8 +54,12 @@
   const SELECT_LEVEL_BY_DIGITS = { 2: 'voivodeship', 4: 'powiat', 6: 'gmina' };
   // How deep the area filter may go at each ranking level. Selecting deeper than
   // the rows being ranked cannot narrow them — a 4-digit powiat TERYT never
-  // starts with a 6-digit gmina prefix — it can only empty the table.
-  const MAX_SELECT_DIGITS = { voivodeship: 2, powiat: 4, gmina: 6, school: 6 };
+  // starts with a 6-digit gmina prefix — it can only empty the table. Schools
+  // may be narrowed as deep as the exam's finest region level.
+  const MAX_SELECT_DIGITS = {
+    ...Object.fromEntries(REGION_LEVELS.map(l => [l, SELECT_DIGITS[l]])),
+    school: SELECT_DIGITS[REGION_LEVELS.at(-1)],
+  };
   const RANK_IN_COLUMN = {
     voivodeship: 'colRankInVoivodeship',
     powiat: 'colRankInPowiat',
@@ -80,6 +85,10 @@
     selectedSchool: null,
     lang: DEFAULTS.lang,
     advancedMetrics: false,
+    // The matura comparison population asked for; null under E8. The URL is
+    // written from this, never from app.js's `population`, which names the
+    // dataset already loaded and lags behind while a switch is in flight.
+    population: null,
     // Detail-panel UI (ephemeral, not in the URL):
     detailTablesOpen: false,        // numeric tables hidden until asked for
     detailTableDim: 'score',        // 'score' | 'rank' | 'pct'
@@ -106,8 +115,12 @@
   // flight. Anything that is not the current key counts as "not loaded".
   let loadedKey = null;
 
+  // The matura dataset (`population`, app.js) is part of the key, so rows for a
+  // population the user has switched away from are discarded when they land.
   function populationKey() {
-    return state.level === 'school' ? `school|${state.region}|${state.metric}` : state.level;
+    return state.level === 'school'
+      ? `${population}|school|${state.region}|${state.metric}`
+      : `${population}|${state.level}`;
   }
 
   function populationLoaded() { return loadedKey === populationKey(); }
@@ -128,12 +141,13 @@
     return 'school';
   }
 
-  // 2, 4 or 6 digits — voivodeship, powiat or gmina. Anything else (including the
-  // 7-digit form with the gmina type on the end) is not a selection this page
-  // can act on, so it is dropped rather than silently truncated to something the
-  // user did not ask for.
+  // 2, 4 or 6 digits — voivodeship, powiat or gmina; 2 or 4 under matura, which
+  // has no gmina level. Anything else (including the 7-digit form with the gmina
+  // type on the end) is not a selection this page can act on, so it is dropped
+  // rather than silently truncated to something the user did not ask for.
   function resolveRegion() {
-    const valid = (v) => /^\d{2}$|^\d{4}$|^\d{6}$/.test(v || '');
+    const widths = REGION_LEVELS.map(l => SELECT_DIGITS[l]);
+    const valid = (v) => /^\d+$/.test(v || '') && widths.includes(v.length);
     const url = getURLParams().get('region');
     if (valid(url)) return url;
     const stored = readPrefs().rank_region;
@@ -143,8 +157,10 @@
   function resolveInitialState() {
     state.advancedMetrics = resolveAdvancedMetrics();
     state.metric  = resolvePref('metric',  METRICS);
-    state.subject = resolvePref('subject', SUBJECTS);
+    // Matura's subject is checked against the loaded scale.json in applyDataset.
+    state.subject = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang    = resolvePref('lang',    ['pl', 'en']);
+    state.population = resolvePopulation();
     state.level   = resolveLevel();
     state.region  = resolveRegion();
 
@@ -183,34 +199,22 @@
       dir:        state.sortDir !== 'asc' ? state.sortDir : null,
       school:     state.selectedSchool,
       lang:       state.lang !== DEFAULTS.lang ? state.lang : null,
+      // Listed, or setURLParams would strip them on the first sync (spec §7.2).
+      ...linkParams(state.population),
     });
+    syncStaticLinks();
+  }
+
+  // The help links and the active tab carry the same exam and population as the
+  // URL. Called from wireControls, so they are right as soon as the controls are
+  // live (main's first syncURL waits for the region lists), and from syncURL,
+  // which every population change and rollback reaches.
+  function syncStaticLinks() {
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active', state.population);
   }
 
   // ---------------------------------------------------------------------------
   // Row construction
-
-  // How many regions share each parent, per level — the second arm of the
-  // suppression gate (a region that is its parent's ONLY CHILD is compared
-  // against itself). Derived from regions.parent, which ships in the file.
-  //
-  // A near-twin of map.js's siblingCountsFor. Sharing it would be a MOVE, not an
-  // addition — app.js gains the function only if map.js loses its copy — and that
-  // means editing a freshly landed file this task does not own, with no JS test
-  // layer to catch a slip. Hence the copy. What will actually drift is not the
-  // counting but the reason ladder built on it (buildRegionRow below vs
-  // map.js's regionTooltip): change one branch and the map and the table start
-  // explaining the same suppressed gmina differently.
-  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
-
-  function siblingCountsFor(regions) {
-    const level = regions.metadata.level;
-    if (!siblingCache.has(level)) {
-      const counts = new Map();
-      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
-      siblingCache.set(level, counts);
-    }
-    return siblingCache.get(level);
-  }
 
   // For one region, a flat object with the fields we sort/render. Unlike the
   // map, this page DOES render suppressed regions — a table enumerating a
@@ -234,8 +238,10 @@
       key: r.teryt[i],
       name: r.name[i],
       parent: parentLevel ? nameOf(parentLevel, r.parent[i]) : null,
-      n_schools: r.n_schools[i],
-      n_students: r.n_students[i],
+      // A matura file counts, per subject, the schools with a result and their
+      // takers (spec §6.4); its presence decides, so E8 rows are unchanged.
+      n_schools: r.n_scored ? r.n_scored[subject][i] : r.n_schools[i],
+      n_students: r.n_takers ? Math.round(r.n_takers[subject][i]) : r.n_students[i],
       score,
       rank: r.rank[metric][subject][i],
       pct: r.pct[metric][subject][i],
@@ -245,11 +251,9 @@
       classTextColour: classColour ? textOn(classColour) : null,
       suppressed: score == null,
       // Say WHICH reason. A single "—" with no explanation is what makes a table
-      // feel broken, and a wrong explanation is worse than none.
-      reasonKey: score != null ? null
-        : r.n_schools[i] === 0 ? 'regionNoSchools'
-        : siblingCountsFor(regionData).get(r.parent[i]) <= 1 ? 'regionOnlyChild'
-        : 'regionTooSmall',
+      // feel broken, and a wrong explanation is worse than none. The same
+      // function words the map's tooltip, so the two cannot drift apart.
+      reasonKey: score != null ? null : regionNullReason(regionData, i, subject),
     };
   }
 
@@ -317,7 +321,10 @@
       gmina: school.gmina,
       powiat: school.powiat,
       pub: isPublic(school),
-      n_years: school.n_years,
+      // The subject's own years (spec §6.2): the Lata cell, its warning and its
+      // sort all follow the selected subject.
+      n_years: subjectYears(school, subject),
+      pass_rate: school.pass_rate?.[String(latestYear())] ?? null,
       hasCoords: school.lat != null && school.lon != null,
       score: viewScore,
       rank: viewRank,
@@ -348,6 +355,7 @@
         if (r.score == null) return false;
       }
       if (q) {
+        // r.gmina is null under matura (no gmina level); `v || ''` skips it.
         const hay = schools
           ? [r.name, r.town, r.street, r.gmina, r.powiat]
           : [r.name, r.parent];
@@ -395,11 +403,15 @@
       { key: 'street',     label: t('colStreet'),      num: false },
       { key: 'pub',        label: t('colPublic'),      num: false, width: '5rem' },
       { key: 'n_years',    label: t('colNYears'),      num: true,  width: '4rem' },
+      // Positional with schoolRowHTML's cells: add both or neither.
+      ...(EXAM === 'matura'
+        ? [{ key: 'pass_rate', label: t('colPassRate', latestYear()), num: true }] : []),
       { key: 'score',       label: t('colScore'),       num: true },
       { key: 'classLetter', label: t('colClass'),       num: true,  width: '4rem' },
       { key: 'looMinR',     label: t('colLOORange'),    num: true,  help: 'helpLOORange' },
       { key: 'singleMinR',  label: t('colSingleRange'), num: true,  help: 'helpSingleRange' },
-      { key: 'gmina',       label: t('colGmina'),       num: false },
+      // Positional with schoolRowHTML's cells: drop both or neither.
+      ...(HAS_GMINA ? [{ key: 'gmina', label: t('colGmina'), num: false }] : []),
       { key: 'powiat',      label: t('colPowiat'),      num: false },
     ];
   }
@@ -649,25 +661,41 @@
       : '—';
   }
 
+  function latestYear() {
+    return Math.max(...scaleData.metadata.years_in_data);
+  }
+
+  // The selected view's ranked population (matura's n_ranked, D10): base's for
+  // the base view, the view parameter's otherwise — never base's for every view.
+  // Undefined under E8, and for a view nobody is ranked in.
+  function viewRankedN() {
+    const bySubject = scaleData.metadata.n_ranked?.[baselineLevel]?.[state.metric]?.[state.subject];
+    return state.view === 'base' ? bySubject?.base : bySubject?.[state.view]?.[String(state.viewParam)];
+  }
+
   function schoolRowHTML(r, colspan) {
+    const n = viewRankedN();
+    // r.rank stays a number, for the sort; only the cell carries "z n".
+    const rankCell = r.rank != null && n != null ? t('rankOfN', r.rank, n) : (r.rank ?? '—');
     const offMap = !r.hasCoords ? ` <span class="off-map" title="${t('offMap')}">📍✗</span>` : '';
     const looCell = (r.looMinR != null) ? `${r.looMinR}–${r.looMaxR}` : '—';
     const syCell  = (r.singleMinR != null) ? `${r.singleMinR}–${r.singleMaxR}` : '—';
     const pubLabel = r.pub ? t('publicYesShort') : t('publicNoShort');
     const selected = (r.rspo === state.selectedSchool);
     const mainRow = `<tr data-rspo="${r.rspo}"${selected ? ' class="highlight"' : ''}>
-        <td class="num">${r.rank ?? '—'}</td>
+        <td class="num">${rankCell}</td>
         ${selectionRankCellHTML(r)}
         <td>${escapeHTML(r.name)}${offMap}</td>
         <td>${escapeHTML(r.town || '')}</td>
         <td>${escapeHTML(r.street || '')}</td>
         <td>${pubLabel}</td>
         <td class="num">${r.n_years}${r.n_years < 3 ? ` <span class="warn-icon" title="${escapeHTML(t('warnShortHistory'))}">⚠️</span>` : ''}</td>
+        ${EXAM === 'matura' ? `<td class="num">${fmtPassRate(r.pass_rate)}</td>` : ''}
         <td class="num">${fmtScoreHTML(r.score, state.metric)}</td>
         <td class="num class-cell">${classCellHTML(r)}</td>
         <td class="num">${looCell}</td>
         <td class="num">${syCell}</td>
-        <td>${escapeHTML(r.gmina || '')}</td>
+        ${HAS_GMINA ? `<td>${escapeHTML(r.gmina || '')}</td>` : ''}
         <td>${escapeHTML(r.powiat || '')}</td>
       </tr>`;
     // A selected row expands an inline detail panel below it.
@@ -877,7 +905,10 @@
 
     const inArea = selectionRows();
     const filtered = sortRows(filterRows(inArea));
-    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, inArea.length);
+    // At school level M counts the area's schools with a result in the subject:
+    // an extended subject is sat at some schools only. Every E8 school has one.
+    const total = state.level === 'school' ? inArea.filter(r => r.n_years > 0).length : inArea.length;
+    infoEl.textContent = t(ROWS_SHOWN[state.level], filtered.length, total);
     renderTable(filtered);
     if (state.level === 'school' && state.selectedSchool != null) {
       const tr = document.querySelector(`tr[data-rspo="${state.selectedSchool}"]`);
@@ -961,14 +992,17 @@
     // for is derived from this file. 118 KB, and cached for the session.
     const powiatRegions = await loadRegions('powiat');
     const powiats = powiatsFor(region, powiatRegions);
+    // Both paths are built from `population` in this one synchronous step, so
+    // the index always belongs to the same dataset as the shards.
     const [shards, index] = await Promise.all([
       loadShards(powiats, metric, onProgress),
-      loadIndex(),
+      loadIndex(datasetPath(population, 'schools-index.json')),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve the gmina column and makes the name search match on it.
       // Same deal as map.js's buildSchools: one 0.77 MB fetch a session, and
-      // only once a powiat has been deliberately chosen.
-      loadRegions('gmina'),
+      // only once a powiat has been deliberately chosen. Matura has no gmina
+      // level and no such file (HAS_GMINA).
+      ...(HAS_GMINA ? [loadRegions('gmina')] : []),
     ]);
     const col = index.schools;
     const pos = new Map(col.rspo.map((r, i) => [String(r), i]));
@@ -1000,10 +1034,15 @@
         name: col.name[i],
         miejscowosc: col.miejscowosc[i],
         ulica_nr: col.ulica_nr[i],
-        gmina: nameOf('gmina', col.teryt[i].slice(0, 6)),
+        gmina: HAS_GMINA ? nameOf('gmina', col.teryt[i].slice(0, 6)) : null,
         powiat: nameOf('powiat', col.powiat[i]),
         is_public: col.is_public[i],
         n_years: col.n_years[i],
+        // Matura-only index fields (spec §6.2); undefined under E8.
+        subject_years: col.subject_years?.[i],
+        type: col.type?.[i],
+        pass_rate: col.pass_rate?.[i],
+        subject_takers: col.subject_takers?.[i],
         lat: col.lat[i],
         lon: col.lon[i],
         scores,
@@ -1126,15 +1165,17 @@
     const wantGminas = !!powiat && maxDigits >= 6;
     const gminaRegions = wantGminas ? await loadRegions('gmina') : null;
     if (token !== regionSyncToken) return;
-    fillRegionOptions(gminaSel, 'gminaPlaceholderAll', gminaRegions, powiat);
-    gminaSel.value = gmina;
-    gminaSel.disabled = !wantGminas;
+    if (gminaSel) {
+      fillRegionOptions(gminaSel, 'gminaPlaceholderAll', gminaRegions, powiat);
+      gminaSel.value = gmina;
+      gminaSel.disabled = !wantGminas;
+    }
 
     // A URL or stored prefix naming a region that does not exist leaves its
     // select on the placeholder. Trim the selection back to the deepest part
     // that did resolve, so the page filters by something real or by nothing —
     // never by a code no region has.
-    const resolved = gminaSel.value || powiatSel.value || voivSel.value || '';
+    const resolved = gminaSel?.value || powiatSel.value || voivSel.value || '';
     if (resolved !== sel) {
       state.region = resolved || null;
       writePref('rank_region', state.region);
@@ -1170,7 +1211,7 @@
     for (const r of document.querySelectorAll('input[name="public"]')) r.disabled = !schools;
     const parts = [];
     if (!schools) parts.push(t('levelRegionNote'));
-    if (MAX_SELECT_DIGITS[state.level] < 6) parts.push(t('selectDeeperThanLevel'));
+    if (MAX_SELECT_DIGITS[state.level] < MAX_SELECT_DIGITS.school) parts.push(t('selectDeeperThanLevel'));
     document.getElementById('level-note').textContent = parts.join(' ');
     // The click hint is NOT set here: it depends on whether rows are on screen,
     // which changes on area selection and on load too. renderAll owns it.
@@ -1187,9 +1228,19 @@
     const viewParamSel = document.getElementById('view-param-select');
     const nameInput  = document.getElementById('name-search');
 
+    // Hidden, not removed: removing the markup would leave gminaSel null for the
+    // listener below. A class rather than `hidden`, which .field's display: flex
+    // would override.
+    if (!HAS_GMINA) document.querySelector('.field--gmina').classList.add('is-hidden');
+    if (EXAM_CONFIG.populations) {
+      document.querySelector('.field--population').classList.remove('is-hidden');
+      document.getElementById('population-select').addEventListener('change', (e) => {
+        setPopulation(e.target.value).catch((err) => console.error('population switch failed', err));
+      });
+    }
+
     fillLevelSelect(levelSel);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
-    fillSubjectSelect(subjectSel, state.subject);
     viewSel.value = state.view;
 
     levelSel.addEventListener('change', () => {
@@ -1222,7 +1273,7 @@
     // whatever powiat and gmina were under the old one.
     voivSel.addEventListener('change',   () => setRegion(voivSel.value));
     powiatSel.addEventListener('change', () => setRegion(powiatSel.value || voivSel.value));
-    gminaSel.addEventListener('change',  () => setRegion(gminaSel.value || powiatSel.value));
+    gminaSel?.addEventListener('change', () => setRegion(gminaSel.value || powiatSel.value));
 
     const advancedCB = document.getElementById('advanced-metrics-toggle');
     advancedCB.checked = state.advancedMetrics;
@@ -1255,6 +1306,7 @@
       state.subject = subjectSel.value;
       writePref('subject', state.subject);
       syncURL();
+      syncExtendedCaveat();
       renderAll();
     });
 
@@ -1290,6 +1342,8 @@
     });
 
     wireNavLinks();
+    syncStaticLinks();
+    const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate JS-built content (metric/subject selects
     // and the whole table, whose headers/labels come from t()). The view-select
@@ -1297,6 +1351,7 @@
     wireLangToggle(() => {
       state.lang = currentLang;
       syncURL();
+      renderExamToggle();
       fillLevelSelect(levelSel);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillSubjectSelect(subjectSel, state.subject);
@@ -1308,6 +1363,68 @@
     });
   }
 
+  // Everything set up from the loaded scale.json (spec §7.3). Binds no listener
+  // — those are wireControls', bound once — so it can run again whenever the
+  // dataset changes.
+  function applyDataset() {
+    // Each matura dataset names its own subjects, so a stored or linked subject
+    // is checked here, once the list is known. E8's list is SUBJECTS, which
+    // resolveInitialState already enforced, so this never fires there.
+    if (!scaleData.metadata.subjects.includes(state.subject)) {
+      state.subject = DEFAULTS.subject;
+      writePref('subject', null);
+    }
+    fillSubjectSelect(document.getElementById('subject-select'), state.subject);
+    fillDataYears();
+    // The view parameters are the dataset's years: a liceum last_k of 3 does
+    // not exist where the data starts a year later.
+    updateViewParamField();
+    document.getElementById('population-select').value = population;
+    document.getElementById('caveat-all').hidden = population !== 'all';
+    syncExtendedCaveat();
+  }
+
+  // Caveat 2 (spec §7.6): whenever the selected subject is an extended one.
+  function syncExtendedCaveat() {
+    document.getElementById('caveat-extended').hidden =
+      !scaleData.metadata.subject_groups?.extended?.includes(state.subject);
+  }
+
+  // Sets the matura comparison population (D18) — not this page's "population"
+  // of populationKey and refreshPopulation, which is the rows the table ranks.
+  // The only code that changes it; resolves true once `p` is the loaded dataset
+  // and the table has been asked for its rows, false when superseded or failed.
+  async function setPopulation(p) {
+    const select = document.getElementById('population-select');
+    select.value = p;
+    state.population = p;
+    syncURL();
+    writePref('population', p);
+    let ok;
+    try {
+      ok = await activateDataset(p);
+    } catch (e) {
+      // D17: back to the population still loaded — unless a later switch has
+      // already asked for another, which then owns the select and the URL.
+      if (state.population === p) {
+        state.population = population;
+        select.value = population;
+        syncURL();
+        writePref('population', population);
+      }
+      console.error('population switch failed', e);
+      populationError = true;
+      renderAll();
+      return false;
+    }
+    if (!ok) return false;
+    state.selectedSchool = null;
+    applyDataset();
+    syncURL();
+    refreshPopulation();
+    return true;
+  }
+
   function wireNavLinks() {
     const link = document.querySelector('.topnav nav a[href="index.html"]');
     if (!link) return;
@@ -1317,6 +1434,9 @@
       if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
       if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
       if (state.selectedSchool != null)       usp.set('school',  state.selectedSchool);
+      const { exam, population } = linkParams(state.population);
+      if (exam) usp.set('exam', exam);
+      if (population) usp.set('population', population);
       const qs = usp.toString();
       link.href = 'index.html' + (qs ? '?' + qs : '');
     };
@@ -1327,16 +1447,39 @@
   // ---------------------------------------------------------------------------
   // Bootstrap
 
+  // The type of matura school `rspo` ('liceum' or 'technikum'), or null when
+  // neither index has it (a stale or hand-edited link).
+  async function findSchoolType(rspo) {
+    const indexes = await Promise.all(['liceum', 'technikum'].map((p) => loadIndex(datasetPath(p, 'schools-index.json'))));
+    for (const index of indexes) {
+      const i = index.schools.rspo.indexOf(rspo);
+      if (i >= 0) return index.schools.type[i];
+    }
+    return null;
+  }
+
   async function main() {
     resolveInitialState();
     setLang(state.lang);
     try {
-      await Promise.all([loadIndex(), loadScale()]);
+      // A matura ?school= may name a school outside the population asked for
+      // (the other type, or a liceum missing from all/). Look it up in the
+      // licea and technika indexes — loaded only for such a link (D15) — and
+      // open its own population instead, before anything renders.
+      const linked = EXAM_CONFIG.populations && state.selectedSchool != null
+        ? await findSchoolType(state.selectedSchool) : null;
+      await activateDataset(state.population);
+      if (linked && !indexData.schools.rspo.includes(state.selectedSchool)) {
+        state.population = linked;
+        writePref('population', state.population);   // as setPopulation would
+        await activateDataset(state.population);
+      }
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
       return;
     }
+    applyDataset();
     // The map hands a school over as ranking.html?school=<rspo> and carries no
     // region with it. Deriving the powiat from the index keeps that handoff
     // landing on the school instead of on the pick-a-county prompt.
@@ -1352,8 +1495,12 @@
     // ?region= before anything is fetched for it, and the two files behind it are
     // 6.9 KB + 118 KB and needed at every level anyway.
     await syncRegionSelects().catch(e => console.error('region lists unavailable', e));
-    fillDataYears();
-    updateViewParamField();
+    // A linked ?sort= may name a column this exam, level or area does not have
+    // (D16); the column list is final only now.
+    if (!currentColumnKeys().includes(state.sortKey)) {
+      state.sortKey = 'rank';
+      state.sortDir = 'asc';
+    }
 
     syncURL();
     // Unawaited, so the page stays usable for the whole download; renderAll runs

@@ -22,6 +22,10 @@
     gradient: true,               // continuous colour by default; flat 3 classes via the toggle
     advancedMetrics: false,       // unlocks median + diff_mean in the metric select
     popupTablesOpen: false,       // year-by-year numbers in the popup; reset per school
+    // The comparison population asked for (matura); null under E8. The URL is
+    // written from this, never from app.js's `population`, which names the
+    // dataset already loaded and lags behind while a switch is in flight.
+    population: null,
   };
 
   let map = null;
@@ -32,11 +36,19 @@
   let loadedSchools = [];
   let markersByRspo = new Map();  // rspo -> Leaflet circleMarker (one powiat's worth)
   let schoolSearchIndex = [];     // [{rspo,name,town,gminaKey,onMap,hay}] for the "find school" box
-  let indexPos = new Map();       // rspo -> row in schools-index.json (all 12,889)
+  // rspo -> {name, town, gminaKey, onMap, lat, lon, type, powiat}, over every
+  // school the search knows: E8's one index, or matura's licea and technika
+  // together, whichever population is loaded. Built once; never from indexData,
+  // which a population switch replaces.
+  let unionPos = new Map();
   // A school whose popup should open as soon as its powiat's markers exist. The
   // school being searched for is usually in a powiat that is not loaded yet, so
   // opening cannot happen in the same turn as the request.
   let pendingSchool = null;
+  // The school opened by search or by link (spec §7.4): shown, and its popup
+  // opened, even when the filters would hide it, for as long as it stays
+  // selected. A school opened from its own marker is never forced.
+  let forcedSchool = null;
   // The popup's year-by-year numbers, reshaped from the shard buildSchools
   // fetches: `{ [metric]: { schools: { rspo: { subject: {loo, single_year,
   // last_k} } } } }`. Holds one powiat — the one whose markers are on the map,
@@ -52,13 +64,17 @@
   function resolveInitialState() {
     state.advancedMetrics = resolveAdvancedMetrics();
     state.metric   = resolvePref('metric',  METRICS);
-    state.subject  = resolvePref('subject', SUBJECTS);
+    // A matura subject is checked against the loaded scale.json instead, in
+    // applyDataset: each dataset names its own subjects.
+    state.subject  = resolvePref('subject', EXAM === 'e8' ? SUBJECTS : null);
     state.lang     = resolvePref('lang',    ['pl', 'en']);
+    state.population = resolvePopulation();
     // Not on `state`: scoreExtent/scaleFor live in app.js and cannot see it, and
     // ranking.js colours from the same binding. app.js is plain global scope, so
     // assigning it from here works. resolvePref rejects anything outside the
-    // list, so a stale or hand-edited value falls back to DEFAULTS.baseline.
-    baselineLevel = resolvePref('baseline', REFERENCE_LEVEL_KEYS);
+    // list, so a stale or hand-edited value — or a level the exam does not have —
+    // falls back to DEFAULTS.baseline.
+    baselineLevel = resolvePref('baseline', EXAM_CONFIG.referenceLevels);
 
     const url = getURLParams();
     const pub = url.get('public');
@@ -93,7 +109,17 @@
       school:     state.selectedSchool,
       lang:       state.lang !== DEFAULTS.lang ? state.lang : null,
       gradient:   state.gradient ? null : '0',   // param only when off (on is the default)
+      // Listed, or setURLParams would strip them on the first sync (spec §7.2).
+      ...linkParams(state.population),
     });
+    syncStaticLinks();
+  }
+
+  // The help links and the active tab carry the same exam and population as the
+  // URL. Called from wireControls, so they are right as soon as the controls are
+  // live, and from syncURL, which every population change and rollback reaches.
+  function syncStaticLinks() {
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active', state.population);
   }
 
   // ---------------------------------------------------------------------------
@@ -144,11 +170,23 @@
     marker.on('popupopen', () => {
       state.selectedSchool = school.rspo;
       state.popupTablesOpen = false;   // each newly opened school starts collapsed
+      // The selection has moved on from any other forced school, such as one a
+      // rebuild in another powiat parked, or one whose popup a cluster swallowed.
+      // Its forcing ends here (spec §7.4) and the filters apply to it again.
+      if (forcedSchool != null && forcedSchool !== school.rspo) {
+        const previous = markersByRspo.get(forcedSchool);
+        forcedSchool = null;
+        if (previous) hideDismissedSchool(previous);
+      }
       syncURL();
     });
     marker.on('popupclose', () => {
       if (state.selectedSchool === school.rspo) {
         state.selectedSchool = null;
+        if (forcedSchool === school.rspo) {
+          forcedSchool = null;
+          setTimeout(() => hideDismissedSchool(marker));
+        }
         syncURL();
       }
     });
@@ -255,9 +293,11 @@
     //
     // The key holds everything this function reads to build a marker: the shard
     // is per-metric (so a metric change must rebuild — that is what makes
-    // onMetricChange's renderLevel() work at this zoom), and baselineLevel
-    // picks which block of that shard is read.
-    const key = `${powiat}|${state.metric}|${baselineLevel}`;
+    // onMetricChange's renderLevel() work at this zoom), baselineLevel picks
+    // which block of that shard is read, and the matura population picks which
+    // dataset the shard and the index come from — so a late build for the
+    // population just left can never stand.
+    const key = `${powiat}|${state.metric}|${baselineLevel}|${population}`;
     // Two halves, and the second is not redundant. One gesture fires BOTH
     // zoomend and moveend, so renderLevel runs several times over, and every one
     // of those runs reaches here before any of them has finished — so the
@@ -276,8 +316,9 @@
     // own openPendingSchool, which is the path a ?school= deep link already
     // takes, cluster guard included.
     //
-    // This covers a metric change and a reference-level change, the two inputs
-    // in the key above. A subject change is not in the key and so does not
+    // This covers a metric change and a reference-level change, two of the
+    // inputs in the key above (a population switch clears the selection
+    // itself). A subject change is not in the key and so does not
     // rebuild: its popup survives, and onSubjectChange's reopenSelectedPopup
     // refreshes it in place instead.
     if (state.selectedSchool != null) pendingSchool = state.selectedSchool;
@@ -297,13 +338,16 @@
   async function buildSchools(powiat, key) {
     const [shard, index] = await Promise.all([
       loadShard(powiat, state.metric),
-      loadIndex(),
+      // Built from `population` here, before the await: indexData may name
+      // another population by the time this resolves.
+      loadIndex(datasetPath(population, 'schools-index.json')),
       // Not used directly — it primes NAME_CACHE['gmina'], which is what lets
       // nameOf() resolve a gmina's display name. This is the only place that
       // file is fetched, and two callers depend on it having been: the
       // breadcrumb's last segment at school zoom, and the "gm. …" line in the
       // find-a-school typeahead. Cached, so it costs one fetch a session.
-      loadRegions('gmina'),
+      // Matura has no gmina rung and no such file (HAS_GMINA).
+      ...(HAS_GMINA ? [loadRegions('gmina')] : []),
     ]);
     // The shard is the app's largest fetch (median 0.14 MB, up to 4.3 MB), so
     // zooming back out before it lands is an ordinary gesture, not a race worth
@@ -348,6 +392,11 @@
         ulica_nr: col.ulica_nr[i],
         is_public: col.is_public[i],
         n_years: col.n_years[i],
+        // Matura-only index fields (spec §6.2); undefined under E8.
+        subject_years: col.subject_years?.[i],
+        type: col.type?.[i],
+        pass_rate: col.pass_rate?.[i],
+        subject_takers: col.subject_takers?.[i],
         lat: col.lat[i],
         lon: col.lon[i],
         scores,
@@ -386,21 +435,26 @@
   // Choropleth: one administrative level per zoom
   //
   // Mirrors src/school_quality/zoom.py — the two are checked against each other
-  // in the task's verification step, so keep them in step.
+  // in the task's verification step, so keep them in step. Matura uses the same
+  // thresholds without the gmina rung; that filter lives here, in JS only.
 
   const ZOOM_THRESHOLDS = [[12, 'gmina'], [10, 'powiat'], [8, 'voivodeship'], [0, 'country']];
-  const CHILD_OF = { country: 'voivodeship', voivodeship: 'powiat', powiat: 'gmina', gmina: null };
+  // This exam's rungs, finest first: the country plus its region levels.
+  const LADDER = ZOOM_THRESHOLDS.filter(([, l]) => l === 'country' || EXAM_CONFIG.regionLevels.includes(l));
+  // Each rung's child is the next finer rung; the finest has none, which is the
+  // rung where school markers are drawn instead of polygons.
+  const CHILD_OF = Object.fromEntries(LADDER.map(([, l], i) => [l, i === 0 ? null : LADDER[i - 1][1]]));
 
   function levelForZoom(zoom) {
-    for (const [min, level] of ZOOM_THRESHOLDS) if (zoom >= min) return level;
+    for (const [min, level] of LADDER) if (zoom >= min) return level;
     return 'country';
   }
 
   // The lowest zoom at which levelForZoom() returns `level` — i.e. the rung at
-  // which that level's own children are drawn. Read back out of ZOOM_THRESHOLDS
-  // rather than hardcoded, so retuning the ladder cannot leave this behind.
+  // which that level's own children are drawn. Read back out of LADDER rather
+  // than hardcoded, so retuning the ladder cannot leave this behind.
   function minZoomForLevel(level) {
-    const row = ZOOM_THRESHOLDS.find(([, l]) => l === level);
+    const row = LADDER.find(([, l]) => l === level);
     return row ? row[0] : 0;
   }
 
@@ -496,25 +550,6 @@
     return best;
   }
 
-  // How many regions share each parent, per level. The suppression gate has two
-  // arms (scripts/validate_export.py check_reference_gate): a region whose parent
-  // holds fewer than MIN_REFERENCE_N schools, and a region that is its parent's
-  // ONLY CHILD — compared against itself. They are different facts about a
-  // region and the tooltip must not conflate them; on today's data every
-  // suppressed cell is the second kind, so a single "too small" message is
-  // wrong for all of them. Derived from regions.parent, which ships in the file.
-  const siblingCache = new Map();   // level -> Map(parent teryt -> child count)
-
-  function siblingCountsFor(regions) {
-    const level = regions.metadata.level;
-    if (!siblingCache.has(level)) {
-      const counts = new Map();
-      for (const parent of regions.regions.parent) counts.set(parent, (counts.get(parent) || 0) + 1);
-      siblingCache.set(level, counts);
-    }
-    return siblingCache.get(level);
-  }
-
   function regionTooltip(regions, i, feature) {
     if (i == null) return escapeHTML(feature.properties.JPT_NAZWA_ || '');
     const r = regions.regions;
@@ -525,13 +560,14 @@
       // Say WHICH reason: no schools at all, nothing to compare against, or no
       // usable comparison group. A single grey with no explanation is what makes
       // a choropleth feel broken — and a wrong explanation is worse than none.
-      const onlyChild = siblingCountsFor(regions).get(r.parent[i]) <= 1;
-      lines.push(t(r.n_schools[i] === 0 ? 'regionNoSchools'
-        : onlyChild ? 'regionOnlyChild' : 'regionTooSmall'));
+      lines.push(t(regionNullReason(regions, i, state.subject)));
     } else {
       const n = r.n_ranked[state.metric][state.subject];
       lines.push(`${score.toFixed(2)}${rank == null ? '' : ` (${rank}/${n})`}`);
-      lines.push(t('schoolsInRegion', r.n_schools[i]));
+      // Matura files count, per subject, the schools with a result in it.
+      lines.push(r.n_scored
+        ? t('schoolsWithResults', r.n_scored[state.subject][i], r.n_schools[i])
+        : t('schoolsInRegion', r.n_schools[i]));
     }
     return lines.join('<br>');
   }
@@ -562,7 +598,7 @@
   // ranking.html carries no baseline control.
   function fillBaselineSelect() {
     baselineSelect.innerHTML = '';
-    for (const key of REFERENCE_LEVEL_KEYS) {
+    for (const key of EXAM_CONFIG.referenceLevels) {
       const opt = document.createElement('option');
       opt.value = key;
       opt.textContent = t('level' + key[0].toUpperCase() + key.slice(1));
@@ -639,9 +675,13 @@
   }
 
   async function renderLevel() {
+    // A population switch while this render awaits makes everything it would
+    // paint the previous population's; setPopulation renders again itself.
+    const renderPopulation = population;
     const level = levelForZoom(map.getZoom());
     const childLevel = CHILD_OF[level];
     const focused = await focusFor(level);
+    if (population !== renderPopulation) return;
     renderBreadcrumb(level, focused);   // immediately, from whatever names are cached
     // Not awaited: the crumb must not hold up the map, and a missing name
     // already degrades to the raw TERYT rather than blanking.
@@ -651,6 +691,7 @@
     if (childLevel === null) { await renderSchools(focused.slice(0, 4)); return; }
 
     const geo = await loadGeometryFor(level, focused);
+    if (population !== renderPopulation) return;
     if (childLevel === 'gmina' && geo.features.length === 1) {
       // 66 powiats hold exactly one gmina, where drilling in would draw a single
       // polygon identical to the outline just left. Skip that rung. `focused` is
@@ -664,6 +705,7 @@
     }
 
     const regions = await loadRegions(childLevel);
+    if (population !== renderPopulation) return;
     const idx = new Map(regions.regions.teryt.map((key, i) => [key, i]));
     const width = KEY_WIDTH[childLevel];
     const { sigma, sigma_centre } = regions.metadata;
@@ -688,7 +730,7 @@
     // Zoomed back out to regions: whatever school was being navigated to is no
     // longer what the user is looking at, and leaving it armed would pop a
     // popup open the next time any powiat renders.
-    pendingSchool = null;
+    dropPendingSchool();
     regionLayer = L.geoJSON(geo, {
       // colourFor with gradient=false and zero anchors is deliberate: regions
       // use the three flat classes. The continuous ramp stays a school-level
@@ -717,16 +759,29 @@
   // ---------------------------------------------------------------------------
   // Filters: figure out which schools pass, push to cluster
 
-  function schoolPassesFilters(school) {
-    if (school.lat == null || school.lon == null) return false;
-    if (state.publicFilter === 'tak' && !isPublic(school)) return false;
-    if (state.publicFilter === 'nie' &&  isPublic(school)) return false;
-    if (school.n_years < state.minYears) return false;
+  // Every filter that excludes `school`, as [I18N key, ...args], in the order
+  // the popup's note names them. Empty when the school passes.
+  function filterFailures(school) {
+    const failures = [];
+    if ((state.publicFilter === 'tak' && !isPublic(school))
+        || (state.publicFilter === 'nie' && isPublic(school))) failures.push(['hiddenByPublic']);
+    const years = subjectYears(school, state.subject);
+    // No result at all ends the list: the minimum-years and threshold checks
+    // would only restate it, and "fewer than 1 year" would name a filter the
+    // reader never touched.
+    if (years === 0) { failures.push(['hiddenNoResult']); return failures; }
+    if (years < state.minYears) failures.push(['hiddenByMinYears', state.minYears]);
     if (state.threshold != null) {
       const sc = scoreOf(school, state.metric, state.subject);
-      if (sc == null || sc < state.threshold) return false;
+      if (sc == null) failures.push(['hiddenWithheld']);
+      else if (sc < state.threshold) failures.push(['hiddenByThreshold']);
     }
-    return true;
+    return failures;
+  }
+
+  function schoolPassesFilters(school) {
+    if (school.lat == null || school.lon == null) return false;
+    return school.rspo === forcedSchool || filterFailures(school).length === 0;
   }
 
   function refreshFilters() {
@@ -737,8 +792,11 @@
     // call this before renderLevel, so by the time the rebuild's own capture
     // runs there is nothing left for it to find.
     const keep = state.selectedSchool;
+    // The same close clears forcedSchool, which the filter loop below needs.
+    const keepForced = forcedSchool;
 
     clusterGroup.clearLayers();
+    forcedSchool = keepForced;
     const visible = [];
     for (const s of loadedSchools) {
       const marker = markersByRspo.get(s.rspo);
@@ -751,18 +809,62 @@
     // Reopen on the marker that survived the clear. Where the school is not in
     // the cluster — a rebuild is about to replace these markers, or the current
     // filters exclude it — hand it to pendingSchool instead, which openPendingSchool
-    // picks up after the next build. Nothing is forced open: a school the filters
-    // exclude stays closed, same as the deep-link path.
+    // picks up after the next build. A school opened by search or link is forced
+    // (forcedSchool): it passes the filters for as long as it stays selected, so
+    // it is in the cluster. One opened from its marker never is, and a filter that
+    // excludes it keeps it closed.
     if (keep == null || state.selectedSchool != null) return;
     const marker = markersByRspo.get(keep);
-    if (marker && clusterGroup.hasLayer(marker)) marker.openPopup();
-    else pendingSchool = keep;
+    if (!marker || !clusterGroup.hasLayer(marker)) { pendingSchool = keep; return; }
+    marker.openPopup();
+    // Leaflet ignores openPopup on a marker inside a cluster, where a filter
+    // change can put it at zoom 13 and below. Then the selection ended with the
+    // clear above, and a forced school's forcing ends with it (spec §7.4).
+    if (state.selectedSchool == null && forcedSchool === keep) {
+      forcedSchool = null;
+      hideDismissedSchool(marker);
+    }
   }
 
+  // A forced school is forced only while it is selected (spec §7.4). Once the
+  // user closes its popup (the × button, a map click, Escape, another marker's
+  // popup), the filters apply to it again: take it off the map and out of the
+  // count. Deferred and conditional, because the same popupclose fires inside
+  // refreshFilters and every rebuild, which by the time this runs have restored
+  // forcedSchool or replaced the marker.
+  function hideDismissedSchool(marker) {
+    const s = marker._school;
+    if (s.rspo === forcedSchool) return;
+    // Closed and reopened in one go: a click on the school's own marker. The
+    // selection never ended, so neither does the forcing, or its note.
+    if (s.rspo === state.selectedSchool) {
+      forcedSchool = s.rspo;
+      reopenSelectedPopup();
+      return;
+    }
+    if (!clusterGroup.hasLayer(marker) || schoolPassesFilters(s)) return;
+    clusterGroup.removeLayer(marker);
+    updateFilterSummary(clusterGroup.getLayers().length);
+  }
+
+  // Under matura (a scale with subject_groups) the hidden schools are split by
+  // why, as two clauses (D11): no result in the subject at all, or a result
+  // whose difference score is withheld at this reference level. A shown school
+  // — a forced one included — is never counted as hidden.
   function updateFilterSummary(nVisible) {
-    const total = loadedSchools.filter(s => s.lat != null).length;
-    document.getElementById('filter-summary').textContent =
-      t('rowsShown', nVisible, total);
+    const mapped = loadedSchools.filter(s => s.lat != null);
+    let text = t('rowsShown', nVisible, mapped.length);
+    if (scaleData?.metadata.subject_groups) {
+      let noResult = 0, withheld = 0;
+      for (const s of mapped) {
+        if (schoolPassesFilters(s)) continue;
+        if (subjectYears(s, state.subject) === 0) noResult++;
+        else if (scoreOf(s, state.metric, state.subject) == null) withheld++;
+      }
+      if (noResult) text += '; ' + t('summaryNoResult', noResult);
+      if (withheld) text += '; ' + t('summaryWithheld', withheld, baselineLevel);
+    }
+    document.getElementById('filter-summary').textContent = text;
   }
 
   function recolourAll() {
@@ -786,12 +888,19 @@
     const pub = isPublic(school) ? t('popupPublic') : t('popupPrivate');
     const addr = [school.miejscowosc, school.ulica_nr].filter(Boolean).join(', ');
 
+    // "#12 z 2 130" where the dataset publishes the base view's ranked
+    // population (matura's scale.json, D10); E8's plain "#12" otherwise.
+    const rankText = (cell, subj) => {
+      const n = scaleData.metadata.n_ranked?.[baselineLevel]?.[metric]?.[subj]?.base;
+      return cell?.rank != null && n != null ? t('rankOfN', cell.rank, n) : `#${cell?.rank ?? '—'}`;
+    };
+
     const rowsHTML = CORE_SUBJECTS.map(subj => {
       const cell = school.scores[metric]?.[subj];
       return `<tr>
         <th>${t('subject_' + subj)}</th>
         <td class="num">${fmtScore(cell?.score, metric)}</td>
-        <td class="num">#${cell?.rank ?? '—'}</td>
+        <td class="num">${rankText(cell, subj)}</td>
         <td class="num">${cell?.pct != null ? cell.pct.toFixed(1) : '—'}</td>
       </tr>`;
     }).join('');
@@ -800,9 +909,37 @@
     const compositeHTML = `<tr class="composite-row">
       <th>${t('popupComposite')}</th>
       <td class="num">${fmtScore(composite?.score, metric)}</td>
-      <td class="num">#${composite?.rank ?? '—'}</td>
+      <td class="num">${rankText(composite, 'composite_min')}</td>
       <td class="num">${composite?.pct != null ? composite.pct.toFixed(1) : '—'}</td>
     </tr>`;
+
+    // Matura only: each field below is read only where the loaded files carry
+    // it, so an E8 popup has none of them.
+    const typeHTML = school.type
+      ? `<p class="type">${t(school.type === 'technikum' ? 'typeTechnikum' : 'typeLiceum')}</p>` : '';
+
+    // The extended subjects this school has a result in, each with its takers and
+    // its score here or the reason it has none. The year-by-year table and the
+    // sparkline stay on the basic subjects: 15 columns do not fit the popup.
+    const extended = (scaleData.metadata.subject_groups?.extended || [])
+      .filter((s) => school.subject_years?.[s] > 0);
+    const extendedHTML = extended.length ? `
+      <div class="extended">
+        <h4>${t('popupExtended')}</h4>
+        <table><tbody>${extended.map((s) => {
+          const cell = school.scores[metric]?.[s];
+          const values = cell?.score != null
+            ? `<td class="num">${fmtScore(cell.score, metric)}</td><td class="num">${rankText(cell, s)}</td>`
+            : `<td colspan="2" class="muted">${t('popupWithheld')}</td>`;
+          return `<tr><th>${t('subject_' + s)}<span class="takers">${t('popupTakers', school.subject_takers[s])}</span></th>${values}</tr>`;
+        }).join('')}</tbody></table>
+        <p class="caveat">${t('caveatExtended')}</p>
+      </div>` : '';
+
+    const passYears = school.pass_rate ? Object.keys(school.pass_rate).sort() : [];
+    const passHTML = passYears.length
+      ? `<p class="pass-rate">${t('popupPassRate')}: ${passYears.map((y) => `${y} ${fmtPassRate(school.pass_rate[y])}`).join(' · ')}</p>`
+      : '';
 
     const warnings = warningsFor(school);
     const warnHTML = warnings.length
@@ -810,14 +947,26 @@
 
     const histHTML = renderHistorySection(school);
 
+    // Shown only because it was searched for or linked (forcedSchool): say which
+    // filters would hide it, so the map does not appear to ignore them.
+    const failures = school.rspo === forcedSchool ? filterFailures(school) : [];
+    const forcedHTML = failures.length
+      ? `<p class="forced-note">${t('forcedHidden', failures.map(([k, ...a]) => t(k, ...a)).join(', '))}</p>` : '';
+
+    // The subject's own years (matura spec §6.2): the same figure as the
+    // short-history warning, the minimum-years filter and the ranking's Lata.
     return `
       <div class="popup-school">
+        ${forcedHTML}
         <h3>${escapeHTML(school.name)}</h3>
-        <p class="addr">${escapeHTML(addr)} · ${pub} · ${school.n_years} ${t('popupYears')}</p>
+        ${typeHTML}
+        <p class="addr">${escapeHTML(addr)} · ${pub} · ${t('popupYears', subjectYears(school, state.subject))}</p>
         <table>
           <thead><tr><th></th><th>${t('popupScore')}</th><th>${t('popupRank')}</th><th>${t('popupPct')}${helpIconHTML('helpPct')}</th></tr></thead>
           <tbody>${rowsHTML}${compositeHTML}</tbody>
         </table>
+        ${extendedHTML}
+        ${passHTML}
         ${warnHTML}
         ${histHTML}
       </div>`;
@@ -834,7 +983,7 @@
 
   function warningsFor(school) {
     const out = [];
-    if (school.n_years < 3) out.push(t('warnShortHistory'));
+    if (subjectYears(school, state.subject) < 3) out.push(t('warnShortHistory'));
     // LOO-range warning (§7) needs a metric file. Compute lazily once loaded.
     const histPerMetric = historyData?.[state.metric]?.schools?.[String(school.rspo)];
     if (histPerMetric && school.n_years >= 3) {
@@ -985,10 +1134,61 @@
     state.subject = newSubject;
     writePref('subject', newSubject);
     syncURL();
+    syncExtendedCaveat();
     recolourAll();
     refreshFilters();
+    // A school still waiting for its powiat was asked for under the old subject.
+    // A forced one passed the filters above, so its popup survives the switch.
+    dropPendingSchool();
     renderLevel();   // repaint the choropleth for the new subject; see onMetricChange
     if (state.selectedSchool != null) reopenSelectedPopup();
+  }
+
+  // The only code that changes the comparison population (spec §7.3): the
+  // Porównanie select calls it. Resolves true once `p` is the loaded dataset and
+  // the map has re-rendered; false when a later call superseded this one, or
+  // the switch failed and the map stayed on the population it had.
+  async function setPopulation(p) {
+    const select = document.getElementById('population-select');
+    select.value = p;
+    state.population = p;
+    syncURL();
+    writePref('population', p);
+    let ok;
+    try {
+      ok = await activateDataset(p);
+    } catch (e) {
+      // D17: back to the population still loaded — unless a later switch has
+      // already asked for another, which then owns the select and the URL.
+      if (state.population === p) {
+        state.population = population;
+        select.value = population;
+        syncURL();
+        writePref('population', population);
+      }
+      reportRenderFailure(e);
+      return false;
+    }
+    if (!ok) return false;
+    state.selectedSchool = null;
+    pendingSchool = null;
+    // Here, not in popupclose: selectedSchool is already null when the close
+    // below fires, so that guard cannot see it.
+    forcedSchool = null;
+    map.closePopup();
+    // Empty the map now: left up, the previous population's markers would sit
+    // there recoloured on the new scale until the rebuild lands.
+    clusterGroup.clearLayers();
+    markersByRspo.clear();
+    loadedSchools = [];
+    renderedSchoolsKey = renderingSchoolsKey = null;
+    state.threshold = null;   // syncThresholdSlider resets it to the new range's minimum
+    applyDataset();
+    syncURL();
+    recolourAll();
+    refreshFilters();
+    await renderLevel();
+    return true;
   }
 
   function reopenSelectedPopup() {
@@ -1048,40 +1248,70 @@
 
   // Precompute once after load: the haystack matches on name + town (decision §1).
   //
-  // Built from schools-index.json, which knows all 12,889 schools in the
-  // country. It used to be built from loadedSchools — one powiat's worth, and
-  // empty at page open — so the box could only find a school already on screen,
-  // which is the one case the reader does not need it for.
-  function buildSchoolSearchIndex() {
-    const c = indexData.schools;
-    indexPos = new Map();
-    schoolSearchIndex = c.rspo.map((rspo, i) => {
-      indexPos.set(rspo, i);
-      return {
-        rspo,
-        name:  c.name[i],
-        town:  c.miejscowosc[i] || '',
-        // The index carries a TERYT, not a gmina name. Resolved at render time
-        // (15 rows at most) rather than here, so page open does not have to pull
-        // the 0.77 MB regions-gmina.json just to label a dropdown.
-        gminaKey: c.teryt[i].slice(0, 6),
-        onMap: c.on_map[i],
-        hay:   normalizeText(c.name[i] + ' ' + (c.miejscowosc[i] || '')),
-      };
-    });
+  // Built from schools-index.json — every school the exam has, not just the
+  // ones loaded: under matura the licea and technika indexes together, so a
+  // search finds a school of either type whichever population is shown. It
+  // used to be built from loadedSchools — one powiat's worth, and empty at page
+  // open — so the box could only find a school already on screen, which is the
+  // one case the reader does not need it for. Built once, never on a switch.
+  function buildSchoolSearchIndex(indexes) {
+    unionPos = new Map();
+    schoolSearchIndex = [];
+    for (const index of indexes) {
+      const c = index.schools;
+      c.rspo.forEach((rspo, i) => {
+        const entry = {
+          rspo,
+          name:  c.name[i],
+          town:  c.miejscowosc[i] || '',
+          // The index carries a TERYT, not a gmina name. Resolved at render time
+          // (15 rows at most) rather than here, so page open does not have to pull
+          // the 0.77 MB regions-gmina.json just to label a dropdown.
+          gminaKey: c.teryt[i].slice(0, 6),
+          onMap: c.on_map[i],
+          lat:   c.lat[i],
+          lon:   c.lon[i],
+          type:  c.type?.[i] ?? null,
+          powiat: c.powiat[i],
+          hay:   normalizeText(c.name[i] + ' ' + (c.miejscowosc[i] || '')),
+        };
+        unionPos.set(rspo, entry);
+        schoolSearchIndex.push(entry);
+      });
+    }
+  }
+
+  function inActiveIndex(rspo) {
+    return indexData.schools.rspo.includes(rspo);
+  }
+
+  // The population a link to `entry` must carry: the one shown, unless the
+  // school is not in it (another type, or a liceum missing from all/).
+  function populationFor(entry) {
+    return EXAM_CONFIG.populations && !inActiveIndex(entry.rspo) ? entry.type : state.population;
   }
 
   // Past disableClusteringAtZoom (14), so the marker stands on its own and its
   // popup can open without a cluster having to spiderfy first.
   const SCHOOL_ZOOM = 14;
 
+  // Forget a school waiting for its powiat. A forced school goes with it unless
+  // it is still the selection: forced lasts as long as the selection (spec
+  // §7.4), and a school parked here because a rebuild elsewhere closed its popup
+  // is no longer selected — left forced, it would pass every filter for the rest
+  // of the session the next time its powiat is drawn.
+  function dropPendingSchool() {
+    pendingSchool = null;
+    if (forcedSchool !== state.selectedSchool) forcedSchool = null;
+  }
+
   function openPendingSchool() {
     if (pendingSchool == null) return;
     const marker = markersByRspo.get(pendingSchool);
     if (!marker) return;                 // its powiat has not rendered yet
     pendingSchool = null;
-    // Not in the cluster = hidden by the current filters. Panning there is the
-    // honest outcome; opening a popup for a school the filters exclude is not.
+    // Not in the cluster = hidden by the current filters. That cannot be the
+    // school a search or link asked for: it is forced, so it passes them.
     if (clusterGroup.hasLayer(marker)) marker.openPopup();
   }
 
@@ -1091,25 +1321,34 @@
   // school's own coordinates decide the viewport; renderLevel then resolves that
   // viewport to the school's gmina and renderSchools builds its powiat's
   // markers, at which point openPendingSchool fires.
-  function focusSchool(rspo) {
-    const i = indexPos.get(rspo);
-    if (i == null) return;
-    const c = indexData.schools;
-    if (!c.on_map[i]) return;   // no coordinates; callers route those to the ranking
-    state.selectedSchool = rspo;
+  //
+  // Under matura a school of another population (the other type, or one of the
+  // 44 licea missing from all/) switches the population first, and goes on only
+  // if that switch was not superseded — the switch clears the selection, so it
+  // must come before anything below.
+  async function focusSchool(rspo) {
+    const entry = unionPos.get(rspo);
+    if (!entry || !entry.onMap) return;   // no coordinates; callers route those to the ranking
+    if (EXAM_CONFIG.populations && !inActiveIndex(rspo)) {
+      if (!(await setPopulation(entry.type))) return;
+    }
+    state.selectedSchool = forcedSchool = pendingSchool = rspo;
     syncURL();
-    pendingSchool = rspo;
-    map.setView([c.lat[i], c.lon[i]], SCHOOL_ZOOM);
+    map.setView([entry.lat, entry.lon], SCHOOL_ZOOM);
+    // A school the filters hide, in a powiat already drawn, joins the cluster
+    // here, before openPendingSchool checks for it there.
+    refreshFilters();
     openPendingSchool();        // same powiat already drawn? then open it now
   }
 
   // Off-map school (no coordinates): hand off to the ranking, which selects and
   // scrolls to it. Carry metric/subject/lang so the ranking opens in the same view.
-  function goToSchoolInRanking(rspo) {
+  function goToSchoolInRanking(rspo, requestedPopulation) {
     const usp = new URLSearchParams();
     if (state.metric  !== DEFAULTS.metric)  usp.set('metric',  state.metric);
     if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
     if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
+    setLinkParams(usp, requestedPopulation);
     usp.set('school', rspo);
     window.location.href = 'ranking.html?' + usp.toString();
   }
@@ -1153,8 +1392,8 @@
       if (!r) return;
       input.value = r.name;
       close();
-      if (r.onMap) focusSchool(r.rspo);
-      else goToSchoolInRanking(r.rspo);
+      if (r.onMap) focusSchool(r.rspo).catch(reportRenderFailure);
+      else goToSchoolInRanking(r.rspo, populationFor(r));
     }
 
     function ensureActiveVisible() {
@@ -1231,14 +1470,53 @@
   // ---------------------------------------------------------------------------
   // Wiring UI controls
 
+  // Everything set up from the loaded scale.json (spec §7.3). Binds no listener
+  // — those are wireControls', bound once — so it can run again whenever the
+  // dataset changes.
+  function applyDataset() {
+    // Each matura dataset names its own subjects, so a stored or linked subject
+    // is checked here, once the list is known. E8's list is SUBJECTS, which
+    // resolveInitialState already enforced, so this never fires there.
+    if (!scaleData.metadata.subjects.includes(state.subject)) {
+      state.subject = DEFAULTS.subject;
+      writePref('subject', null);
+    }
+    fillSubjectSelect(document.getElementById('subject-select'), state.subject);
+    syncThresholdSlider();   // keeps a valid URL threshold
+    // Min years slider. Max = number of dataset years, so it scales when a new
+    // exam year lands; also clamp a too-large minYears carried over from an older URL.
+    const myr = document.getElementById('min-years-slider');
+    const maxYears = scaleData.metadata.years_in_data.length;
+    myr.max = maxYears;
+    state.minYears = Math.min(state.minYears, maxYears);
+    myr.value = state.minYears;
+    document.getElementById('min-years-display').textContent = state.minYears;
+    fillDataYears();
+    document.getElementById('population-select').value = population;
+    document.getElementById('caveat-all').hidden = population !== 'all';
+    syncExtendedCaveat();
+  }
+
+  // Caveat 2 (spec §7.6): whenever the selected subject is an extended one.
+  function syncExtendedCaveat() {
+    document.getElementById('caveat-extended').hidden =
+      !scaleData.metadata.subject_groups?.extended?.includes(state.subject);
+  }
+
   function wireControls() {
     const subjectSel = document.getElementById('subject-select');
     const metricSel  = document.getElementById('metric-select');
-    fillSubjectSelect(subjectSel, state.subject);
     fillMetricSelect(metricSel,   state.metric, state.advancedMetrics);
 
     subjectSel.addEventListener('change', e => onSubjectChange(e.target.value));
     metricSel .addEventListener('change', e => onMetricChange(e.target.value));
+
+    if (EXAM_CONFIG.populations) {
+      document.querySelector('.field--population').classList.remove('is-hidden');
+      document.getElementById('population-select').addEventListener('change', (e) => {
+        setPopulation(e.target.value).catch(reportRenderFailure);
+      });
+    }
 
     fillBaselineSelect();
     baselineSelect.addEventListener('change', () => {
@@ -1280,8 +1558,7 @@
       });
     }
 
-    // Threshold slider
-    syncThresholdSlider();
+    // Threshold slider (its range is applyDataset's)
     const slider = document.getElementById('threshold-slider');
     const display = document.getElementById('threshold-display');
     slider.addEventListener('input', () => {
@@ -1293,15 +1570,9 @@
       refreshFilters();
     });
 
-    // Min years slider. Max = number of dataset years, so it scales when a new
-    // exam year lands; also clamp a too-large minYears carried over from an older URL.
+    // Min years slider (its maximum and clamp are applyDataset's)
     const myr = document.getElementById('min-years-slider');
     const myrDisp = document.getElementById('min-years-display');
-    const maxYears = scaleData.metadata.years_in_data.length;
-    myr.max = maxYears;
-    state.minYears = Math.min(state.minYears, maxYears);
-    myr.value = state.minYears;
-    myrDisp.textContent = state.minYears;
     myr.addEventListener('input', () => {
       state.minYears = parseInt(myr.value, 10);
       myrDisp.textContent = state.minYears;
@@ -1341,6 +1612,8 @@
     wireSchoolFind();
     wirePopupToggles();
     wireNavLinks();
+    syncStaticLinks();
+    const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate the dynamic, JS-built content that
     // applyI18N (static [data-i18n] only) can't reach — the metric/subject
@@ -1348,6 +1621,7 @@
     wireLangToggle(() => {
       state.lang = currentLang;
       syncURL();
+      renderExamToggle();
       fillSubjectSelect(subjectSel, state.subject);
       fillMetricSelect(metricSel, state.metric, state.advancedMetrics);
       fillBaselineSelect();
@@ -1362,8 +1636,15 @@
     });
   }
 
+  // The exam and population a link to the ranking carries; nothing under E8.
+  function setLinkParams(usp, requestedPopulation = state.population) {
+    const { exam, population } = linkParams(requestedPopulation);
+    if (exam) usp.set('exam', exam);
+    if (population) usp.set('population', population);
+  }
+
   function wireNavLinks() {
-    // Carry metric/subject/lang to the ranking page nav link.
+    // Carry metric/subject/lang (and the exam and population) to the ranking page nav link.
     const link = document.querySelector('.topnav nav a[href="ranking.html"]');
     if (!link) return;
     const update = () => {
@@ -1371,6 +1652,7 @@
       if (state.metric  !== DEFAULTS.metric)  usp.set('metric',  state.metric);
       if (state.subject !== DEFAULTS.subject) usp.set('subject', state.subject);
       if (state.lang    !== DEFAULTS.lang)    usp.set('lang',    state.lang);
+      setLinkParams(usp);
       const qs = usp.toString();
       link.href = 'ranking.html' + (qs ? '?' + qs : '');
     };
@@ -1386,9 +1668,9 @@
   // the viewport to the school, which is what makes renderLevel fetch its shard.
   // A school with no coordinates simply does not move the map (focusSchool
   // returns) — a deep link should not redirect the page to the ranking.
-  function openInitialPopup() {
+  async function openInitialPopup() {
     if (state.selectedSchool == null) return;
-    focusSchool(state.selectedSchool);
+    await focusSchool(state.selectedSchool);
   }
 
   // Nothing awaits renderLevel, so a failed shard, region file or geometry file
@@ -1409,19 +1691,28 @@
     resolveInitialState();
     setLang(state.lang);
     initMap();
+    let searchIndexes;
     try {
-      await Promise.all([loadIndex(), loadScale()]);
+      await activateDataset(state.population);
+      // Matura's search runs over both types at once (spec §7.4): the same
+      // cache entries the active population may already hold.
+      searchIndexes = EXAM_CONFIG.populations
+        ? await Promise.all(['liceum', 'technikum'].map((p) => loadIndex(datasetPath(p, 'schools-index.json'))))
+        : [indexData];
     } catch (e) {
       console.error(e);
       document.body.innerHTML = '<p style="padding:1rem">Nie udało się wczytać danych: ' + e.message + '</p>';
       return;
     }
     buildClusterGroup();
-    buildSchoolSearchIndex();
-    fillDataYears();
+    buildSchoolSearchIndex(searchIndexes);
+    applyDataset();
     wireControls();
     syncURL();          // canonicalise the URL (e.g. add resolved threshold)
-    openInitialPopup(); // if ?school=… was in the URL
+    // If ?school=… was in the URL. Awaited, because a school of another
+    // population switches it first; caught, so a failed load there still leaves
+    // the listeners below bound and the next pan retries.
+    await openInitialPopup().catch(reportRenderFailure);
 
     map.on('zoomend moveend', () => { renderLevel().catch(reportRenderFailure); });
     // The opening view: the events above only fire on interaction.

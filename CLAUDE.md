@@ -21,7 +21,10 @@ so is the standing rule that went with it ("always use *voivodeship* rather than
 The repository was called `compare-primary-schools-mazowieckie` for that original
 scope and is now **`szkolomierz`** (`github.com/mikus/szkolomierz`). The new name
 deliberately names neither the school stage nor the exam, because the pipeline is
-parameterised over both — a second exam (matura) is a data addition, not a rename.
+parameterised over both. The rename part held: the second exam (matura) needed no
+rename. But it was not only a data addition — it was also a pipeline change (a
+second notebook, `matura.py`, a validator mode) and a frontend change (the
+`EXAMS` layer). See "Matura (second exam)" below.
 Do not reintroduce `mazowieckie`, `primary` or `osmoklasisty` into names that
 outlive one dataset.
 
@@ -64,11 +67,13 @@ Two further rules follow, and both are load-bearing:
 szkolomierz/
 ├── notebooks/
 │   ├── how_to_measure_school_quality.ipynb   # the analysis + export (run end to end)
+│   ├── matura.ipynb                          # the matura analysis + export (see "Matura")
 │   └── …-2021-2025.ipynb, …-old-approach-…   # superseded; kept as historical records
 ├── src/school_quality/                       # pure functions the notebook imports
 │   ├── address.py  aggregate.py  geometry.py # (src/ is on the path, not installed)
 │   ├── levels.py   rspo.py       sources.py
-│   └── suppression.py  teryt.py  zoom.py
+│   ├── suppression.py  teryt.py  zoom.py
+│   └── header.py  matura.py  views.py        # (src/export_io.py: the shared JSON/xlsx writers)
 ├── tests/                                    # pytest over src/ and the script helpers — fast, no I/O
 ├── scripts/
 │   ├── fetch_sources.py                      # download the pinned CIE source files
@@ -81,6 +86,7 @@ szkolomierz/
 │   │   ├── 2022 - E8_2022_szkoly_09.xlsx
 │   │   ├── ...
 │   │   └── SOURCES.csv                       # provenance of each xlsx (see below)
+│   ├── egzamin-maturalny/                    # CIE EM2023 xlsx, one per year, + SOURCES.csv
 │   ├── school_coords.csv                     # coordinate cache (rspo, address, lat, lon)
 │   └── school_coords_unmapped.csv            # manual-triage list, rewritten every run
 ├── output/                                   # OUTPUT for analysts (xlsx)
@@ -750,6 +756,110 @@ UI, and must survive any frontend rewrite:
 - **Never invent coordinates.** If geocoding fails, `lat`/`lon` stay `null` and
   the school is omitted from the map. Never substitute approximate coordinates.
 
+## Matura (second exam)
+
+The design is `specs/2026-10-05-matura-extension-design.md` in the workspace
+wrapper (outside the repo). This section describes what shipped.
+
+### Source and pins
+
+CIE's school results for the **new-formula matura (EM2023)**, one xlsx per year,
+fetched by `scripts/fetch_sources.py --exam matura` into `data/egzamin-maturalny/`
+with its own `SOURCES.csv` (the same provenance rule as E8's). Every year is pinned
+to the **September** edition (`MATURA_EDITION_PINS` in `src/school_quality/sources.py`):
+September corrects July's means, and its pass rate is never lower than July's —
+higher for most schools, consistent with counting the August resit, which is an
+inference not yet confirmed against CIE. The sheet has three header rows,
+parsed by `header.py`; only the exact `(M)` subject names map to keys
+(`matura.py`).
+
+### Population rule (`matura.classify`)
+
+First match wins: an OKE pseudo-row (no `rodzaj placówki`), a `branzowa` school
+and an adult liceum are rejected; a youth or art (`nie dotyczy`) liceum is a
+**liceum**, a youth technikum a **technikum**; any other category **raises**. A
+technikum before 2024 (`TECHNIKUM_FIRST_YEAR`) and a school-year missing any basic
+mean are then rejected. Every reject is written to
+`output/matura/rejected_schools.csv`. The result: 2,374 licea and 1,770 technika,
+disjoint.
+
+### Three comparison populations
+
+`liceum` (licea against licea, from 2023), `technikum` (from 2024) and `all` (both
+types against every secondary school, from 2024 — the first year both sit EM2023).
+`all` is **not** the union of the other two: it lacks the 44 licea whose only year
+is 2023. School identity (name, address, TERYT, type) is built once over every
+row; the export then runs once per population, each a self-contained dataset in
+E8's shape.
+
+### Subjects
+
+Basic `polski`, `matematyka`, `angielski` (bare keys, as in E8) and
+`composite_min` over those three. Extended subjects carry `_r` and are included
+when at least `COVERAGE_MIN_LICEA = 100` licea have a published mean in every
+year: eleven pass. A population drops a subject whose scale entries fall below 2
+base scores — `POPULATION_EXCLUSIONS = {'technikum': frozenset({'historia_sztuki_r'})}` in
+`matura.py`. The notebook asserts both lists against their rules in both
+directions; a breach is for a human to decide, never an automatic change.
+
+### Reference levels and regions
+
+`national` and `voivodeship` only: a powiat reference would withhold the base
+score of 28.8% of licea and 39.6% of technika. Region levels are voivodeship and
+powiat; there is no gmina rung. Region names are E8's spelling
+(`matura.region_display_name`), so a region reads the same in both exams.
+
+### Rules sparse extended subjects force (spec §5.5)
+
+- **a. A reference counts schools with a published mean in the subject** — count,
+  not size — per (population, year, region), with E8's min-over-years rule for
+  multi-year views.
+- **b. Weights follow the subject's takers.** `composite_min` weights a school by
+  the largest of its three basic subjects' median takers.
+- **c. A region's score needs ≥ 5 schools with a score in the subject** in its
+  parent; the percentile gate is E8's.
+- **d. A school percentile is `null` where a view ranks fewer than
+  `MIN_PERCENTILE_N = 8`**, and `scale.json`'s `n_ranked` publishes every view's
+  ranked population, so the UI shows "#r z n" instead.
+- **e. Year counts are per subject:** `subject_years` in the index, read by the
+  frontend only through `subjectYears`.
+
+### Export
+
+`notebooks/matura.ipynb` (run like the E8 notebook, from `notebooks/`) writes
+`docs/data/matura/{liceum,technikum,all}/` — E8's files minus
+`regions-gmina.json` — and `output/matura/{liceum,technikum,all}/schools-{metric}.xlsx`
+(E8's long format plus `school_type`), `output/matura/rejected_schools.csv` and
+`output/matura/rejected_addresses.csv`. The additive fields: index `type`,
+`pass_rate`, `subject_years`, `subject_takers`; scale `levels`, `subject_groups`,
+`n_ranked`; regions `n_scored`, `n_takers`. Both notebooks write through
+`src/export_io.py` (compact JSON, `allow_nan=False`, skip-if-unchanged).
+
+### Validator mode
+
+```bash
+uv run python scripts/validate_export.py --exam matura
+```
+
+Runs checks A–Q over each population's directory with that population's subjects
+and levels, plus: **R** rejects equal `rejected_schools.csv`; **S** one type per
+school, each type's yearly count within ±10%; **T** the index's `type`,
+`pass_rate`, `subject_years` and `subject_takers` equal the source; **U**
+`n_ranked` equals every recounted view; **V** every subject has source data each
+year, the subject lists are the validator's own, every scale entry is complete;
+**W** at least 99% of each population's schools have coordinates; **X** every
+region name equals E8's for the same TERYT. It must exit 0 before a matura data
+change is done.
+
+### Frontend
+
+One app serves both exams: `docs/app.js` holds an `EXAMS` config (data base path,
+populations, reference levels, `regionLevels`, preference prefix, help anchor),
+reads the exam once from `?exam=matura`, scopes the per-exam preferences under a
+`matura_` prefix, and switches datasets only through `activateDataset`. The
+ladder, ranking levels and gmina gate derive from `regionLevels`. Details:
+`MAP_APP_BRIEF.md` §13.
+
 ## Global coding rules (apply everywhere)
 
 - **Exact column names** — never substring-match (`df[f'mean_{s}']`, not
@@ -839,7 +949,12 @@ git status --short docs/data output
 
 It must exit 0, and that `git status` should print nothing — unless changing the
 published numbers was the actual point of the change, in which case the diff is
-the thing to review most carefully.
+the thing to review most carefully. A change to the matura pipeline or data also
+needs the matura mode to exit 0:
+
+```bash
+uv run python scripts/validate_export.py --exam matura
+```
 
 ---
 
