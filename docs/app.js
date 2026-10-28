@@ -956,6 +956,132 @@ const I18N = {
   },
 };
 
+// The genitive plural of the loaded population's school type, for "N z M …",
+// "wśród …" and "Brak …". Read from the `population` global when a string is
+// built, so a population switch rewords every count with no extra wiring.
+const POP_GEN = {
+  pl: { liceum: 'liceów', technikum: 'techników', all: 'szkół średnich' },
+  en: { liceum: 'licea', technikum: 'technika', all: 'secondary schools' },
+};
+
+function popGen(lang) { return POP_GEN[lang][population]; }
+
+// Exam-level overrides of I18N (spec §7.6), looked up by t() before I18N. Only
+// matura has one; under E8 the chain is exactly I18N's. Anything E8 can render
+// lives in I18N itself.
+const I18N_EXAM = {
+  matura: {
+    pl: {
+      appTitle: 'Mapa szkół średnich',
+      rankingTitle: 'Ranking szkół średnich',
+      dataYears: (lo, hi) => `Matura ${lo}–${hi} (formuła 2023)`,
+      subject_polski: 'Polski podstawowy',
+      subject_matematyka: 'Matematyka podstawowa',
+      subject_angielski: 'Angielski podstawowy',
+      subject_composite_min: 'Najsłabszy z 3 podstawowych',
+      popupComposite: 'Najsłabszy z 3 podstawowych',
+      subject_angielski_r: 'Angielski rozszerzony',
+      subject_matematyka_r: 'Matematyka rozszerzona',
+      subject_polski_r: 'Polski rozszerzony',
+      subject_biologia_r: 'Biologia rozszerzona',
+      subject_chemia_r: 'Chemia rozszerzona',
+      subject_fizyka_r: 'Fizyka rozszerzona',
+      subject_geografia_r: 'Geografia rozszerzona',
+      subject_historia_r: 'Historia rozszerzona',
+      subject_informatyka_r: 'Informatyka rozszerzona',
+      subject_historia_sztuki_r: 'Historia sztuki rozszerzona',
+      subject_niemiecki_r: 'Niemiecki rozszerzony',
+      subjectGroupBasic: 'Podstawowe',
+      subjectGroupExtended: 'Rozszerzone',
+      labelPopulation: 'Porównanie',
+      populationLiceum: 'Licea',
+      populationTechnikum: 'Technika',
+      populationAll: 'Wszystkie szkoły średnie',
+      rowsShown: (n, total) => `${n} z ${total} ${popGen('pl')}`,
+      summaryNoResult: (n) => `${n} bez wyniku z wybranego przedmiotu`,
+      summaryWithheld: (n, level) => `${n} z wynikiem wstrzymanym (mniej niż 5 szkół z wynikiem ${level === 'national' ? 'w kraju' : 'w województwie'})`,
+      schoolsWithResults: (scored, total) => `${scored} z ${total} ${popGen('pl')} z wynikiem`,
+      regionNoSchools: () => `Brak ${popGen('pl')}`,
+      regionNoScored: 'Żadna szkoła tutaj nie ma wyników z tego przedmiotu',
+      colNSchools: 'Szkoły z wynikiem',
+      colNStudents: 'Zdający',
+      helpBaseline: 'Wynik szkoły to odległość od średniej grupy odniesienia. Ten wybór decyduje, jaka to grupa: cała Polska albo województwo — zawsze szkoły tego rodzaju, który wybrano w polu „Porównanie”.',
+      helpRankLevel: 'Województwa i powiaty są rankingowane w skali całego kraju — ich pliki obejmują od razu całą Polskę. Szkoły — w obrębie wybranego obszaru: województwa albo powiatu; ich miejsce w kraju pokazuje osobna kolumna. Ogólnopolska lista szkół wymagałaby jednego pliku z wynikami wszystkich szkół przy każdym punkcie odniesienia, czyli kilku megabajtów — a to jest dokładnie ten ciężar, dla którego dane są podzielone na powiaty.',
+      rankingPickRegion: 'Wybierz województwo, aby zobaczyć ranking jego szkół — opcjonalnie zawęź go do powiatu. Szkoły są rankingowane w obrębie wybranego obszaru; pokazanie części listy jako całości byłoby mylące, więc dopóki obszar nie jest wybrany, ranking się nie pojawia.',
+      helpRankNational: (n, ref) => (n == null
+        ? `Miejsce wśród wszystkich ${popGen('pl')} w Polsce, policzone przy punkcie odniesienia „${ref}". W zestawieniu jednego powiatu numery nie idą po kolei — to miejsca w skali kraju, nie w powiecie.`
+        : `Miejsce wśród ${n} jednostek tego poziomu w Polsce, które mają wynik. Jednostki bez wyniku nie zajmują miejsca, więc mianownikiem nie jest liczba wierszy.`),
+      helpPct: () => `Ile procent ${popGen('pl')} ma wynik nie lepszy niż ta szkoła. 50 znaczy, że połowa wypadła gorzej lub tak samo; 100 to najlepszy wynik w zestawieniu. Liczone wśród ${popGen('pl')} obecnych w tym samym widoku.`,
+      rankOfN: (r, n) => `#${r} z ${fmtInt(n)}`,
+      typeLiceum: 'Liceum',
+      typeTechnikum: 'Technikum',
+      popupExtended: 'Rozszerzone',
+      popupTakers: (n) => `${fmtInt(n)} zdających`,
+      popupWithheld: 'wstrzymany przy tym punkcie odniesienia',
+      popupPassRate: 'Zdawalność',
+      colPassRate: (year) => `Zdawalność ${year}`,
+      caveatAll: 'Licea i technika razem: kolor w dużej mierze pokazuje typ szkoły, a nie to, która uczy lepiej. Technika uczą też zawodu, a egzaminu zawodowego te dane nie obejmują.',
+      caveatExtended: 'Przedmiot rozszerzony zdają chętni — w każdej szkole inna część rocznika. Wynik opisuje tych, którzy go wybrali.',
+      findSchoolPlaceholder: 'np. Batory, Kraków, technikum',
+      rankingSearchPlaceholder: 'np. Batory, technikum, Kraków',
+    },
+    en: {
+      appTitle: 'Secondary schools map',
+      rankingTitle: 'Secondary school ranking',
+      dataYears: (lo, hi) => `Matura ${lo}–${hi} (2023 formula)`,
+      subject_polski: 'Polish (basic)',
+      subject_matematyka: 'Maths (basic)',
+      subject_angielski: 'English (basic)',
+      subject_composite_min: 'Weakest of the 3 basic',
+      popupComposite: 'Weakest of the 3 basic',
+      subject_angielski_r: 'English (extended)',
+      subject_matematyka_r: 'Maths (extended)',
+      subject_polski_r: 'Polish (extended)',
+      subject_biologia_r: 'Biology (extended)',
+      subject_chemia_r: 'Chemistry (extended)',
+      subject_fizyka_r: 'Physics (extended)',
+      subject_geografia_r: 'Geography (extended)',
+      subject_historia_r: 'History (extended)',
+      subject_informatyka_r: 'Computer science (extended)',
+      subject_historia_sztuki_r: 'Art history (extended)',
+      subject_niemiecki_r: 'German (extended)',
+      subjectGroupBasic: 'Basic level',
+      subjectGroupExtended: 'Extended level',
+      labelPopulation: 'Compare',
+      populationLiceum: 'Licea',
+      populationTechnikum: 'Technika',
+      populationAll: 'All secondary schools',
+      rowsShown: (n, total) => `${n} of ${total} ${popGen('en')}`,
+      summaryNoResult: (n) => `${n} with no result in the selected subject`,
+      summaryWithheld: (n, level) => `${n} with the score withheld (fewer than 5 schools with results ${level === 'national' ? 'in the country' : 'in the voivodeship'})`,
+      schoolsWithResults: (scored, total) => `${scored} of ${total} ${popGen('en')} with results`,
+      regionNoSchools: () => `No ${popGen('en')}`,
+      regionNoScored: 'No school here has results in this subject',
+      colNSchools: 'Schools with results',
+      colNStudents: 'Takers',
+      helpBaseline: 'A school\'s score is its distance from the mean of a reference group. This choice sets that group: the whole country or the voivodeship — always schools of the kind chosen under "Compare".',
+      helpRankLevel: 'Voivodeships and counties rank across the whole country — their files already cover all of Poland. Schools rank within the area you choose — a voivodeship or county — with their national rank in a column of its own. A national list of schools would need every school\'s scores at every reference point in a single file, several megabytes of it — which is exactly the payload the per-county split exists to avoid.',
+      rankingPickRegion: 'Pick a voivodeship to rank its schools — optionally narrow to a county. Schools are ranked within the selected area; showing part of the list as if it were the whole would mislead, so no ranking appears until an area is chosen.',
+      helpRankNational: (n, ref) => (n == null
+        ? `Rank among all ${popGen('en')} in Poland, computed against the "${ref}" reference point. Within one county the numbers do not run consecutively — they are national positions, not positions within the county.`
+        : `Rank among the ${n} units at this level in Poland that have a score. Units without one hold no position, so the denominator is not the number of rows.`),
+      helpPct: () => `The share of ${popGen('en')} whose result is no better than this school's. 50 means half did worse or the same; 100 is the best result in the set. Computed among the ${popGen('en')} present in the same view.`,
+      rankOfN: (r, n) => `#${r} of ${fmtInt(n)}`,
+      typeLiceum: 'Liceum',
+      typeTechnikum: 'Technikum',
+      popupExtended: 'Extended level',
+      popupTakers: (n) => `${fmtInt(n)} takers`,
+      popupWithheld: 'withheld at this reference point',
+      popupPassRate: 'Pass rate',
+      colPassRate: (year) => `Pass rate ${year}`,
+      caveatAll: 'Licea and technika together: colour largely reflects school type, not which school teaches better. Technika also teach a trade, and this data does not cover the vocational exam.',
+      caveatExtended: 'An extended subject is sat by students who choose it — a different share of the year group in each school. The score describes those who chose it.',
+      findSchoolPlaceholder: 'e.g. Batory, Kraków, technikum',
+      rankingSearchPlaceholder: 'e.g. Batory, technikum, Kraków',
+    },
+  },
+};
+
 let currentLang = 'pl';
 
 // A "?" carrying its explanation in data-help, shown by the CSS tooltip. Use
@@ -979,8 +1105,13 @@ function helpDetailsHTML(captionKey, helpKey) {
     </details>`;
 }
 
+// The exam's override first — current language, then its Polish, so an entry
+// missing in English shows matura's Polish rather than E8's English — then
+// I18N's own chain. Under E8 there is no override.
 function t(key, ...args) {
-  const v = (I18N[currentLang] && I18N[currentLang][key]) || I18N.pl[key] || key;
+  const exam = I18N_EXAM[EXAM];
+  const v = exam?.[currentLang]?.[key] || exam?.pl?.[key]
+    || (I18N[currentLang] && I18N[currentLang][key]) || I18N.pl[key] || key;
   return (typeof v === 'function') ? v(...args) : v;
 }
 
@@ -1090,6 +1221,13 @@ function fmtScore(score, metric) {
   if (metric === 'mean' || metric === 'median') return score.toFixed(1);
   if (metric === 'diff_mean') return (score >= 0 ? '+' : '') + score.toFixed(1);
   return (score >= 0 ? '+' : '') + score.toFixed(3);
+}
+
+// A count, grouped in threes: '2 130' (no-break space) in Polish, '2,130' in
+// English. toLocaleString('pl-PL') is not enough — Polish convention leaves a
+// four-digit number ungrouped, so 2130 and 12 130 would read differently.
+function fmtInt(n) {
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, currentLang === 'pl' ? ' ' : ',');
 }
 
 // Same as fmtScore but renders the decimals in a muted/smaller span so the
