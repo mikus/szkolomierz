@@ -14,9 +14,9 @@
   }
   setLang(resolvePref('lang', ['pl', 'en']));
   showBlocks();
-  // The nav carries the exam, so the map and ranking links return to the exam
-  // this page was opened from.
-  rewriteExamLinks('.topnav nav a');
+  // The nav carries the exam and the population, so the map and ranking links
+  // return to the view this page was opened from.
+  rewriteExamLinks('.topnav nav a', resolvePopulation());
   const renderExamToggle = wireExamToggle();
   wireLangToggle(() => { showBlocks(); renderExamToggle(); });
 

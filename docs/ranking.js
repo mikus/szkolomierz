@@ -202,6 +202,15 @@
       // Listed, or setURLParams would strip them on the first sync (spec §7.2).
       ...linkParams(state.population),
     });
+    syncStaticLinks();
+  }
+
+  // The help links and the active tab carry the same exam and population as the
+  // URL. Called from wireControls, so they are right as soon as the controls are
+  // live (main's first syncURL waits for the region lists), and from syncURL,
+  // which every population change and rollback reaches.
+  function syncStaticLinks() {
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active', state.population);
   }
 
   // ---------------------------------------------------------------------------
@@ -1333,7 +1342,7 @@
     });
 
     wireNavLinks();
-    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active');
+    syncStaticLinks();
     const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate JS-built content (metric/subject selects

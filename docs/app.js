@@ -1226,23 +1226,32 @@ function linkParams(requestedPopulation) {
   return { exam: EXAM, population: requestedPopulation === fallback ? null : requestedPopulation };
 }
 
-// `href` with exam=matura in its query, before any #anchor. Unchanged under E8.
-function examHref(href) {
+// `href` with the exam and, unless it is the default, the requested population
+// (linkParams) in its query, before any #anchor. Unchanged under E8.
+function examHref(href, requestedPopulation) {
   if (EXAM === 'e8') return href;
   const hashAt = href.indexOf('#');
   const base = hashAt < 0 ? href : href.slice(0, hashAt);
   const hash = hashAt < 0 ? '' : href.slice(hashAt);
-  return base + (base.includes('?') ? '&' : '?') + 'exam=' + EXAM + hash;
+  const { exam, population } = linkParams(requestedPopulation);
+  const query = 'exam=' + exam + (population ? '&population=' + population : '');
+  return base + (base.includes('?') ? '&' : '?') + query + hash;
 }
 
-// Make static links keep the exam: the help links and the active tab, which no
-// wireNavLinks touches (under matura, clicking it would otherwise reload E8).
-// The nav's help entry also gets the exam's help anchor (D5). Run once.
-function rewriteExamLinks(selector) {
+// Each static link's href as the page shipped it, so every rewrite starts there.
+const SHIPPED_HREFS = new WeakMap();
+
+// Make static links keep the exam and the population: the help links and the
+// active tab, which no wireNavLinks touches (under matura, clicking it would
+// otherwise reload E8, or drop a population that came in by link and was never
+// stored as a preference). The nav's help entry also gets the exam's help anchor
+// (D5). Re-run whenever the population may have changed.
+function rewriteExamLinks(selector, requestedPopulation) {
   for (const a of document.querySelectorAll(selector)) {
-    let href = a.getAttribute('href');
+    if (!SHIPPED_HREFS.has(a)) SHIPPED_HREFS.set(a, a.getAttribute('href'));
+    let href = SHIPPED_HREFS.get(a);
     if (href === 'help.html' && a.closest('.topnav nav')) href += EXAM_CONFIG.helpAnchors;
-    a.setAttribute('href', examHref(href));
+    a.setAttribute('href', examHref(href, requestedPopulation));
   }
 }
 

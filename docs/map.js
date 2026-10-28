@@ -112,6 +112,14 @@
       // Listed, or setURLParams would strip them on the first sync (spec §7.2).
       ...linkParams(state.population),
     });
+    syncStaticLinks();
+  }
+
+  // The help links and the active tab carry the same exam and population as the
+  // URL. Called from wireControls, so they are right as soon as the controls are
+  // live, and from syncURL, which every population change and rollback reaches.
+  function syncStaticLinks() {
+    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active', state.population);
   }
 
   // ---------------------------------------------------------------------------
@@ -162,12 +170,23 @@
     marker.on('popupopen', () => {
       state.selectedSchool = school.rspo;
       state.popupTablesOpen = false;   // each newly opened school starts collapsed
+      // The selection has moved on from any other forced school, such as one a
+      // rebuild in another powiat parked, or one whose popup a cluster swallowed.
+      // Its forcing ends here (spec §7.4) and the filters apply to it again.
+      if (forcedSchool != null && forcedSchool !== school.rspo) {
+        const previous = markersByRspo.get(forcedSchool);
+        forcedSchool = null;
+        if (previous) hideDismissedSchool(previous);
+      }
       syncURL();
     });
     marker.on('popupclose', () => {
       if (state.selectedSchool === school.rspo) {
         state.selectedSchool = null;
-        if (forcedSchool === school.rspo) forcedSchool = null;
+        if (forcedSchool === school.rspo) {
+          forcedSchool = null;
+          setTimeout(() => hideDismissedSchool(marker));
+        }
         syncURL();
       }
     });
@@ -796,8 +815,36 @@
     // excludes it keeps it closed.
     if (keep == null || state.selectedSchool != null) return;
     const marker = markersByRspo.get(keep);
-    if (marker && clusterGroup.hasLayer(marker)) marker.openPopup();
-    else pendingSchool = keep;
+    if (!marker || !clusterGroup.hasLayer(marker)) { pendingSchool = keep; return; }
+    marker.openPopup();
+    // Leaflet ignores openPopup on a marker inside a cluster, where a filter
+    // change can put it at zoom 13 and below. Then the selection ended with the
+    // clear above, and a forced school's forcing ends with it (spec §7.4).
+    if (state.selectedSchool == null && forcedSchool === keep) {
+      forcedSchool = null;
+      hideDismissedSchool(marker);
+    }
+  }
+
+  // A forced school is forced only while it is selected (spec §7.4). Once the
+  // user closes its popup (the × button, a map click, Escape, another marker's
+  // popup), the filters apply to it again: take it off the map and out of the
+  // count. Deferred and conditional, because the same popupclose fires inside
+  // refreshFilters and every rebuild, which by the time this runs have restored
+  // forcedSchool or replaced the marker.
+  function hideDismissedSchool(marker) {
+    const s = marker._school;
+    if (s.rspo === forcedSchool) return;
+    // Closed and reopened in one go: a click on the school's own marker. The
+    // selection never ended, so neither does the forcing, or its note.
+    if (s.rspo === state.selectedSchool) {
+      forcedSchool = s.rspo;
+      reopenSelectedPopup();
+      return;
+    }
+    if (!clusterGroup.hasLayer(marker) || schoolPassesFilters(s)) return;
+    clusterGroup.removeLayer(marker);
+    updateFilterSummary(clusterGroup.getLayers().length);
   }
 
   // Under matura (a scale with subject_groups) the hidden schools are split by
@@ -1565,7 +1612,7 @@
     wireSchoolFind();
     wirePopupToggles();
     wireNavLinks();
-    rewriteExamLinks('a[href^="help.html"], .topnav nav a.active');
+    syncStaticLinks();
     const renderExamToggle = wireExamToggle();
 
     // Language toggle: re-translate the dynamic, JS-built content that
