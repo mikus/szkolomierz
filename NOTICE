@@ -61,6 +61,10 @@ Approximately 658 MB of the tree is data, against roughly 16 MB of code:
                                  (Centrum Informatyczne Edukacji), committed
                                  verbatim and unmodified, so that every
                                  published number can be traced to its source
+    data/egzamin-maturalny/      a second dataset from the same publisher:
+                                 CIE's school results for the matura (EM2023,
+                                 the 2023-formula exam), from
+                                 mapa.wyniki.edu.pl, committed the same way
     docs/geo/                    PRG administrative boundary polygons,
                                  produced by GUGiK, obtained through CIE's
                                  asset bundle at mapa.wyniki.edu.pl
@@ -97,6 +101,11 @@ and free of charge.
     The files are committed byte-identical to what was downloaded, and
     data/egzamin-osmoklasisty/SOURCES.csv records the exact URL and retrieval
     date of each one. They would be removed on request from the publisher.
+
+    All of the above applies equally to the matura results (EM2023) in
+    data/egzamin-maturalny/: the same publisher, the same channel and the same
+    open questions. Its own SOURCES.csv records each file's URL and retrieval
+    date.
 
 Sources are credited on the project's help page, under "Dane i zakres" and
 "Inne zrodla i kod". If you intend to reuse the data itself rather than the

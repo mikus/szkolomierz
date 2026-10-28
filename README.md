@@ -8,8 +8,9 @@ Poland (CIE data), producing the data for an interactive school-quality map.
 > **reference level**: the country, its voivodeship, its powiat or its gmina. All
 > four are exported and the map's "reference point" control picks between them.
 >
-> The name says *what* it measures, not *which exam*: the pipeline is
-> exam-agnostic by design, so adding a second one (matura) needs no rename. The
+> The name says *what* it measures, not *which exam*, so adding a second exam —
+> the matura, for licea and technika — needed no rename. It did need more than
+> data: a second notebook, a validator mode and an exam switch in the app. The
 > earlier name, `compare-primary-schools-mazowieckie`, pinned both the school
 > stage and a single voivodeship, and was wrong on the second count from the day
 > the data went national.
@@ -147,6 +148,38 @@ After a new year of results is published:
 
 7. **Preview the map locally** before committing (see below) — the JSON is only
    as good as it looks on the map.
+
+### The matura
+
+The matura data (CIE's EM2023 school results, licea and technika) is regenerated
+the same way, with its own notebook and validator mode:
+
+1. **Fetch the pinned source files** into `data/egzamin-maturalny/`:
+
+   ```bash
+   uv run python scripts/fetch_sources.py --exam matura
+   ```
+
+2. **Run the matura notebook** from `notebooks/`. It writes
+   `docs/data/matura/{liceum,technikum,all}/` and `output/matura/`:
+
+   ```bash
+   uv run jupyter nbconvert --to notebook --execute --inplace --ExecutePreprocessor.record_timing=False matura.ipynb
+   ```
+
+3. **Validate the matura export.** Exit code 0 means every check passed:
+
+   ```bash
+   uv run python scripts/validate_export.py --exam matura
+   ```
+
+4. **Geocode new schools.** The geocoder reads every index — E8's and matura's
+   licea and technika — so one run covers both exams; then re-run both notebooks so
+   the coordinates reach the indexes:
+
+   ```bash
+   NOMINATIM_CONTACT=you@example.com uv run python scripts/geocode_schools.py
+   ```
 
 8. **Commit** the generated files in `docs/data/` and `output/`, plus
    `data/school_coords.csv`.
