@@ -41,9 +41,10 @@
   // together, whichever population is loaded. Built once; never from indexData,
   // which a population switch replaces.
   let unionPos = new Map();
-  // A school whose popup should open as soon as its powiat's markers exist. The
-  // school being searched for is usually in a powiat that is not loaded yet, so
-  // opening cannot happen in the same turn as the request.
+  // A school whose popup should open as soon as its marker stands on the map.
+  // The school being searched for is usually in a powiat that is not loaded
+  // yet, and in one that is it may sit in a cluster until the zoom to it lands,
+  // so opening cannot happen in the same turn as the request.
   let pendingSchool = null;
   // The school opened by search or by link (spec §7.4): shown, and its popup
   // opened, even when the filters would hide it, for as long as it stays
@@ -178,6 +179,9 @@
         forcedSchool = null;
         if (previous) hideDismissedSchool(previous);
       }
+      // Likewise a school still waiting to open: left armed, it would open over
+      // this one when its zoom lands or its rebuild finishes.
+      if (pendingSchool !== school.rspo) pendingSchool = null;
       syncURL();
     });
     marker.on('popupclose', () => {
@@ -271,6 +275,14 @@
       iconCreateFunction: clusterIcon,
     });
     map.addLayer(clusterGroup);
+    // Fired after every zoom, once the markers are laid out for it — so also
+    // after the zoom that splits out a school focusSchool is waiting on (see
+    // openPendingSchool). Only while that school is still the selection: one
+    // refreshFilters handed over after its popup closed waits for the next
+    // build, as before, rather than popping open on some unrelated zoom.
+    clusterGroup.on('animationend', () => {
+      if (pendingSchool === state.selectedSchool) openPendingSchool();
+    });
   }
 
   // What renderSchools last put on the map, or null when the markers have been
@@ -1309,6 +1321,13 @@
     if (pendingSchool == null) return;
     const marker = markersByRspo.get(pendingSchool);
     if (!marker) return;                 // its powiat has not rendered yet
+    // In the cluster group but not on the map: inside a cluster, where Leaflet
+    // silently ignores openPopup. focusSchool's zoom to SCHOOL_ZOOM splits it
+    // out, but into a powiat already drawn no rebuild follows to call this
+    // again — the cluster group's animationend does. Only while the school is
+    // still the selection: one whose popup a rebuild closed has lost it.
+    if (clusterGroup.hasLayer(marker) && !map.hasLayer(marker)
+        && state.selectedSchool === pendingSchool) return;
     pendingSchool = null;
     // Not in the cluster = hidden by the current filters. That cannot be the
     // school a search or link asked for: it is forced, so it passes them.
@@ -1338,7 +1357,7 @@
     // A school the filters hide, in a powiat already drawn, joins the cluster
     // here, before openPendingSchool checks for it there.
     refreshFilters();
-    openPendingSchool();        // same powiat already drawn? then open it now
+    openPendingSchool();        // same powiat already drawn? then open it now, or once unclustered
   }
 
   // Off-map school (no coordinates): hand off to the ranking, which selects and
