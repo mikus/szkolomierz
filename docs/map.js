@@ -1658,8 +1658,10 @@
     };
     update();
     // Re-update on any nav-affecting state change. Simpler than wiring observers:
-    // recompute on any pointerdown over the link.
+    // recompute on any pointerdown over the link (mouse and touch), and on click
+    // for keyboard activation, which fires no pointerdown.
     link.addEventListener('pointerdown', update);
+    link.addEventListener('click', update);
   }
 
   // ?school=<rspo> — resolve the school through schools-index.json rather than

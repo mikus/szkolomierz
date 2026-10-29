@@ -1209,7 +1209,14 @@ function wireExamToggle() {
     if (!opt || opt.getAttribute('data-exam') === EXAM) return;
     const usp = new URLSearchParams();
     if (opt.getAttribute('data-exam') === 'matura') usp.set('exam', 'matura');
-    if (currentLang !== DEFAULTS.lang) usp.set('lang', currentLang);
+    // Carried whenever it differs from what the other exam would resolve without
+    // it (resolvePref: a stored preference, else the default), not only when it is
+    // not the default: setLang never stores a language read from ?lang=, so a
+    // ?lang=pl page over a stored English preference would otherwise reopen in
+    // English.
+    const stored = readPrefs().lang;
+    const fallback = ['pl', 'en'].includes(stored) ? stored : DEFAULTS.lang;
+    if (currentLang !== fallback) usp.set('lang', currentLang);
     const qs = usp.toString();
     location.assign(window.location.pathname + (qs ? '?' + qs : ''));
   });
