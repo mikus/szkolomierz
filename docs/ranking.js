@@ -114,6 +114,11 @@
   // level's rows under the new level's column headers while the switch is in
   // flight. Anything that is not the current key counts as "not loaded".
   let loadedKey = null;
+  // The latest refreshPopulation call; only it may write. The key alone is not
+  // enough: fetchPopulation reads `population` again after awaiting the region
+  // file, so a superseded request can fetch another dataset's rows and still
+  // find its key current after a switch there and back.
+  let populationRequest = 0;
 
   // The matura dataset (`population`, app.js) is part of the key, so rows for a
   // population the user has switched away from are discarded when they land.
@@ -1060,27 +1065,29 @@
   // check rather than clobbering what is on screen.
   function refreshPopulation() {
     const key = populationKey();
+    const request = ++populationRequest;
+    const superseded = () => request !== populationRequest || key !== populationKey();
     const { level, region, metric } = state;
     populationError = false;
     shardProgress = null;
     if (loadedKey !== key) renderAll();   // show the loading state at once
     // Only repaints the blocked page's one line of text, so running it per shard
-    // is cheap. Guarded on the key: a superseded request must not write its
-    // progress over the message of the one that replaced it.
+    // is cheap. Guarded: a superseded request must not write its progress over
+    // the message of the one that replaced it.
     const onProgress = (done, total) => {
-      if (key !== populationKey() || total < 2) return;
+      if (superseded() || total < 2) return;
       shardProgress = { done, total };
       renderAll();
     };
     fetchPopulation(level, region, metric, onProgress).then((got) => {
-      if (key !== populationKey()) return;
+      if (superseded()) return;
       regionData = got.regions;
       schoolRows = got.schools;
       shardHistory = got.history;
       loadedKey = key;
       renderAll();
     }).catch((e) => {
-      if (key !== populationKey()) return;
+      if (superseded()) return;
       // Say so rather than leaving "Ładowanie…" on screen forever.
       console.error('population load failed', e);
       populationError = true;
@@ -1441,7 +1448,10 @@
       link.href = 'index.html' + (qs ? '?' + qs : '');
     };
     update();
+    // pointerdown for the mouse and touch; click for keyboard activation, which
+    // fires no pointerdown.
     link.addEventListener('pointerdown', update);
+    link.addEventListener('click', update);
   }
 
   // ---------------------------------------------------------------------------
