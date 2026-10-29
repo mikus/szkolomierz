@@ -106,9 +106,13 @@
             region, żeby wejść do środka; kliknij szkołę, żeby zobaczyć jej wyniki, przedmioty
             rozszerzone, zdawalność i wykres rok po roku. Zobacz
             <a href="#levels">Poziomy mapy</a>.</li>
-          <li><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować, a wiersz,
+          <li data-exam-block="e8"><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować, a wiersz,
             żeby rozwinąć szczegóły szkoły: wykresy dla wszystkich trzech przedmiotów
             i tabele liczbowe pod przyciskiem.</li>
+          <li data-exam-block="matura" hidden><strong>Ranking</strong> — kliknij nagłówek kolumny, żeby posortować,
+            a wiersz, żeby rozwinąć szczegóły szkoły: wykresy dla trzech przedmiotów
+            podstawowych (przedmiotów rozszerzonych wykresy nie obejmują) i tabele liczbowe pod
+            przyciskiem.</li>
           <li data-exam-block="e8"><strong>Poziom rankingu</strong> — zestawienie nie musi dotyczyć szkół. Możesz
             uszeregować całe województwa, powiaty albo gminy; wiersz pokazuje wtedy wynik
             regionu, liczbę jego szkół i liczbę uczniów. Regiony mają tylko wynik za
@@ -152,10 +156,11 @@
             przedmiocie rozszerzonym liczą się lata, w których szkoła ma z niego wynik).</li>
           <li data-exam-block="e8"><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Na mapie jest
             dodatkowo wyszukiwanie po adresie, które przesuwa widok w wybrane miejsce.</li>
-          <li data-exam-block="matura" hidden><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Wyszukiwarka
-            obejmuje licea i technika naraz; gdy wybierzesz szkołę spoza oglądanej grupy,
-            „Porównanie" przełączy się samo. Na mapie jest dodatkowo wyszukiwanie po adresie,
-            które przesuwa widok w wybrane miejsce.</li>
+          <li data-exam-block="matura" hidden><strong>Szukanie</strong> — wpisz nazwę szkoły lub miejscowość. Na mapie
+            wyszukiwarka obejmuje licea i technika naraz; gdy wybierzesz szkołę spoza oglądanej
+            grupy, „Porównanie" przełączy się samo. Jest tam też wyszukiwanie po adresie, które
+            przesuwa widok w wybrane miejsce. W rankingu pole nazwy zawęża tylko bieżącą
+            tabelę.</li>
           <li><strong>Ustawienia</strong> — płynne przejście koloru oraz metryki zaawansowane,
             jeśli chcesz porównać sposoby liczenia.</li>
         </ul>
@@ -174,9 +179,12 @@
             counties); individual schools appear once you zoom in to a county. Click a region to
             drill into it; click a school to see its results, extended subjects, pass rate and a
             year-by-year chart. See <a href="#levels">The map's levels</a>.</li>
-          <li><strong>Ranking</strong> — click a column header to sort, and a row to expand the
+          <li data-exam-block="e8"><strong>Ranking</strong> — click a column header to sort, and a row to expand the
             school's details: charts for all three subjects, with the numeric tables behind a
             button.</li>
+          <li data-exam-block="matura" hidden><strong>Ranking</strong> — click a column header to sort, and a row to
+            expand the school's details: charts for the three basic subjects (not the extended
+            ones), with the numeric tables behind a button.</li>
           <li data-exam-block="e8"><strong>Ranking level</strong> — the table need not be about schools. You can rank
             whole voivodeships, counties or municipalities; a row then shows the region's score,
             how many schools it holds and how many pupils. Regions carry only the all-years
@@ -217,10 +225,10 @@
             an extended subject, the years in which the school has a result in it).</li>
           <li data-exam-block="e8"><strong>Search</strong> — type a school name or a town. The map additionally has an
             address search that moves the view to a chosen place.</li>
-          <li data-exam-block="matura" hidden><strong>Search</strong> — type a school name or a town. It covers licea and
-            technika at once; picking a school outside the group on screen switches "Compare"
-            for you. The map additionally has an address search that moves the view to a
-            chosen place.</li>
+          <li data-exam-block="matura" hidden><strong>Search</strong> — type a school name or a town. On the map it
+            covers licea and technika at once; picking a school outside the group on screen
+            switches "Compare" for you. The map also has an address search that moves the view
+            to a chosen place. In the ranking the name box only narrows the current table.</li>
           <li><strong>Settings</strong> — the continuous colour ramp, and the advanced metrics if
             you want to compare ways of computing the score.</li>
         </ul>
@@ -362,12 +370,17 @@
             8,2% techników, a przy porównaniu w obrębie typu — 37,0%. Sam typ szkoły tłumaczy
             około jednej piątej różnic między szkołami. Porównanie wszystkich szkół razem jest
             uprawnionym pytaniem, więc zostaje dostępne — z ostrzeżeniem.</li>
-          <li><strong>Przedmioty podstawowe i rozszerzone.</strong> Przedmioty podstawowe są
-            obowiązkowe, więc wynik z polskiego, matematyki i angielskiego ma każda szkoła
-            w zestawieniu; z nich liczymy też „Najsłabszy z 3 podstawowych". Przedmiot
-            rozszerzony uwzględniamy, gdy w każdym roku co najmniej 100 liceów ma z niego
-            opublikowaną średnią — spełnia to jedenaście przedmiotów. W porównaniu techników
-            nie ma historii sztuki: zdaje ją za mało techników, by policzyć wynik.</li>
+          <li><strong>Przedmioty podstawowe i rozszerzone.</strong> Polski i matematyka na
+            poziomie podstawowym są obowiązkowe, a angielski zdaje prawie każdy (obowiązkowy jest
+            jeden język obcy). Szkołę, która w danym roku nie ma opublikowanej średniej
+            z któregoś z tych trzech przedmiotów, pomijamy w tym roku, więc wynik z polskiego,
+            matematyki i angielskiego ma każda szkoła w zestawieniu; z nich liczymy też
+            „Najsłabszy z 3 podstawowych". Przedmiot rozszerzony uwzględniamy, gdy w każdym roku
+            co najmniej 100 liceów ma z niego opublikowaną średnią — spełnia to jedenaście
+            przedmiotów. Wiedzy o społeczeństwie nie uwzględniamy, choć zdaje ją wystarczająco
+            wiele liceów: w 2026 r. jej egzamin rozszerzony podzielił się na dwa różne egzaminy.
+            W porównaniu techników nie ma historii sztuki: zdaje ją za mało techników, by
+            policzyć wynik.</li>
           <li><strong>Dwa punkty odniesienia: cała Polska albo województwo</strong> — zawsze
             wśród szkół wybranych w polu „Porównanie". Powiatu i gminy nie oferujemy: szkół
             jednego typu jest tam za mało. Przy powiecie jako punkcie odniesienia wynik za
@@ -410,12 +423,15 @@
             against 37.0% when compared within type. School type alone explains about a fifth of
             the differences between schools. Comparing all schools together is a legitimate
             question, so it stays available — with a caveat.</li>
-          <li><strong>Basic and extended subjects.</strong> The basic subjects are compulsory, so
-            every school in the data has a result in basic Polish, Maths and English; "Weakest
-            of the 3 basic" is computed from them. An extended subject is included when at least
-            100 licea have a published mean in it in every year — eleven subjects pass. Art
-            history is absent from the technika comparison: too few technika sit it to compute a
-            score.</li>
+          <li><strong>Basic and extended subjects.</strong> Basic Polish and Maths are compulsory,
+            and nearly everyone sits basic English (one foreign language is compulsory). A
+            school-year missing a published mean in any of the three is left out, so every school
+            in the data has a result in basic Polish, Maths and English; "Weakest of the 3 basic"
+            is computed from them. An extended subject is included when at least 100 licea have
+            a published mean in it in every year — eleven subjects pass. Civics is left out
+            although enough licea sit it: in 2026 its extended exam split into two different
+            exams. Art history is absent from the technika comparison: too few technika sit it
+            to compute a score.</li>
           <li><strong>Two reference points: the whole country or the voivodeship</strong> —
             always among the schools chosen under "Compare". County and municipality are not
             offered: there are too few schools of one type there. With the county as the
@@ -461,10 +477,10 @@
           gmina — ze swoim powiatem.</p>
         <p data-exam-block="matura" hidden>Najważniejsza zasada: <strong>region porównujemy z jednostką o jeden poziom
           wyżej</strong>. Województwo — z całą Polską, powiat — ze swoim województwem.</p>
-        <p>Dlaczego akurat tak? Gdyby województwo porównać ze średnią województw, wszystkie
-          szesnaście wyszłoby dokładnie zerem — z definicji, bo każde jest wtedy własnym
-          punktem odniesienia. Widok całego kraju byłby jednolicie żółty akurat tam, gdzie
-          różnice są najciekawsze.</p>
+        <p>Dlaczego akurat tak? Gdyby województwo porównać z nim samym — ze średnią jego
+          własnych szkół — każde byłoby własnym punktem odniesienia, więc wynik nie mówiłby nic
+          o tym, jak wypada na tle pozostałych. Widok całego kraju nie pokazywałby różnic między
+          województwami akurat tam, gdzie są najciekawsze.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>The map's levels</h2>
@@ -483,10 +499,10 @@
         <p data-exam-block="matura" hidden>The rule that matters most: <strong>a region is compared with the level above
           it</strong>. A voivodeship against the whole country, a county against its
           voivodeship.</p>
-        <p>Why that way? If a voivodeship were compared with the average of voivodeships,
-          all sixteen would come out at exactly zero — by construction, because each would
-          then be its own reference. The national view would be uniformly yellow at exactly
-          the zoom where the differences are most interesting.</p>
+        <p>Why that way? If a voivodeship were compared with itself — with the average of its
+          own schools — each would be its own reference, so its score would say nothing about
+          how it compares with the others. The national view would lose the differences
+          between voivodeships at exactly the zoom where they are most interesting.</p>
       </div>
     </section>
 
@@ -526,14 +542,14 @@
         <p>We subtract the mean of every school in its <a href="#baseline">reference group</a>
           (that year, that subject) from the school's own mean. This neutralises difficulty
           shifts — a raw 60% in a hard year can equal
-          70% in an easy one. Across years: a mean <strong>weighted by the number of pupils</strong>,
+          70% in an easy one. Across years: a mean <strong>weighted by the number of takers</strong>,
           so a year with a smaller (less certain) cohort counts for less.</p>
         <h3>Normalised difference from the mean <span class="muted">(the app's "Normalised score")</span></h3>
         <p>We scale the difference to the range <strong>[−1, +1]</strong>: above zero we divide
           by how far it still is to 100%; below zero, by the mean itself. Then
           <strong>0 = the reference group's mean</strong>, <strong>+1 = the ceiling (100%)</strong>,
           <strong>−1 = the floor (0%)</strong>. It is robust to missing years. Across years: a
-          mean weighted by the number of pupils.</p>
+          mean weighted by the number of takers.</p>
       </div>
     </section>
 
@@ -565,6 +581,9 @@
           regiony, o porównaniu decyduje drabinka z sekcji <a href="#levels">Poziomy
           mapy</a> — region zawsze porównujemy z jednostką nadrzędną — więc lista jest
           wtedy nieaktywna.</p>
+        <p>Ranking nie ma tego wyboru: w metrykach różnicowych szkoły są w nim zawsze
+          porównywane z województwem — przy innym punkcie odniesienia na mapie wynik i miejsce
+          szkoły w rankingu mogą więc różnić się od tych w dymku.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>The reference point</h2>
@@ -596,6 +615,10 @@
           colours regions, the ladder in <a href="#levels">The map's levels</a> decides
           instead — a region is always compared with its parent — so the control is
           disabled there.</p>
+        <p>The ranking has no such control: under the difference-based metrics it always
+          compares schools with their voivodeship — so with a different reference point chosen
+          on the map, a school's score and rank in the ranking can differ from those in its
+          popup.</p>
       </div>
     </section>
 
@@ -644,7 +667,7 @@
         <ul>
           <li><strong>Mean, Median</strong> → arithmetic mean (equal weight — a simple baseline).</li>
           <li><strong>Difference, Normalised difference</strong> → mean weighted by the number of
-            pupils (more evidence from larger cohorts).</li>
+            takers (more evidence from larger cohorts).</li>
         </ul>
       </div>
     </section>
@@ -652,15 +675,16 @@
     <section id="metric-stability">
       <div data-lang-block="pl">
         <h2>Która metryka jest najstabilniejsza</h2>
-        <p data-exam-block="e8">Znormalizowana różnica od średniej — bo w testach to przy niej pozycje szkół
-          wahały się najmniej rok do roku (sprawdzane metodą „leave-one-out": liczymy wynik,
+        <p data-exam-block="e8">Znormalizowana różnica od średniej — bo w testach to przy niej sam wynik
+          szkoły, w stosunku do rozrzutu między szkołami, wahał się najmniej (sprawdzane metodą
+          „leave-one-out": liczymy wynik,
           pomijając po kolei każdy rok, i patrzymy, jak bardzo skacze). Mimo to nawet po
           pominięciu pojedynczych lat pozycje potrafią mocno się zmieniać — dlatego nie warto
           przywiązywać się do konkretnego miejsca w rankingu. Pełna analiza:
           <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
         <p data-exam-block="matura" hidden>Znormalizowana różnica od średniej — wybrana dla egzaminu kończącego szkołę
-          podstawową, bo tam
-          pozycje szkół wahały się przy niej najmniej rok do roku (metoda „leave-one-out":
+          podstawową, bo tam wynik szkoły, w stosunku do rozrzutu między szkołami, wahał się
+          przy niej najmniej (metoda „leave-one-out":
           liczymy wynik, pomijając po kolei każdy rok, i patrzymy, jak bardzo skacze). Dla
           matury ten sam test powtarzamy osobno dla liceów i techników. Lat jest mniej —
           cztery dla liceów, trzy dla techników — więc traktujemy go jako sprawdzenie tamtego
@@ -669,14 +693,16 @@
       </div>
       <div data-lang-block="en" hidden>
         <h2>Which metric is the most stable</h2>
-        <p data-exam-block="e8">The normalised difference from the mean — because in testing its school positions
-          moved the least year to year (checked with a "leave-one-out" method: recompute the
+        <p data-exam-block="e8">The normalised difference from the mean — because in testing a school's score,
+          relative to the spread between schools, moved the least under it (checked with a
+          "leave-one-out" method: recompute the
           score leaving each year out in turn, and see how much it jumps). Even so, dropping
           single years can still move positions a lot — which is why a specific ranking place is
           not worth clinging to. The full analysis:
           <a target="_blank" rel="noopener" href="https://github.com/mikus/szkolomierz/blob/main/notebooks/how_to_measure_school_quality.ipynb">notebook</a>.</p>
         <p data-exam-block="matura" hidden>The normalised difference from the mean — chosen for the primary-school exam,
-          where school positions moved the least year to year under it (the "leave-one-out"
+          where a school's score, relative to the spread between schools, moved the least
+          under it (the "leave-one-out"
           method: recompute the score leaving each year out in turn, and see how much it
           jumps). For the matura the same test is re-run separately for licea and technika.
           There are fewer years — four for licea, three for technika — so we read it as a check
@@ -691,9 +717,9 @@
         <p>Każdą szkołę przypisujemy do jednej z trzech klas względem środka rozkładu (granica
           ±0,33 odchylenia standardowego, liczona osobno dla każdej metryki i przedmiotu):</p>
         <ul>
-          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#1a9850)"></span> <strong>powyżej średniej</strong>,</li>
-          <li><span class="swatch" style="background:#fde08a"></span> <strong>w okolicy średniej</strong>,</li>
-          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#d6604d)"></span> <strong>poniżej średniej</strong>.</li>
+          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#1a9850)"></span> <strong>A — powyżej średniej</strong>,</li>
+          <li><span class="swatch" style="background:#fde08a"></span> <strong>B — w okolicy średniej</strong>,</li>
+          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#d6604d)"></span> <strong>C — poniżej średniej</strong>.</li>
         </ul>
         <p>Etykiety są celowo neutralne („powyżej / w okolicy / poniżej średniej", nie
           „dobra / słaba") — szkoła tuż za granicą nie zasługuje na ocenę, której dane nie
@@ -701,16 +727,18 @@
           żółtego w środku do ciemnej zieleni lub czerwieni, im dalej od niego — aż do 1.
           i 99. percentyla. Każdy wynik ma więc swój odcień, także wewnątrz klasy B, dzięki
           czemu zmiana punktu odniesienia jest widoczna na mapie. W ustawieniach mapy można
-          przełączyć na 3 płaskie klasy.</p>
+          przełączyć na 3 płaskie klasy. Ten przełącznik dotyczy tylko szkół na mapie:
+          w rankingu szkoły zawsze mają gradient, a regiony — na mapie i w zestawieniach
+          regionów — zawsze mają 3 płaskie kolory klas.</p>
       </div>
       <div data-lang-block="en" hidden>
         <h2>Colour and classes</h2>
         <p>Each school falls into one of three classes relative to the centre of the distribution
           (boundary at ±0.33 standard deviations, computed separately per metric and subject):</p>
         <ul>
-          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#1a9850)"></span> <strong>above average</strong>,</li>
-          <li><span class="swatch" style="background:#fde08a"></span> <strong>around average</strong>,</li>
-          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#d6604d)"></span> <strong>below average</strong>.</li>
+          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#1a9850)"></span> <strong>A — above average</strong>,</li>
+          <li><span class="swatch" style="background:#fde08a"></span> <strong>B — around average</strong>,</li>
+          <li><span class="swatch" style="background:linear-gradient(90deg,#fde08a,#d6604d)"></span> <strong>C — below average</strong>.</li>
         </ul>
         <p>The labels are deliberately neutral ("above / around / below average", not "good /
           weak") — a school just past a boundary does not deserve a verdict the data cannot
@@ -718,7 +746,9 @@
           yellow at the centre into deep green or red the further from it — out to the 1st and
           99th percentile. Every score therefore has its own shade, class B included, which is
           what makes a change of reference point visible on the map. Map settings let you
-          switch to 3 flat classes.</p>
+          switch to 3 flat classes. That switch affects only schools on the map: in the ranking,
+          schools are always shaded with the gradient, and regions — on the map and in the
+          region tables — always use the 3 flat class colours.</p>
       </div>
     </section>
 
@@ -755,8 +785,8 @@
           jego szkół z wynikiem z wybranego przedmiotu i liczbę ich zdających.</p>
         <p data-exam-block="e8">Dwie różnice względem zestawienia szkół są celowe. Po pierwsze, <strong>regiony
           bez wyniku i tak są w tabeli</strong>, z podaną przyczyną — tabela wylicza całą
-          populację danego poziomu, więc pominięcie 66 gmin sugerowałoby, że one nie
-          istnieją. Po drugie, <strong>regiony mają tylko wynik za wszystkie lata</strong>:
+          populację danego poziomu, więc pominięcie gmin bez wyniku (69 w metrykach
+          różnicowych, 3 przy Średniej i Medianie) sugerowałoby, że one nie istnieją. Po drugie, <strong>regiony mają tylko wynik za wszystkie lata</strong>:
           widoków rocznych ani „bez jednego roku" dla nich nie liczymy, więc widok danych
           i filtr publiczna/niepubliczna są przy tych poziomach nieaktywne.</p>
         <p data-exam-block="matura" hidden>Dwie różnice względem zestawienia szkół są celowe. Po pierwsze,
@@ -768,8 +798,8 @@
           nieaktywne.</p>
         <h3>Dlaczego niektóre regiony są szare</h3>
         <p data-exam-block="e8">Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
-          ręczyć", a powody są trzy — i mapa oraz ranking nazywają je osobno, bo to trzy
-          różne rzeczy:</p>
+          ręczyć", a powody są trzy — i aplikacja nazywa je osobno, bo to trzy różne
+          rzeczy:</p>
         <p data-exam-block="matura" hidden>Szary nie znaczy „słaby". Znaczy „nie mamy tu liczby, za którą moglibyśmy
           ręczyć". Mapa i ranking podają przyczynę:</p>
         <ul>
@@ -777,8 +807,10 @@
             ale nie ma w nim ani jednej szkoły podstawowej z wynikami. Takich gmin są dziś 3.</li>
           <li data-exam-block="e8"><strong>Jedyna jednostka w jednostce nadrzędnej.</strong> Gmina, która jest
             jedyną gminą swojego powiatu, musiałaby zostać porównana sama ze sobą — wynik
-            wyszedłby zerem niezależnie od tego, jak uczą tamtejsze szkoły. Dziś to
-            66 gmin (przede wszystkim miasta na prawach powiatu).</li>
+            nie mówiłby nic o tym, jak uczą tamtejsze szkoły. Dziś to
+            66 gmin — wszystkie to miasta na prawach powiatu. Na mapie nie zobaczysz ich jako
+            szarych: w ich powiatach mapa pomija poziom gmin i od razu pokazuje szkoły;
+            przyczynę podaje ranking gmin.</li>
           <li data-exam-block="e8"><strong>Za mała grupa odniesienia.</strong> Gdy jednostka nadrzędna ma mniej
             niż 5 szkół, jej średnia sama jest zbyt niepewna, żeby cokolwiek od niej
             odmierzać. Reguła jest wpisana w dane; przy dzisiejszym zestawie nie trafia
@@ -797,7 +829,7 @@
             rzadkich — na przykład niemieckim rozszerzonym w technikach — zdarza się to
             często.</li>
         </ul>
-        <p data-exam-block="e8">Dwa pierwsze powody dotyczą tylko metryk różnicowych. Średnia i Mediana nie mają
+        <p data-exam-block="e8">Dwa ostatnie powody dotyczą tylko metryk różnicowych. Średnia i Mediana nie mają
           grupy odniesienia, więc pozostają widoczne wszędzie tam, gdzie w ogóle są jakieś
           szkoły.</p>
         <p data-exam-block="matura" hidden>Za mała grupa odniesienia dotyczy tylko metryk różnicowych. Średnia i Mediana
@@ -840,8 +872,8 @@
           its schools have a result in the selected subject and how many takers they have.</p>
         <p data-exam-block="e8">Two differences from the school table are deliberate. First, <strong>regions with
           no score still appear</strong>, carrying their reason — the table enumerates that
-          level's whole population, so omitting 66 municipalities would suggest they do not
-          exist. Second, <strong>regions carry only the all-years score</strong>: we compute
+          level's whole population, so omitting the municipalities with no score (69 under the
+          difference-based metrics, 3 under Mean and Median) would suggest they do not exist. Second, <strong>regions carry only the all-years score</strong>: we compute
           no single-year or leave-one-year-out views for them, which is why the view selector
           and the public/private filter are inactive at those levels.</p>
         <p data-exam-block="matura" hidden>Two differences from the school table are deliberate. First, <strong>regions
@@ -852,19 +884,21 @@
           and the public/private filter are inactive at those levels.</p>
         <h3>Why some regions are grey</h3>
         <p data-exam-block="e8">Grey does not mean "weak". It means "we have no number here we would stand
-          behind", and there are three reasons — named separately on the map and in the
-          ranking, because they are three different things:</p>
+          behind", and there are three reasons — the app names them separately, because they
+          are three different things:</p>
         <p data-exam-block="matura" hidden>Grey does not mean "weak". It means "we have no number here we would stand
           behind". The map and the ranking give the reason:</p>
         <ul>
           <li data-exam-block="e8"><strong>No schools with exam results.</strong> The region exists in the
             register but holds no primary school with results. Today that is 3
             municipalities.</li>
-          <li data-exam-block="e8"><strong>An only child of its parent.</strong> A municipality that is the only
-            one in its county would have to be compared against itself — the score would
-            come out zero however its schools actually teach. Today that is 66
-            municipalities, mostly cities holding county rights.</li>
-          <li data-exam-block="e8"><strong>Too small a reference group.</strong> Where the parent holds fewer
+          <li data-exam-block="e8"><strong>The only unit within its parent.</strong> A municipality that is the
+            only one in its county would have to be compared against itself — the score would
+            say nothing about how its schools actually teach. Today that is 66
+            municipalities — all of them cities holding county rights. You will not see these
+            grey on the map: in their counties the map skips the municipality level and shows
+            the schools directly; the municipality ranking gives the reason.</li>
+          <li data-exam-block="e8"><strong>Reference group too small to score.</strong> Where the parent holds fewer
             than 5 schools, its own average is too uncertain to measure anything against.
             The rule is built into the data; on the current dataset it catches no region.</li>
           <li data-exam-block="matura" hidden><strong>No licea</strong> (or technika, or secondary schools). The county
@@ -874,16 +908,17 @@
           <li data-exam-block="matura" hidden><strong>No school here has results in this subject.</strong> Only some
             schools sit an extended subject; a county where nobody sat it has nothing to compute
             a score from.</li>
-          <li data-exam-block="matura" hidden><strong>Too small a reference group.</strong> Under the difference-based
+          <li data-exam-block="matura" hidden><strong>Reference group too small to score.</strong> Under the difference-based
             metrics, schools get an extended-subject score only where the reference group holds
             at least 5 schools with a result; a county whose schools' scores were withheld, or
             whose voivodeship has too few such schools, stays grey. With rare subjects — German
             at the extended level in technika, for example — this happens often.</li>
         </ul>
-        <p data-exam-block="e8">The first two reasons apply only to the difference-based metrics. Mean and Median
+        <p data-exam-block="e8">The last two reasons apply only to the difference-based metrics. Mean and Median
           have no reference group, so they stay visible wherever there are any schools at
           all.</p>
-        <p data-exam-block="matura" hidden>Too small a reference group applies only to the difference-based metrics. Mean
+        <p data-exam-block="matura" hidden>The "Reference group too small to score" reason applies only to the
+          difference-based metrics. Mean
           and Median have no reference group, so they stay visible wherever a school has a
           result in the selected subject.</p>
       </div>
@@ -896,8 +931,14 @@
           <li>W rankingu pokazujemy, jak pozycja szkoły zmienia się, gdy pominiemy po kolei
             każdy rok (LOO), weźmiemy pojedynczy rok albo ostatnie k lat. Szeroki zakres =
             wynik mocno zależy od wyboru lat.</li>
-          <li>Pasmo „w okolicy średniej" (±0,33σ) jest celowo szersze niż typowy szum
+          <li data-exam-block="e8">Pasmo „w okolicy średniej" (±0,33σ) jest celowo szersze niż typowy szum
             rok‑do‑roku, więc trzy klasy są statystycznie rozróżnialne.</li>
+          <li data-exam-block="matura" hidden>Pasmo „w okolicy średniej" (±0,33σ) jest szersze niż szum rok do roku
+            przedmiotów podstawowych w liceach (0,07–0,16σ) oraz z matematyki i angielskiego na
+            poziomie podstawowym w technikach (0,17–0,18σ). Z polskiego na poziomie podstawowym
+            w technikach szum sięga już 0,33σ, czyli samej granicy pasma, więc tam przynależność
+            szkoły do klasy jest mniej pewna. Szumu przedmiotów rozszerzonych nie
+            mierzyliśmy.</li>
           <li>⚠️ przy szkołach z krótką historią (mniej niż 3 lata) — ich wyniki są mniej pewne.</li>
         </ul>
       </div>
@@ -907,8 +948,13 @@
           <li>The ranking shows how a school's position changes when each year is left out in turn
             (LOO), when a single year is used, or the last k years. A wide range means the result
             depends heavily on which years you pick.</li>
-          <li>The "around average" band (±0.33σ) is deliberately wider than the typical
+          <li data-exam-block="e8">The "around average" band (±0.33σ) is deliberately wider than the typical
             year-to-year noise, so the three classes are statistically distinguishable.</li>
+          <li data-exam-block="matura" hidden>The "around average" band (±0.33σ) is wider than the year-to-year noise
+            of the basic subjects in licea (0.07–0.16σ) and of basic Maths and English in technika
+            (0.17–0.18σ). In technika's basic Polish the noise already reaches 0.33σ, the band's
+            own edge, so a school's class there is less certain. The noise of the extended
+            subjects has not been measured.</li>
           <li>⚠️ next to schools with a short history (fewer than 3 years) — their results are
             less certain.</li>
         </ul>
@@ -922,12 +968,13 @@
           niedopatrzenie — dlatego nagłówki mówią, na jakiej.</p>
         <ul>
           <li data-exam-block="e8"><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
-            wszystkich województw, wszystkich 380 powiatów, wszystkich 2 479 gmin albo
-            wszystkich 12 889 szkół, które mają wynik. Jednostki bez wyniku nie zajmują
+            tych województw (z 16), powiatów (z 380), gmin (z 2 479) albo szkół (z 12 889),
+            które mają wynik. Jednostki bez wyniku nie zajmują
             miejsca, więc mianownik bywa mniejszy niż liczba wierszy w tabeli.</li>
           <li data-exam-block="matura" hidden><strong>Miejsce jest ogólnopolskie</strong> na każdym poziomie: wśród
-            wszystkich województw, wszystkich 380 powiatów albo wszystkich szkół wybranej grupy
-            (2 374 liceów, 1 770 techników, 4 100 szkół średnich), które mają wynik. Jednostki
+            tych województw (z 16), powiatów (z 380) albo szkół wybranej grupy (z 2 374 liceów,
+            1 770 techników albo 4 100 szkół średnich — bez 44 liceów, które mają wyniki tylko
+            z 2023 r.), które mają wynik. Jednostki
             bez wyniku nie zajmują miejsca. Przy szkołach tabela i dymek podają mianownik
             wprost — „#12 z 1 770" — czyli liczbę szkół z wynikiem w wybranym widoku
             danych.</li>
@@ -935,7 +982,7 @@
             mających tę samą jednostkę nadrzędną. Percentyl gminy dotyczy gmin jej powiatu,
             percentyl powiatu — powiatów jego województwa. Zostaje pusty, gdy rodzeństwa
             z wynikiem jest mniej niż 8: w tak małej grupie percentyl udaje precyzję, której nie ma
-            (przy trzech jednostkach są tylko wartości 0, 50 i 100). Dziś dotyczy to 1 042
+            (trzy jednostki bez remisów dają tylko wartości 33,3; 66,7 i 100). Dziś dotyczy to 1 042
             z 2 479 gmin.</li>
           <li data-exam-block="matura" hidden><strong>Percentyl liczymy tylko wśród „rodzeństwa"</strong> — jednostek
             mających tę samą jednostkę nadrzędną: percentyl powiatu dotyczy powiatów jego
@@ -979,21 +1026,23 @@
         <p>These columns are computed over <strong>different populations</strong>, and
           that is not an oversight — which is why the headers say which.</p>
         <ul>
-          <li data-exam-block="e8"><strong>Rank is national</strong> at every level: among all voivodeships, all
-            380 counties, all 2,479 municipalities, or all 12,889 schools that have a score.
+          <li data-exam-block="e8"><strong>Rank is national</strong> at every level: among the voivodeships (of
+            16), counties (of 380), municipalities (of 2,479) or schools (of 12,889) that have a
+            score.
             Units with no score take no place, so the denominator can be smaller than the
             number of rows in the table.</li>
-          <li data-exam-block="matura" hidden><strong>Rank is national</strong> at every level: among all voivodeships, all
-            380 counties, or all schools of the chosen group (2,374 licea, 1,770 technika, 4,100
-            secondary schools) that have a score. Units with no score take no place. For schools
+          <li data-exam-block="matura" hidden><strong>Rank is national</strong> at every level: among the voivodeships (of
+            16), counties (of 380) or schools of the chosen group (of 2,374 licea, 1,770 technika
+            or 4,100 secondary schools — without the 44 licea whose only results are from 2023)
+            that have a score. Units with no score take no place. For schools
             the table and the popup give the denominator outright — "#12 of 1,770" — the number
             of schools with a score in the selected view.</li>
           <li data-exam-block="e8"><strong>The percentile is computed among siblings only</strong> — units
             sharing the same parent. A municipality's percentile is among its county's
             municipalities, a county's among its voivodeship's counties. It is left blank
             where fewer than 8 siblings have a score: in a group that small a percentile fakes
-            a precision it does not have (with three units the only possible values are 0,
-            50 and 100). Today that applies to 1,042 of 2,479 municipalities.</li>
+            a precision it does not have (three units without ties give only the values 33.3,
+            66.7 and 100). Today that applies to 1,042 of 2,479 municipalities.</li>
           <li data-exam-block="matura" hidden><strong>The percentile is computed among siblings only</strong> — units
             sharing the same parent: a county's percentile is among its voivodeship's counties,
             a voivodeship's among all voivodeships. It is left blank where fewer than 8 siblings
@@ -1043,7 +1092,7 @@
           <strong>RSPO</strong> po numerze szkoły; dopiero gdy rejestr ich nie ma,
           geokodujemy adres w OpenStreetMap. Lokalizacji nigdy nie zgadujemy — gdy obie
           drogi zawiodą, szkoła <strong>nie pojawia się na mapie</strong> (ale zostaje
-          w rankingu). Dziś dotyczy to 3 z 12 889 szkół.</p>
+          w rankingu). Dziś nie dotyczy to żadnej z 12 889 szkół.</p>
         <p data-exam-block="matura" hidden>Współrzędnych nie ma w danych egzaminacyjnych. Bierzemy je z rejestru szkół
           <strong>RSPO</strong> po numerze szkoły; dopiero gdy rejestr ich nie ma, geokodujemy
           adres w OpenStreetMap. Lokalizacji nigdy nie zgadujemy — gdy obie drogi zawiodą,
@@ -1056,7 +1105,7 @@
           school register, looked up by the school's id; only where the register has none do
           we geocode the address against OpenStreetMap. We never guess a location — when both
           routes fail the school <strong>does not appear on the map</strong> (but stays in the
-          ranking). Today that is 3 of 12,889 schools.</p>
+          ranking). Today that applies to none of the 12,889 schools.</p>
         <p data-exam-block="matura" hidden>Coordinates are not in the exam data. They come from the <strong>RSPO</strong>
           school register, looked up by the school's id; only where the register has none do we
           geocode the address against OpenStreetMap. We never guess a location — when both
