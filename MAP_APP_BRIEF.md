@@ -288,7 +288,8 @@ falls back to Nominatim address geocoding for a school RSPO cannot place. It
 **never plants a school on its town's centroid**. If no street-level match inside
 Poland is found either, the school keeps `lat`/`lon` = null and stays off the
 map. So a missing-coords school is genuinely missing — not "approximately
-somewhere in town". Today that is 3 of 12,889.
+somewhere in town". Today no E8 school is missing (all 12,889 have coordinates);
+4 matura schools are (3 licea, 1 technikum).
 
 The app may use a geocoding API for **one thing only**: the **address search box**
 (turning a user-typed address into a map location to pan/zoom to). Use Nominatim

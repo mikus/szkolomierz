@@ -491,7 +491,7 @@ Pages' 1 GB published-site limit. The sizes quoted here are the compact ones, an
   file every page loads. **Parallel arrays**, not an array of objects: `rspo`,
   `name`, `teryt`, `powiat`, `miejscowosc`, `ulica_nr`, `is_public`, `n_years`,
   `lat`, `lon`, `on_map` — all 12,889 entries long, index `i` being one school.
-  `lat`/`lon` come from the coordinate cache (`null` if missing; 3 schools today).
+  `lat`/`lon` come from the coordinate cache (`null` if missing; none today).
   It carries **no scores**: those live in the shards, so switching metric or
   reference level does not re-download identity.
 - **`docs/data/scale.json`** (~6.6 KB) — everything needed to turn a score into a
@@ -672,8 +672,8 @@ strategies fail, the geocoder writes an empty `latitude,longitude` row for that
 school. Such schools stay off the map (per the brief) but remain in the ranking.
 This is intentional — an older version fell back to `"<town>, Polska"` and
 silently planted 773 of 1,720 schools on their town's centroid (351 alone landed
-on Pałac Kultury in Warsaw). On the current data **3 of 12,889 schools** have no
-coordinates.
+on Pałac Kultury in Warsaw). On the current data every one of the **12,889** E8
+schools has coordinates; 4 matura schools (3 licea, 1 technikum) do not.
 
 ### The gate does not retro-fit the cache
 
